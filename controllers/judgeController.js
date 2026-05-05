@@ -31,17 +31,23 @@ router.post('/setup', async (req, res) => {
 
 router.post('/submit', async (req, res) => {
     const { code, activityId } = req.body;
-    const userId = req.session.userId || "aluno_generico"; 
+    const userId = req.session.userId || req.body.userId; 
 
     if (!activityId) return res.status(400).json({ error: "ID da atividade faltando" });
 
     try {
+        const containerName = `judge_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}`;
+        const isRunning = await judgeService.isAlreadyRunning(containerName);
+        if (isRunning) {
+            return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
+        }
+
         await minioService.salvarCodigo(userId, activityId, code);
         
         const questao = await Question.findOne({ activityId });
         if (!questao) return res.status(404).json({ status: "Questão não configurada." });
 
-        const resultado = await judgeService.runTests(code, questao.tests);
+        const resultado = await judgeService.runTests(code, questao.tests, containerName);
         
         res.json(resultado);
     } catch (err) {
