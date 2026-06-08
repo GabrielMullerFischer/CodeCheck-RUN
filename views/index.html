@@ -32,8 +32,8 @@
                     <textarea id="editor" class="form-control mb-3" rows="12" style="font-family: monospace;" placeholder="int main() { ... }"></textarea>
                     
                     <div class="clearfix">
-                        <button id="btnSubmit" class="btn btn-primary btn-lg px-5 float-right">
-                            <i class="fas fa-play"></i> Compilar
+                        <button id="btnSubmit" class="btn btn-primary btn-lg px-5 float-right d-flex align-items-center justify-content-center">
+                            <i class="fas fa-play mr-2"></i> <span>Compilar</span>
                         </button>
                     </div>
                     
@@ -47,7 +47,7 @@
 
         <div id="setup-professor" class="card shadow mb-4" style="border: 2px solid #00539b;">
             <div class="card-header text-white" style="background-color: #00539b;">
-                <h5 class="mb-0"><i class="fas fa-cogs"></i> CodeCheck-C: Configuração da Atividade</h5>
+                <h5 class="mb-0"><i class="fas fa-cogs"></i> CodeCheck-RUN: Configuração da Atividade</h5>
             </div>
             <div class="card-body">
                 <div class="form-group">
@@ -230,14 +230,36 @@
                     });
 
                     const data = await res.json();
-                    
+
                     if (res.ok) {
-                        let cor = data.status === 'Accepted' ? 'success' : 'danger';
-                        resultDiv.innerHTML = `<div class="alert alert-${cor} shadow-sm">
-                            <strong>Resultado:</strong> ${data.status}
-                        </div>`;
-                    } else {
-                        resultDiv.innerHTML = `<div class="alert alert-warning">Erro ${res.status}: Sessão expirada ou erro no servidor.</div>`;
+                        if (data.status === 'Accepted') {
+                            resultDiv.innerHTML = `<div class="alert alert-success"><strong>Correto!</strong></div>`;
+                        } 
+                        else if (data.status === 'Compilation Error') {
+                            resultDiv.innerHTML = `
+                                <div class="alert alert-warning">
+                                    <strong>Erro de compilação:</strong><br>
+                                    <pre class="bg-dark text-white p-2 mt-2">${data.details}</pre>
+                                </div>`;
+                        } 
+                        else if (data.status === 'Wrong Answer') {
+                            resultDiv.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <strong>${data.message}</strong><br><br>
+                                    <div class="small">
+                                        <strong>Entrada do teste:</strong> [${data.input || ''}]<br>
+                                        <strong>Sua saída:</strong> [${data.got || ''}]<br>
+                                        <strong>Saída esperada:</strong> [${data.expected || ''}]
+                                    </div>
+                                </div>`;
+                        } else if (data.status === 'Time Limit') {
+                            resultDiv.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <strong>${data.message}</strong><br><br>
+                                </div>`;
+                        } else {
+                            resultDiv.innerHTML = `<div class="alert alert-danger">Erro desconhecido'}</div>`;
+                        }
                     }
                 } catch (err) {
                     resultDiv.innerHTML = `<div class="alert alert-danger">Erro de conexão com o servidor.</div>`;

@@ -6,7 +6,7 @@ const execPromise = util.promisify(exec);
 
 async function isAlreadyRunning(containerName) {
     try {
-        const { stdout } = await execPromise(`docker ps -aq -f name=^/${containerName}$`);
+        const { stdout } = await execPromise(`docker ps -aq -f name=^/${containerName}$_${id}$`);
         return stdout.trim().length > 0;
     } catch (e) { return false; }
 }
@@ -30,7 +30,8 @@ async function runTests(code, tests, containerName) {
             await execPromise(compileCmd, { timeout: timeoutComp });
         } catch (err) {
             limparPasta(tempDir);
-            return resolve({ status: 'Compilation Error', details: err.stderr });
+            return resolve({ status: 'Compilation Error',
+                             details: err.stderr || 'Erro desconhecido na compilação!' });
         }
 
         let results = [];
@@ -40,7 +41,7 @@ async function runTests(code, tests, containerName) {
             if (index === tests.length) {
                 limparPasta(tempDir);
                 const passedAll = results.every(r => r.passed);
-                return resolve({ status: passedAll ? 'Accepted' : 'Wrong Answer', results });
+                return resolve({ status: 'Accepted', message: "Correto!" });
             }
 
             const t = tests[index];
@@ -48,17 +49,31 @@ async function runTests(code, tests, containerName) {
 
             const child = exec(runCmd, { timeout: timeoutAluno }, (runErr, studentOut) => {
                 if (runErr) {
-                    const errorType = runErr.signal === 'SIGTERM' ? 'TLE' : 'Runtime Error';
 
                     exec(`docker rm -f ${containerName}`, () => {
-                        results.push({ test: index + 1, passed: false, error: errorType });
-                        executarTeste(index + 1);
+                        limparPasta(tempDir);
+                        return resolve({ 
+                            status: "Time Limit", 
+                            message: `Tempo limite de execução excedido!`
+                        });
                     });
                     return;
                 }
 
-                const isCorrect = normalize(studentOut) === normalize(t.output);
-                results.push({ test: index + 1, passed: isCorrect });
+                const obtido = normalize(studentOut);
+                const esperado = normalize(t.output);
+
+                if (obtido !== esperado) {
+                    limparPasta(tempDir);
+                    return resolve({ 
+                        status: 'Wrong Answer', 
+                        message: "A saída não corresponde!",
+                        input: t.input,
+                        got: studentOut.toString(),
+                        expected: t.output
+                    });
+                }
+
                 executarTeste(index + 1);
             });
 
