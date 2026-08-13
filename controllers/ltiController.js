@@ -5,33 +5,35 @@ const Question = require('../models/Question');
 
 
 async function renderTemplate(res, req, userName, activityId) { 
-    const templatePath = path.resolve(__dirname, '../views/index.html');
-
     try {
         const question = await Question.findOne({ activityId });
         const isProf = req.session.isProfessor === true;
+        const isPreview = req.query.mode === 'preview';
+        const arquivo = (!isProf || isPreview) ? 'aluno.html' : 'professor.html';
+        const templatePath = path.resolve(__dirname, `../views/${arquivo}`);
+        const ltikVal = req.query.ltik || (res.locals && (res.locals.ltik || res.locals.token)) || '';
+
         let exemploTexto = "Nenhum exemplo disponível.";
 
         if (question && question.tests) {
             try {
                 const testes = typeof question.tests === 'string' ? JSON.parse(question.tests) : question.tests;
-                
                 if (Array.isArray(testes) && testes.length > 0) {
                     exemploTexto = `Entrada(s): ${testes[0].input} | Saída Esperada: ${testes[0].output}`;
                 }
-            } catch (jsonErr) {
-                console.error("Erro ao processar testes da questão:", jsonErr);
-                exemploTexto = "Erro nos dados da questão.";
-            }
+            } catch (jsonErr) {}
         }
 
         fs.readFile(templatePath, 'utf8', (err, html) => {
             if (err) return res.status(500).send("Erro ao carregar HTML.");
 
             let finalHtml = html
+                .replace(/{{LTIK_TOKEN}}/g, ltikVal)
                 .replace(/{{NOME_USUARIO}}/g, userName)
                 .replace(/{{NOME_QUESTAO}}/g, question ? question.title : "Questão não configurada")
                 .replace(/{{DESCRICAO_QUESTAO}}/g, question ? question.description : "Aguardando enunciado.")
+                .replace(/{{TITULO_QUESTAO_VAL}}/g, question ? question.title : "")
+                .replace(/{{DESCRICAO_QUESTAO_VAL}}/g, question ? question.description : "")
                 .replace(/{{IS_PROFESSOR_VAL}}/g, isProf ? 'true' : 'false')
                 .replace(/{{ACTIVITY_ID}}/g, activityId)
                 .replace(/{{EXEMPLO_QUESTAO}}/g, exemploTexto);
@@ -71,6 +73,12 @@ async function setup(app) {
     } catch (err) {
         console.log("ℹ️ Plataforma já estava registrada.");
     }
+
+    lti.whitelist(
+        { route: '/js/aluno.js', method: 'get' },
+        { route: '/js/professor.js', method: 'get' },
+        { route: '/favicon.ico', method: 'get' }
+    );
 
     app.use(lti.app);
 

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>CodeCheck-C</title>
+    <meta name="is-professor" content="{{IS_PROFESSOR_VAL}}">
+    <meta name="activity-id" content="{{ACTIVITY_ID}}">
+    <meta name="ltik" content="{{LTIK_TOKEN}}">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+</head>
+<body class="bg-light">
+
+    <div class="container mt-5">
+
+        <div id="setup-professor" class="card shadow mb-4" style="border: 2px solid #00539b;">
+            <div class="card-header text-white" style="background-color: #00539b;">
+                <h5 class="mb-0"><i class="fas fa-cogs"></i> CodeCheck-RUN: Configuração da Atividade</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="font-weight-bold">Título da Questão:</label>
+                    <input type="text" id="titulo-input" class="form-control" placeholder="Ex: Soma de dois números" value="{{TITULO_QUESTAO_VAL}}">
+                </div>
+                <div class="form-group">
+                    <label class="font-weight-bold">Descrição:</label>
+                    <textarea id="desc-input" class="form-control" rows="3" placeholder="O que o aluno deve resolver?">{{DESCRICAO_QUESTAO_VAL}}</textarea>
+                </div>
+
+                <hr>
+                <h6><i class="fas fa-vial"></i> Casos de Teste</h6>
+                <div id="container-testes">
+                    <div class="teste-item border rounded p-3 mb-2 bg-white">
+                        <div class="row">
+                            <div class="col">
+                                <label class="small font-weight-bold">Entradas:</label>
+                                <input type="text" class="form-control input-val" placeholder="ex: 10 20">
+                            </div>
+                            <div class="col">
+                                <label class="small font-weight-bold">Saída Esperada:</label>
+                                <input type="text" class="form-control output-val" placeholder="ex: 30">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="button" id="btnMaisTeste" class="btn btn-outline-info btn-sm mb-4">
+                    <i class="fas fa-plus"></i> Adicionar Exemplo
+                </button>
+
+                <button id="btnSalvar" class="btn btn-success btn-block btn-lg">
+                    Submeter Atividade
+                </button>
+
+                <button type="button" id="btnPreview" class="btn btn-outline-primary btn-block mb-2">
+                    <i class="fas fa-eye"></i> Testar Atividade
+                </button>
+            </div>
+        </div>
+
+        <div id="area-preview" style="display: none; position: relative;">
+            <div class="mb-3">
+                <button id="btnVoltarConfig" class="btn btn-warning shadow-sm font-weight-bold">
+                    <i class="fas fa-arrow-left mr-1"></i> Voltar para Configurações
+                </button>
+            </div>
+            <iframe id="iframe-aluno" src="about:blank" style="width: 100%; height: 750px; border: none; border-radius: 8px;" class="shadow-sm"></iframe>
+        </div>
+
+    </div>
+
+    <script src="/js/aluno.js"></script>
+    <script src="/js/professor.js"></script>
+</body>
+</html>

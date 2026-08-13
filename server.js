@@ -45,7 +45,7 @@ async function start() {
 
         app.use(express.json());
         app.use(express.urlencoded({ extended: true }));
-
+        app.use(express.static(path.join(__dirname, 'public')));
         app.use('/judge', judgeController);
 
         const PORT = process.env.PORT || 3000;

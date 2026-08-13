@@ -19,11 +19,11 @@ RUN npm install
 # 6. Copia todo o resto do seu código para dentro do container
 COPY . .
 
-# 7. Expõe a porta que o seu server.js usa
+# 7. Permissão para criar arquivos temporários (compilação e execução dos códigos dos alunos)
+RUN mkdir -p /app/tmp && chmod 777 /app/tmp
+
+# 8. Expõe a porta que o seu server.js usa
 EXPOSE 3000
 
-# 8. O comando que "dá o play" no seu sistema
+# 9. O comando que "dá o play" no seu sistema
 CMD ["npm", "start"]
-
-# 9. Permissão para criar arquivos temporários (compilação e execução dos códigos dos alunos)
-RUN mkdir -p /app/tmp && chmod 777 /app/tmp
