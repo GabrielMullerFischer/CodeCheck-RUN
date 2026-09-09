@@ -1,14 +1,14 @@
 require("dotenv").config();
 const express = require('express');
 const http = require('http');
-const fs = require('fs');
 const path = require('path');
+const session = require('express-session');
 const { connectDB } = require('./config/database');
 const ltiController = require('./controllers/ltiController');
 const judgeController = require('./controllers/judgeController');
 const { initMinio } = require('./services/minioService');
-const session = require('express-session');
 const ColetorLixo = require('./services/coletorLixo');
+const professorRoutes = require('./routes/professorRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -46,6 +46,7 @@ async function start() {
         app.use(express.json());
         app.use(express.urlencoded({ extended: true }));
         app.use(express.static(path.join(__dirname, 'public')));
+        app.use('/judge', professorRoutes);
         app.use('/judge', judgeController);
 
         const PORT = process.env.PORT || 3000;

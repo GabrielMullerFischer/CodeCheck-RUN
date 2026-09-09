@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>CodeCheck-C</title>
+    <title>CodeCheck-RUN - Professor</title>
     <meta name="is-professor" content="{{IS_PROFESSOR_VAL}}">
     <meta name="activity-id" content="{{ACTIVITY_ID}}">
     <meta name="ltik" content="{{LTIK_TOKEN}}">
@@ -10,55 +10,164 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+    
+    <style>
+        .scrollable-list {
+            max-height: 380px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+            background-color: #fff;
+        }
+        .card-header-tabs .nav-link {
+            color: #ffffff !important;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        .card-header-tabs .nav-link.active {
+            color: #00539b !important;
+            background-color: #ffffff !important;
+        }
+        input[type="search"]::-webkit-search-cancel-button {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            margin-right: 6px;
+            cursor: pointer;
+            background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236c757d'><path d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/></svg>") no-repeat center;
+            background-size: contain;
+            opacity: 0.6;
+            transition: opacity 0.2s ease, transform 0.1s ease;
+        }
+        input[type="search"]::-webkit-search-cancel-button:hover {
+            opacity: 1;
+            transform: scale(1.15);
+        }
+    </style>
 </head>
 <body class="bg-light">
 
-    <div class="container mt-5">
 
-        <div id="setup-professor" class="card shadow mb-4" style="border: 2px solid #00539b;">
+    <div class="container my-5">
+    <div id="setup-professor">
+        <div class="mb-4">
+            <h2 class="text-primary font-weight-bold"><i class="fas fa-code mr-2"></i> CODE CHECK-RUN</h2>
+        </div>
+        <div class="card shadow mb-4" style="border: 2px solid #00539b;">
             <div class="card-header text-white" style="background-color: #00539b;">
-                <h5 class="mb-0"><i class="fas fa-cogs"></i> CodeCheck-RUN: Configuração da Atividade</h5>
+                <ul class="nav nav-tabs card-header-tabs border-0" id="professorTabs" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active font-weight-bold" id="tab-listas-link" data-toggle="tab" href="#tab-listas" role="tab">
+                            <i class="fas fa-list mr-1"></i> Lista de Exercícios
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link font-weight-bold" id="tab-nova-link" data-toggle="tab" href="#tab-nova" role="tab">
+                            <i class="fas fa-plus mr-1"></i> Criar Nova Lista
+                        </a>
+                    </li>
+                </ul>
             </div>
-            <div class="card-body">
-                <div class="form-group">
-                    <label class="font-weight-bold">Título da Questão:</label>
-                    <input type="text" id="titulo-input" class="form-control" placeholder="Ex: Soma de dois números" value="{{TITULO_QUESTAO_VAL}}">
-                </div>
-                <div class="form-group">
-                    <label class="font-weight-bold">Descrição:</label>
-                    <textarea id="desc-input" class="form-control" rows="3" placeholder="O que o aluno deve resolver?">{{DESCRICAO_QUESTAO_VAL}}</textarea>
-                </div>
 
-                <hr>
-                <h6><i class="fas fa-vial"></i> Casos de Teste</h6>
-                <div id="container-testes">
-                    <div class="teste-item border rounded p-3 mb-2 bg-white">
-                        <div class="row">
-                            <div class="col">
-                                <label class="small font-weight-bold">Entradas:</label>
-                                <input type="text" class="form-control input-val" placeholder="ex: 10 20">
+            <div class="card-body">
+                <div class="tab-content" id="professorTabsContent">
+                    <div class="tab-pane fade show active" id="tab-listas" role="tabpanel">
+                        <div class="row mb-3 align-items-center">
+                            <div class="col-md-8">
+                                <h5 class="font-weight-bold text-secondary mb-0">Selecione a lista para esta atividade:</h5>
                             </div>
-                            <div class="col">
-                                <label class="small font-weight-bold">Saída Esperada:</label>
-                                <input type="text" class="form-control output-val" placeholder="ex: 30">
+                            <div class="col-md-4">
+                                <div class="input-group">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                    </div>
+                                    <input type="search" id="input-busca-lista" class="form-control" placeholder="Pesquisar lista...">
+                                </div>
                             </div>
                         </div>
+
+                        <div class="scrollable-list p-2 mb-3" id="container-listas-salvas">
+                            <div class="list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center">
+                                <div class="custom-control custom-radio">
+                                    <input type="radio" id="lista1" name="listaSelecionada" class="custom-control-input" value="1" checked>
+                                    <label class="custom-control-label font-weight-bold" for="lista1">Lista 1: Introdução à Linguagem C (4 exercícios)</label>
+                                </div>
+                                <div>
+                                    <button id="btnPreview" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-eye mr-1"></i> Testar Visão do Aluno
+                                    </button>
+                                    <span class="badge badge-primary badge-pill mr-2">Ativa</span>
+                                </div>
+                            </div>
+
+                            <div class="list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center">
+                                <div class="custom-control custom-radio">
+                                    <input type="radio" id="lista2" name="listaSelecionada" class="custom-control-input" value="2">
+                                    <label class="custom-control-label font-weight-bold" for="lista2">Lista 2: Condicionais e Laços (6 exercícios)</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button id="btnVincularLista" class="btn btn-success btn-lg btn-block">
+                            <i class="fas fa-link mr-2"></i> Vincular Lista Selecionada à Atividade
+                        </button>
                     </div>
+
+                    <div class="tab-pane fade" id="tab-nova" role="tabpanel">
+                        <div class="row align-items-center mb-3">
+                            <div class="col-md-7">
+                                <label class="font-weight-bold">Nome da Nova Lista:</label>
+                                <input type="text" id="nome-nova-lista" class="form-control" placeholder="Ex: Lista de Ponteiros e Alocação">
+                            </div>
+                            <div class="col-md-5 text-right mt-4">
+                                <button type="button" class="btn btn-outline-primary" data-toggle="modal" data-target="#modalNovoExercicio">
+                                    <i class="fas fa-plus-circle mr-1"></i> Adicionar Novo Exercício
+                                </button>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <div class="row mb-2 align-items-center">
+                            <div class="col-md-6">
+                                <span class="font-weight-bold text-secondary">Selecione os exercícios para compor esta lista:</span>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="input-group input-group-sm">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                    </div>
+                                    <input type="search" id="input-busca-exercicio" class="form-control" placeholder="Pesquisar exercício...">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="scrollable-list p-2 mb-3" id="container-exercicios-disponiveis">
+                            <div class="custom-control custom-checkbox border-bottom p-2 pl-4">
+                                <input type="checkbox" class="custom-control-input chk-exercicio" id="ex1" value="id_ex_1">
+                                <label class="custom-control-label w-100 cursor-pointer ml-2" for="ex1">
+                                    <strong>Exercício 1:</strong> Soma de dois números inteiros
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center bg-light p-3 rounded border">
+                            <span class="font-weight-bold text-primary" id="contador-selecionados">
+                                <i class="fas fa-check-square mr-1"></i> 0 exercícios selecionados
+                            </span>
+                            <button id="btnSalvarNovaLista" class="btn btn-success px-5 font-weight-bold">
+                                Salvar Nova Lista
+                            </button>
+                        </div>
+
+                    </div>
+
                 </div>
-                
-                <button type="button" id="btnMaisTeste" class="btn btn-outline-info btn-sm mb-4">
-                    <i class="fas fa-plus"></i> Adicionar Exemplo
-                </button>
-
-                <button id="btnSalvar" class="btn btn-success btn-block btn-lg">
-                    Submeter Atividade
-                </button>
-
-                <button type="button" id="btnPreview" class="btn btn-outline-primary btn-block mb-2">
-                    <i class="fas fa-eye"></i> Testar Atividade
-                </button>
             </div>
         </div>
+    </div>
 
         <div id="area-preview" style="display: none; position: relative;">
             <div class="mb-3">
@@ -71,7 +180,69 @@
 
     </div>
 
-    <script src="/js/aluno.js"></script>
+    <div class="modal fade" id="modalNovoExercicio" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-plus-circle mr-2"></i> Cadastrar Novo Exercício no Banco</h5>
+                    <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="font-weight-bold">Título do Exercício:</label>
+                        <input type="text" id="modal-titulo" class="form-control" placeholder="Ex: Inverter uma String">
+                    </div>
+                    <div class="form-group">
+                        <label class="font-weight-bold">Descrição / Enunciado:</label>
+                        <textarea id="modal-desc" class="form-control" rows="3" placeholder="Explique o que o aluno precisa programar..."></textarea>
+                    </div>
+                    <hr>
+                    <h6 class="font-weight-bold"><i class="fas fa-vial mr-1"></i> Casos de Teste</h6>
+                    <div id="modal-container-testes">
+                        <div class="teste-item border rounded p-2 mb-2 bg-light">
+                            <div class="row">
+                                <div class="col">
+                                    <label class="small font-weight-bold">Entradas:</label>
+                                    <input type="text" class="form-control form-control-sm input-val" placeholder="ex: hello">
+                                </div>
+                                <div class="col">
+                                    <label class="small font-weight-bold">Saída Esperada:</label>
+                                    <input type="text" class="form-control form-control-sm output-val" placeholder="ex: olleh">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" id="modalBtnMaisTeste" class="btn btn-outline-info btn-sm mb-3">
+                        <i class="fas fa-plus"></i> Adicionar outro caso de teste
+                    </button>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                    <button type="button" id="modalBtnSalvarEx" class="btn btn-primary">Salvar Exercício</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
+        <div id="toastNotificacao" class="toast hide shadow-lg border-0" role="alert" aria-live="assertive" aria-atomic="true" data-delay="3000">
+            <div id="toastHeader" class="toast-header text-white">
+                <i id="toastIcone" class="fas mr-2"></i>
+                <strong id="toastTitulo" class="mr-auto">Notificação</strong>
+                <button type="button" class="ml-2 mb-1 close text-white" data-dismiss="toast" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div id="toastBody" class="toast-body bg-white text-dark font-weight-bold">
+                Mensagem de retorno aqui.
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/professor.js"></script>
 </body>
 </html>

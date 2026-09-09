@@ -2,27 +2,55 @@ const path = require('path');
 const fs = require('fs');
 const lti = require('ltijs').Provider;
 const Question = require('../models/Question');
+const ActivityConfig = require('../models/ActivityConfig');
+const ExerciseList = require('../models/ExerciseList');
+const Exercise = require('../models/Exercise');
 
 
 async function renderTemplate(res, req, userName, activityId) { 
     try {
-        const question = await Question.findOne({ activityId });
         const isProf = req.session.isProfessor === true;
         const isPreview = req.query.mode === 'preview';
         const arquivo = (!isProf || isPreview) ? 'aluno.html' : 'professor.html';
         const templatePath = path.resolve(__dirname, `../views/${arquivo}`);
         const ltikVal = req.query.ltik || (res.locals && (res.locals.ltik || res.locals.token)) || '';
 
-        let exemploTexto = "Nenhum exemplo disponível.";
+        let exercicioAtual = null;
+        if (req.query.listId) {
+            const listaPreview = await ExerciseList.findById(req.query.listId).populate('exercises');
+            if (listaPreview && listaPreview.exercises && listaPreview.exercises.length > 0) {
+                exercicioAtual = listaPreview.exercises[0];
+            }
+        }
 
-        if (question && question.tests) {
+        if (!exercicioAtual && activityId) {
+            const config = await ActivityConfig.findOne({ activityId }).populate({
+                path: 'listId',
+                populate: { path: 'exercises' }
+            });
+            if (config && config.listId && config.listId.exercises && config.listId.exercises.length > 0) {
+                exercicioAtual = config.listId.exercises[0];
+            }
+        }
+
+        if (!exercicioAtual && activityId) {
+            exercicioAtual = await Question.findOne({ activityId });
+        }
+
+        let exemploTexto = "Nenhum exemplo disponível.";
+        if (exercicioAtual && exercicioAtual.tests) {
             try {
-                const testes = typeof question.tests === 'string' ? JSON.parse(question.tests) : question.tests;
+                const testes = typeof exercicioAtual.tests === 'string' 
+                    ? JSON.parse(exercicioAtual.tests) 
+                    : exercicioAtual.tests;
                 if (Array.isArray(testes) && testes.length > 0) {
-                    exemploTexto = `Entrada(s): ${testes[0].input} | Saída Esperada: ${testes[0].output}`;
+                    exemploTexto = `Entrada(s): ${testes[0].input || '(vazio)'} | Saída Esperada: ${testes[0].output || ''}`;
                 }
             } catch (jsonErr) {}
         }
+
+        const tituloFinal = exercicioAtual ? exercicioAtual.title : "Questão não configurada";
+        const descFinal = exercicioAtual ? exercicioAtual.description : "Aguardando enunciado pelo professor.";
 
         fs.readFile(templatePath, 'utf8', (err, html) => {
             if (err) return res.status(500).send("Erro ao carregar HTML.");
@@ -30,10 +58,10 @@ async function renderTemplate(res, req, userName, activityId) {
             let finalHtml = html
                 .replace(/{{LTIK_TOKEN}}/g, ltikVal)
                 .replace(/{{NOME_USUARIO}}/g, userName)
-                .replace(/{{NOME_QUESTAO}}/g, question ? question.title : "Questão não configurada")
-                .replace(/{{DESCRICAO_QUESTAO}}/g, question ? question.description : "Aguardando enunciado.")
-                .replace(/{{TITULO_QUESTAO_VAL}}/g, question ? question.title : "")
-                .replace(/{{DESCRICAO_QUESTAO_VAL}}/g, question ? question.description : "")
+                .replace(/{{NOME_QUESTAO}}/g, tituloFinal)
+                .replace(/{{DESCRICAO_QUESTAO}}/g, descFinal)
+                .replace(/{{TITULO_QUESTAO_VAL}}/g, tituloFinal)
+                .replace(/{{DESCRICAO_QUESTAO_VAL}}/g, descFinal)
                 .replace(/{{IS_PROFESSOR_VAL}}/g, isProf ? 'true' : 'false')
                 .replace(/{{ACTIVITY_ID}}/g, activityId)
                 .replace(/{{EXEMPLO_QUESTAO}}/g, exemploTexto);
