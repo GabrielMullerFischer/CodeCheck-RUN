@@ -1,10 +1,8 @@
 const path = require('path');
 const fs = require('fs');
 const lti = require('ltijs').Provider;
-const Question = require('../models/Question');
 const ActivityConfig = require('../models/ActivityConfig');
 const ExerciseList = require('../models/ExerciseList');
-const Exercise = require('../models/Exercise');
 
 
 async function renderTemplate(res, req, userName, activityId) { 
@@ -31,10 +29,6 @@ async function renderTemplate(res, req, userName, activityId) {
             if (config && config.listId && config.listId.exercises && config.listId.exercises.length > 0) {
                 exercicioAtual = config.listId.exercises[0];
             }
-        }
-
-        if (!exercicioAtual && activityId) {
-            exercicioAtual = await Question.findOne({ activityId });
         }
 
         let exemploTexto = "Nenhum exemplo disponível.";
@@ -120,10 +114,12 @@ async function setup(app) {
         );
 
         const activityId = token.platformContext.resource.id; 
+        const userName = token.userInfo?.name || token.userInfo?.given_name || 'Aluno';
 
         req.session.userId = token.user;
         req.session.isProfessor = !!isProf; 
         req.session.activityId = activityId;
+        req.session.userName = userName;
 
         console.log(`[LOGIN] ${token.userInfo.name} logado como ${isProf ? 'Professor' : 'Aluno'}`);
 

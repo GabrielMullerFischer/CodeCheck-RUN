@@ -1,5 +1,6 @@
 const Minio = require('minio');
 
+
 const minioClient = new Minio.Client({
     endPoint: process.env.MINIO_ENDPOINT || 'localhost',
     port: parseInt(process.env.MINIO_PORT) || 9000,
@@ -26,10 +27,82 @@ async function initMinio() {
     }
 }
 
+// Rascunhos isolados por exercício
+async function salvarRascunho(userId, activityId, exerciseId, code) {
+    const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
+    const buffer = Buffer.from(code, 'utf-8');
+    await minioClient.putObject(BUCKET_NAME, objectName, buffer);
+    return objectName;
+}
+
+// Lê rascunho isolado por exercício
+async function lerRascunho(userId, activityId, exerciseId) {
+    const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
+    const stream = await minioClient.getObject(BUCKET_NAME, objectName);
+    return new Promise((resolve, reject) => {
+        let data = '';
+        stream.on('data', chunk => data += chunk);
+        stream.on('end', () => resolve(data));
+        stream.on('error', err => reject(err));
+    });
+}
+
+// Histórico de submissões (até 10 acertos e 10 erros separados)
+async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code) {
+    const pastaTipo = isAccepted ? 'acertos' : 'erros';
+    const prefixo = `historico/${activityId}/${exerciseId}/${userId}/${pastaTipo}/`;
+
+    const objetos = [];
+    const stream = minioClient.listObjectsV2(BUCKET_NAME, prefixo, true);
+
+    await new Promise((resolve) => {
+        stream.on('data', obj => objetos.push(obj));
+        stream.on('end', resolve);
+        stream.on('error', () => resolve());
+    });
+
+    if (objetos.length >= 10) {
+        objetos.sort((a, b) => new Date(a.lastModified) - new Date(b.lastModified));
+        const excedentes = objetos.slice(0, objetos.length - 9);
+        for (const ex of excedentes) {
+            await minioClient.removeObject(BUCKET_NAME, ex.name).catch(() => {});
+        }
+    }
+
+    const timestamp = Date.now();
+    const nomeArquivo = `${prefixo}${timestamp}.c`;
+    await minioClient.putObject(BUCKET_NAME, nomeArquivo, Buffer.from(code, 'utf-8'));
+    
+    return nomeArquivo;
+}
+
+async function lerArquivoPorPath(caminho) {
+    const stream = await minioClient.getObject(BUCKET_NAME, caminho);
+    return new Promise((resolve, reject) => {
+        let data = '';
+        stream.on('data', chunk => data += chunk);
+        stream.on('end', () => resolve(data));
+        stream.on('error', err => reject(err));
+    });
+}
+
+async function removerArquivo(objectName) {
+    try {
+        await minioClient.removeObject(BUCKET_NAME, objectName);
+    } catch (err) {
+        console.error("Erro ao remover arquivo do MinIO:", err.message);
+    }
+}
+
 module.exports = {
     initMinio,
     minioClient,
     BUCKET_NAME,
+    salvarRascunho,
+    lerRascunho,
+    arquivarSubmissao,
+    lerArquivoPorPath,
+    removerArquivo,
     salvarCodigo: async (userId, activityId, codigo) => {
         const nomeArquivo = `aluno_${userId}/atividade_${activityId}.c`;
         const buffer = Buffer.from(codigo, 'utf-8');

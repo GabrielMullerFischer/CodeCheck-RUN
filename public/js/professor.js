@@ -18,7 +18,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalBtnSalvarEx = document.getElementById('modalBtnSalvarEx');
     const inputBuscaLista = document.getElementById('input-busca-lista') || document.querySelector('input[placeholder*="Pesquisar lista"]');
     const inputBuscaExercicio = document.getElementById('input-busca-exercicio') || document.querySelector('input[placeholder*="Pesquisar exercício"]');
+    const tabTurmaLink = document.getElementById('tab-turma-link');
+    const btnAtualizarTurma = document.getElementById('btnAtualizarTurma');
+    const containerTaxas = document.getElementById('container-taxas-exercicios');
+    const tbodyRanking = document.getElementById('tbody-ranking-turma');
+    let dadosTurmaCarregados = [];
+    let submissaoAtivaParaCompilar = null;
+    let alunoSelecionado = null;
+    let listaExerciciosModal = [];
+    let indiceExercicioModal = 0;
+    let metricasGlobaisExercicios = [];
 
+    // Fixar os botões de ação na lista ativa
     function fixarBotoesNaListaAtiva(listId) {
         const radioVinculado = document.querySelector(`input[name="listaSelecionada"][value="${listId}"]`);
         const containerBotoes = btnPreview ? btnPreview.parentElement : null;
@@ -36,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Atualizar o contador de exercícios selecionados
     function atualizarContador() {
         const selecionados = containerExercicios.querySelectorAll('.chk-exercicio:checked').length;
         if (contadorEl) {
@@ -43,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Carregar estado inicial da página
     async function carregarEstadoInicial() {
         const activityIdMeta = document.querySelector('meta[name="activity-id"]');
         const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
@@ -107,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Fixar os botões de ação na lista ativa
     if (btnPreview) {
         btnPreview.onclick = () => {
             if (setupProfessor) setupProfessor.style.display = 'none';
@@ -120,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Voltar para a configuração da atividade
     if (btnVoltarConfig) {
         btnVoltarConfig.onclick = () => {
             if (areaPreview) areaPreview.style.display = 'none';
@@ -127,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Atualizar contador de exercícios selecionados
     if (containerExercicios) {
         containerExercicios.addEventListener('change', (e) => {
             if (e.target.classList.contains('chk-exercicio')) {
@@ -140,17 +156,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const div = document.createElement('div');
             div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
             div.innerHTML = `
-                <button type="button" class="close position-absolute" style="right:8px; top:2px;" onclick="this.parentElement.remove()">
-                    <span>&times;</span>
+                <button type="button" class="close position-absolute" 
+                        style="top: 4px; right: 10px; z-index: 10; width: 26px; height: 26px; line-height: 26px; text-align: center; outline: none; cursor: pointer;" 
+                        onclick="this.closest('.teste-item').remove()" 
+                        title="Remover teste" 
+                        aria-label="Fechar">
+                    <span aria-hidden="true">&times;</span>
                 </button>
                 <div class="row">
                     <div class="col">
                         <label class="small font-weight-bold">Entradas:</label>
-                        <input type="text" class="form-control form-control-sm input-val" placeholder="ex: 10 20">
+                        <input type="text" class="form-control form-control-sm input-val">
                     </div>
                     <div class="col">
                         <label class="small font-weight-bold">Saída Esperada:</label>
-                        <input type="text" class="form-control form-control-sm output-val" placeholder="ex: 30">
+                        <input type="text" class="form-control form-control-sm output-val">
                     </div>
                 </div>
             `;
@@ -158,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Salvar novo exercício
     if (modalBtnSalvarEx) {
         modalBtnSalvarEx.onclick = async () => {
             const title = document.getElementById('modal-titulo')?.value.trim();
@@ -189,6 +210,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (res.ok && data.success) {
                     alert("Exercício cadastrado com sucesso!");
                     $('#modalNovoExercicio').modal('hide');
+                    limparModalNovoExercicio();
+                    carregarEstadoInicial();
                     document.getElementById('modal-titulo').value = '';
                     document.getElementById('modal-desc').value = '';
 
@@ -215,6 +238,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    $('#modalNovoExercicio').on('hidden.bs.modal', () => {
+        limparModalNovoExercicio();
+    });
+
+    // Salvar nova lista de exercícios
     if (btnSalvarNovaLista) {
         btnSalvarNovaLista.onclick = async () => {
             const title = nomeNovaLista?.value.trim();
@@ -270,6 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Vincular lista selecionada à atividade
     if (btnVincularLista) {
         btnVincularLista.onclick = async () => {
             const rad = document.querySelector('input[name="listaSelecionada"]:checked');
@@ -313,6 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Atualizar contador de exercícios selecionados
     if (inputBuscaLista && containerListas) {
         inputBuscaLista.addEventListener('input', () => {
             const termo = inputBuscaLista.value.trim().toLowerCase();
@@ -328,6 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Atualizar contador de exercícios selecionados
     if (inputBuscaExercicio && containerExercicios) {
         inputBuscaExercicio.addEventListener('input', () => {
             const termo = inputBuscaExercicio.value.trim().toLowerCase();
@@ -345,6 +376,346 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
+    }
+
+    // Carregar métricas da turma
+    async function carregarMetricasTurma() {
+        const activityIdMeta = document.querySelector('meta[name="activity-id"]');
+        const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
+        if (!activityId) return;
+
+        if (tbodyRanking) {
+            tbodyRanking.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando dados da turma...</td></tr>';
+        }
+
+        try {
+            const res = await fetch(`/judge/professor/turma-metricas?activityId=${activityId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const data = await res.json();
+
+            if (!data.success) {
+                if (tbodyRanking) tbodyRanking.innerHTML = `<tr><td colspan="7" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
+                return;
+            }
+
+            dadosTurmaCarregados = data.ranking || [];
+            metricasGlobaisExercicios = data.metricasExercicios || [];
+
+            if (containerTaxas) {
+                containerTaxas.innerHTML = '';
+                data.metricasExercicios.forEach(m => {
+                    const col = document.createElement('div');
+                    col.className = 'col-md-4 col-sm-6 mb-2';
+                    col.innerHTML = `
+                        <div class="border rounded p-2 bg-white shadow-sm">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <strong class="text-truncate mr-2" style="max-width: 150px;" title="${m.title}">${m.title}</strong>
+                                <span class="badge ${m.taxaAcerto >= 70 ? 'badge-success' : (m.taxaAcerto >= 40 ? 'badge-warning' : 'badge-danger')}">
+                                    ${m.taxaAcerto}%
+                                </span>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar ${m.taxaAcerto >= 70 ? 'bg-success' : (m.taxaAcerto >= 40 ? 'bg-warning' : 'bg-danger')}" 
+                                     role="progressbar" style="width: ${m.taxaAcerto}%"></div>
+                            </div>
+                            <div class="small text-muted mt-1">
+                                ${m.alunosQueResolveram} acertaram / ${m.totalEnvios} envios
+                            </div>
+                        </div>
+                    `;
+                    containerTaxas.appendChild(col);
+                });
+            }
+
+            if (labelTotalAlunos) labelTotalAlunos.innerText = `${dadosTurmaCarregados.length} alunos participando`;
+
+            if (tbodyRanking) {
+                tbodyRanking.innerHTML = '';
+                if (dadosTurmaCarregados.length === 0) {
+                    tbodyRanking.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Nenhum aluno realizou submissões nesta atividade ainda.</td></tr>';
+                } else {
+                    dadosTurmaCarregados.forEach((aluno, idx) => {
+                        const tr = document.createElement('tr');
+                        const dataUltimoEnvio = aluno.ultimaAtividade 
+                            ? new Date(aluno.ultimaAtividade).toLocaleDateString() + ' ' + new Date(aluno.ultimaAtividade).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : '-';
+
+                        const medalha = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `${idx + 1}º`));
+
+                        tr.innerHTML = `
+                            <td class="font-weight-bold text-center">${medalha}</td>
+                            <td>
+                                <strong>${aluno.userName}</strong>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge ${aluno.totalResolvidos === data.totalExercicios ? 'badge-success' : 'badge-primary'} p-2">
+                                    ${aluno.totalResolvidos} / ${data.totalExercicios}
+                                </span>
+                            </td>
+                            <td class="text-center font-weight-bold text-secondary">
+                                ${aluno.tempoTotalMs > 0 ? `${aluno.tempoTotalMs} ms` : (aluno.totalResolvidos > 0 ? '< 1 ms' : '-')}
+                            </td>
+                            <td class="text-center text-muted">
+                                ${aluno.totalTentativas} tentativas
+                            </td>
+                            <td class="text-center text-muted small">
+                                ${dataUltimoEnvio}
+                            </td>
+                            <td class="text-right pr-4">
+                                <button class="btn btn-sm btn-outline-primary btn-abrir-dossie" data-userid="${aluno.userId}">
+                                    <i class="fas fa-folder-open mr-1"></i> Ver Submissões
+                                </button>
+                            </td>
+                        `;
+                        tbodyRanking.appendChild(tr);
+                    });
+
+                    tbodyRanking.querySelectorAll('.btn-abrir-dossie').forEach(btn => {
+                        btn.onclick = () => abrirDossieAluno(btn.dataset.userid);
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Erro ao carregar dados da turma:", e);
+        }
+    }
+
+    if (window.$ && tabTurmaLink) {
+        $(tabTurmaLink).on('shown.bs.tab', carregarMetricasTurma);
+    }
+    if (tabTurmaLink) {
+        tabTurmaLink.addEventListener('click', carregarMetricasTurma);
+    }
+    if (btnAtualizarTurma) {
+        btnAtualizarTurma.onclick = carregarMetricasTurma;
+    }
+
+    function abrirDossieAluno(userId) {
+        alunoSelecionado = dadosTurmaCarregados.find(a => a.userId === userId);
+        if (!alunoSelecionado) return;
+
+        document.getElementById('modalAlunoTitulo').innerHTML = `
+            <i class="fas fa-user-graduate mr-2 text-primary"></i> Submissões de: <strong>${alunoSelecionado.userName}</strong>
+        `;
+
+        listaExerciciosModal = metricasGlobaisExercicios || []; 
+        indiceExercicioModal = 0;
+
+        montarNavegacaoModal();
+        carregarExercicioNoModal(0);
+
+        const btnRecompilar = document.getElementById('btnRecompilarCodigoAluno');
+        if (btnRecompilar) {
+            btnRecompilar.onclick = async () => {
+                if (!submissaoAtivaParaCompilar) return;
+
+                const code = document.getElementById('modalInspecionarEditor').value;
+                const divResultado = document.getElementById('modalInspecionarResultado');
+                const activityIdMeta = document.querySelector('meta[name="activity-id"]');
+                const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
+
+                divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Executando testes no Docker...</div>';
+                btnRecompilar.disabled = true;
+
+                try {
+                    const res = await fetch('/judge/submit' + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            code,
+                            activityId,
+                            exerciseId: submissaoAtivaParaCompilar.exerciseId,
+                            userId: 'professor_test'
+                        })
+                    });
+                    const data = await res.json();
+
+                    if (data.status === 'Accepted') {
+                        divResultado.innerHTML = `<div class="alert alert-success py-1 small"><strong>Aceito!</strong> Tempo de execução: ${data.executionTime} ms</div>`;
+                    } else if (data.status === 'Compilation Error') {
+                        divResultado.innerHTML = `<div class="alert alert-warning py-1 small"><strong>Erro de Compilação:</strong><pre class="bg-dark text-white p-1 mt-1 mb-0">${data.details || ''}</pre></div>`;
+                    } else {
+                        divResultado.innerHTML = `<div class="alert alert-danger py-1 small"><strong>${data.status}:</strong> ${data.message || 'Falhou nos testes.'}</div>`;
+                    }
+                } catch (e) {
+                    divResultado.innerHTML = '<div class="alert alert-danger py-1 small">Erro de conexão com o servidor.</div>';
+                } finally {
+                    btnRecompilar.disabled = false;
+                }
+            };
+        }
+
+        $('#modalHistoricoAluno').modal('show');
+    }
+
+    function montarNavegacaoModal() {
+        const container = document.getElementById('modalContainerNavExercicios');
+        if (!container) return;
+        container.innerHTML = '';
+
+        listaExerciciosModal.forEach((ex, idx) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `btn btn-sm ${idx === indiceExercicioModal ? 'btn-primary font-weight-bold shadow-sm' : 'btn-outline-secondary'} px-3`;
+            btn.style.minWidth = '38px';
+            btn.innerText = idx + 1;
+
+            btn.onclick = () => carregarExercicioNoModal(idx);
+            container.appendChild(btn);
+        });
+
+        const btnAnt = document.getElementById('modalBtnExAnterior');
+        const btnProx = document.getElementById('modalBtnExProximo');
+        if (btnAnt) {
+            btnAnt.disabled = (indiceExercicioModal === 0);
+            btnAnt.onclick = () => carregarExercicioNoModal(indiceExercicioModal - 1);
+        }
+        if (btnProx) {
+            btnProx.disabled = (indiceExercicioModal === listaExerciciosModal.length - 1);
+            btnProx.onclick = () => carregarExercicioNoModal(indiceExercicioModal + 1);
+        }
+    }
+
+    function carregarExercicioNoModal(index) {
+        if (index < 0 || index >= listaExerciciosModal.length) return;
+        indiceExercicioModal = index;
+
+        const exAtual = listaExerciciosModal[indiceExercicioModal];
+        montarNavegacaoModal();
+
+        const tituloEl = document.getElementById('modalTituloExercicioAtivo');
+        const badgeStatus = document.getElementById('modalBadgeStatusExercicio');
+        if (tituloEl) tituloEl.innerText = `Exercício ${index + 1}: ${exAtual.title}`;
+
+        const acertosEx = alunoSelecionado.submissoesAcertos.filter(s => String(s.exerciseId) === String(exAtual.exerciseId));
+        const errosEx = alunoSelecionado.submissoesErros.filter(s => String(s.exerciseId) === String(exAtual.exerciseId));
+
+        if (badgeStatus) {
+            if (acertosEx.length > 0) {
+                badgeStatus.className = 'badge badge-success p-1';
+                badgeStatus.innerText = 'Resolvido';
+            } else if (errosEx.length > 0) {
+                badgeStatus.className = 'badge badge-danger p-1';
+                badgeStatus.innerText = 'Não Resolvido';
+            } else {
+                badgeStatus.className = 'badge badge-secondary p-1';
+                badgeStatus.innerText = 'Sem Envios';
+            }
+        }
+
+        document.getElementById('count-acertos').innerText = acertosEx.length;
+        document.getElementById('count-erros').innerText = errosEx.length;
+
+        const editor = document.getElementById('modalInspecionarEditor');
+        const labelArquivo = document.getElementById('labelInspecaoArquivo');
+        const divResultado = document.getElementById('modalInspecionarResultado');
+        const btnCompilar = document.getElementById('btnRecompilarCodigoAluno');
+        editor.value = '// Selecione um envio acima para carregar o código...';
+        divResultado.innerHTML = '';
+        btnCompilar.disabled = true;
+        submissaoAtivaParaCompilar = null;
+
+        let menorTempo = null;
+        if (acertosEx.length > 0) {
+            menorTempo = Math.min(...acertosEx.map(s => s.executionTime));
+        }
+
+        const tbodyAcertos = document.getElementById('tbody-modal-acertos');
+        tbodyAcertos.innerHTML = '';
+        if (acertosEx.length === 0) {
+            tbodyAcertos.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Nenhum acerto registrado para este exercício.</td></tr>';
+        } else {
+            acertosEx.forEach(sub => {
+                const tr = document.createElement('tr');
+                const isMelhor = sub.executionTime === menorTempo;
+                const dataFormat = new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                tr.innerHTML = `
+                    <td>
+                        <span class="badge badge-success mr-1">Accepted</span>
+                        ${isMelhor ? '<span class="badge badge-warning text-dark font-weight-bold"><i class="fas fa-star mr-1"></i>Melhor Tempo (Imunizado)</span>' : ''}
+                    </td>
+                    <td><strong>${sub.executionTime} ms</strong></td>
+                    <td class="text-muted small">${dataFormat}</td>
+                    <td class="text-right">
+                        <button class="btn btn-xs btn-outline-primary py-0 px-2 btn-carregar-codigo" 
+                                data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}">
+                            <i class="fas fa-eye mr-1"></i> Inspecionar
+                        </button>
+                    </td>
+                `;
+                tbodyAcertos.appendChild(tr);
+            });
+        }
+
+        const tbodyErros = document.getElementById('tbody-modal-erros');
+        tbodyErros.innerHTML = '';
+        if (errosEx.length === 0) {
+            tbodyErros.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Nenhum erro registrado para este exercício.</td></tr>';
+        } else {
+            errosEx.forEach(sub => {
+                const tr = document.createElement('tr');
+                const dataFormat = new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                tr.innerHTML = `
+                    <td><span class="badge badge-danger">${sub.status}</span></td>
+                    <td class="text-muted small">${dataFormat}</td>
+                    <td class="text-right">
+                        <button class="btn btn-xs btn-outline-danger py-0 px-2 btn-carregar-codigo" 
+                                data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}">
+                            <i class="fas fa-eye mr-1"></i> Inspecionar
+                        </button>
+                    </td>
+                `;
+                tbodyErros.appendChild(tr);
+            });
+        }
+
+        $('#modalHistoricoAluno').find('.btn-carregar-codigo').off('click').on('click', async function() {
+            const codePath = this.dataset.codepath;
+            const exId = this.dataset.ex;
+            const exTitle = this.dataset.title;
+
+            labelArquivo.innerHTML = `<i class="fas fa-file-code mr-1"></i> Inspecionando: <strong>${exTitle}</strong> (${codePath})`;
+            editor.value = "// Carregando código do MinIO...";
+            divResultado.innerHTML = '';
+            submissaoAtivaParaCompilar = { exerciseId: exId };
+
+            try {
+                const res = await fetch(`/judge/professor/submissao-codigo?codePath=${encodeURIComponent(codePath)}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+                const d = await res.json();
+                editor.value = d.code || "// Sem código gravado.";
+                btnCompilar.disabled = false;
+            } catch (err) {
+                editor.value = "// Erro ao buscar arquivo no MinIO.";
+            }
+        });
+    }
+
+    // Limpar campos do novo exercício
+    function limparModalNovoExercicio() {
+        const inputTitulo = document.getElementById('modal-titulo');
+        const inputDesc = document.getElementById('modal-desc');
+        const containerTestes = document.getElementById('modal-container-testes');
+
+        if (inputTitulo) inputTitulo.value = '';
+        if (inputDesc) inputDesc.value = '';
+
+        if (containerTestes) {
+            containerTestes.innerHTML = `
+                <div class="teste-item border rounded p-2 mb-2 bg-light position-relative">
+                    <div class="row">
+                        <div class="col">
+                            <label class="small font-weight-bold">Entradas:</label>
+                            <input type="text" class="form-control form-control-sm input-val">
+                        </div>
+                        <div class="col">
+                            <label class="small font-weight-bold">Saída Esperada:</label>
+                            <input type="text" class="form-control form-control-sm output-val">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     }
 
     carregarEstadoInicial();
