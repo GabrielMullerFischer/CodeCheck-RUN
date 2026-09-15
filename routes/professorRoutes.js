@@ -6,11 +6,47 @@ const ExerciseList = require('../models/ExerciseList');
 const ActivityConfig = require('../models/ActivityConfig');
 const Submission = require('../models/Submission');
 
-// Salvar Exercício
+async function gerarTituloUnicoExercicio(baseTitle, authorId) {
+    let title = baseTitle;
+    let count = 1;
+    while (await Exercise.findOne({ title, authorId })) {
+        title = `${baseTitle} (${count})`;
+        count++;
+    }
+    return title;
+}
+
+async function gerarTituloUnicoLista(baseTitle, authorId) {
+    let title = baseTitle;
+    let count = 1;
+    while (await ExerciseList.findOne({ title, authorId })) {
+        title = `${baseTitle} (${count})`;
+        count++;
+    }
+    return title;
+}
+
+// Cria novo exercício
 router.post('/exercicio', async (req, res) => {
     try {
-        const { title, description, tests } = req.body;
-        const exercicio = await Exercise.create({ title, description, tests });
+        const { title, description, tests, isPrivate } = req.body;
+        const authorId = req.session?.userId || 'preview_user';
+        const authorName = req.session?.userName || 'Professor';
+
+        const tituloFormatado = (title || '').trim();
+        const existe = await Exercise.findOne({ title: tituloFormatado, authorId });
+        if (existe) {
+            return res.status(400).json({ success: false, error: "Você já possui um exercício cadastrado com este título." });
+        }
+
+        const exercicio = await Exercise.create({ 
+            title: tituloFormatado, 
+            description, 
+            tests, 
+            authorId, 
+            authorName,
+            isPublic: !isPrivate
+        });
         res.json({ success: true, exercicio });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -20,8 +56,23 @@ router.post('/exercicio', async (req, res) => {
 // Salvar Nova Lista
 router.post('/lista', async (req, res) => {
     try {
-        const { title, exercises } = req.body;
-        const lista = await ExerciseList.create({ title, exercises });
+        const { title, exercises, isPrivate } = req.body;
+        const authorId = req.session?.userId || 'preview_user';
+        const authorName = req.session?.userName || 'Professor';
+
+        const tituloFormatado = (title || '').trim();
+        const existe = await ExerciseList.findOne({ title: tituloFormatado, authorId });
+        if (existe) {
+            return res.status(400).json({ success: false, error: "Você já possui uma lista cadastrada com este título." });
+        }
+
+        const lista = await ExerciseList.create({ 
+            title: tituloFormatado, 
+            exercises, 
+            authorId, 
+            authorName,
+            isPublic: !isPrivate
+        });
         res.json({ success: true, lista });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -78,9 +129,9 @@ router.get('/atividade/exercicios', async (req, res) => {
         const listaCompleta = await ExerciseList.findById(targetListId).populate('exercises');
         
         if (!listaCompleta) {
-            return res.status(404).json({
-                success: false,
-                error: "A lista vinculada não foi encontrada no banco de dados."
+            return res.status(404).json({ 
+                success: false, 
+                error: "A lista vinculada não foi encontrada no banco de dados." 
             });
         }
 
@@ -97,14 +148,24 @@ router.get('/atividade/exercicios', async (req, res) => {
 router.get('/professor/dados', async (req, res) => {
     try {
         const { activityId } = req.query;
-        const exercicios = await Exercise.find().sort({ _id: -1 });
-        const listas = await ExerciseList.find().populate('exercises').sort({ _id: -1 });
+        const meuId = String(req.session?.userId || 'preview_user');
+
+        const todasListas = await ExerciseList.find().populate('exercises').sort({ _id: -1 }).lean();
+        const minhasListas = todasListas.filter(l => String(l.authorId) === meuId);
+        const bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
+
+        const todosExercicios = await Exercise.find().sort({ _id: -1 }).lean();
+        const meusExercicios = todosExercicios.filter(e => String(e.authorId) === meuId);
+        const bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
+
         const vinculo = activityId ? await ActivityConfig.findOne({ activityId }) : null;
 
         res.json({
             success: true,
-            exercicios,
-            listas,
+            minhasListas,
+            bancoUniversalListas,
+            meusExercicios,
+            bancoUniversalExercicios,
             listaVinculadaId: vinculo ? vinculo.listId : null
         });
     } catch (e) {
@@ -133,7 +194,10 @@ router.get('/professor/turma-metricas', async (req, res) => {
             mapaExercicios[String(ex._id)] = ex.title;
         });
 
-        const submissoes = await Submission.find({ activityId }).sort({ createdAt: -1 }).lean();
+        const submissoes = await Submission.find({ 
+            activityId, 
+            userId: { $nin: ['professor_test', 'preview_user'] } 
+        }).sort({ createdAt: -1 }).lean();
 
         const metricasExercicios = exercicios.map(ex => {
             const subsEx = submissoes.filter(s => String(s.exerciseId) === String(ex._id));
@@ -220,6 +284,62 @@ router.get('/professor/turma-metricas', async (req, res) => {
         });
     } catch (e) {
         console.error("Erro nas métricas:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Importar lista de exercícios
+router.post('/professor/exercicio/importar', async (req, res) => {
+    try {
+        const { exerciseId } = req.body;
+        const meuId = req.session?.userId || 'preview_user';
+        const meuNome = req.session?.userName || 'Professor';
+
+        const exOriginal = await Exercise.findById(exerciseId);
+        if (!exOriginal) {
+            return res.status(404).json({ success: false, error: "Exercício não encontrado." });
+        }
+
+        const novoTitulo = await gerarTituloUnicoExercicio(exOriginal.title, meuId);
+
+        const novoExercicio = await Exercise.create({
+            title: novoTitulo,
+            description: exOriginal.description,
+            tests: exOriginal.tests,
+            authorId: meuId,
+            authorName: meuNome,
+            isPublic: exOriginal.isPublic
+        });
+
+        res.json({ success: true, exercicio: novoExercicio });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/professor/lista/importar', async (req, res) => {
+    try {
+        const { listId } = req.body;
+        const meuId = req.session?.userId || 'preview_user';
+        const meuNome = req.session?.userName || 'Professor';
+
+        const listaOriginal = await ExerciseList.findById(listId);
+        if (!listaOriginal) {
+            return res.status(404).json({ success: false, error: "Lista não encontrada." });
+        }
+
+        const novoTitulo = await gerarTituloUnicoLista(listaOriginal.title, meuId);
+
+        const novaLista = await ExerciseList.create({
+            title: novoTitulo,
+            authorId: meuId,
+            authorName: meuNome,
+            exercises: listaOriginal.exercises,
+            isPublic: false
+        });
+
+        res.json({ success: true, lista: novaLista });
+    } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });

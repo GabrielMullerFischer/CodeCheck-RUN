@@ -49,7 +49,6 @@
 </head>
 <body class="bg-light">
 
-
     <div class="container-fluid px-4 my-4" style="max-width: 1700px;">
     <div id="setup-professor">
         <div class="mb-4">
@@ -69,9 +68,9 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                    <a class="nav-link font-weight-bold" id="tab-turma-link" data-toggle="tab" href="#tab-turma" role="tab">
-                        <i class="fas fa-chart-line mr-1"></i> Acompanhar Turma
-                    </a>
+                        <a class="nav-link font-weight-bold" id="tab-turma-link" data-toggle="tab" href="#tab-turma" role="tab">
+                            <i class="fas fa-chart-line mr-1"></i> Acompanhar Turma
+                        </a>
                     </li>
                 </ul>
             </div>
@@ -79,45 +78,59 @@
             <div class="card-body">
                 <div class="tab-content" id="professorTabsContent">
                     <div class="tab-pane fade show active" id="tab-listas" role="tabpanel">
-                        <div class="row mb-3 align-items-center">
-                            <div class="col-md-8">
-                                <h5 class="font-weight-bold text-secondary mb-0">Selecione a lista para esta atividade:</h5>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="input-group">
-                                    <div class="input-group-prepend">
-                                        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                        <ul class="nav nav-pills nav-fill mb-3" id="pills-tipo-lista" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active font-weight-bold" id="pill-minhas-listas" data-toggle="pill" href="#tab-minhas-listas" role="tab">
+                                    <i class="fas fa-user-check mr-1"></i> Minhas Listas
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link font-weight-bold" id="pill-banco-universal" data-toggle="pill" href="#tab-banco-universal" role="tab">
+                                    <i class="fas fa-globe mr-1"></i> Banco Universal
+                                </a>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content" id="pills-tipo-lista-content">
+                            <div class="tab-pane fade show active" id="tab-minhas-listas" role="tabpanel">
+                                <div class="row mb-3 align-items-center">
+                                    <div class="col-md-8">
+                                        <h5 class="font-weight-bold text-secondary mb-0">Selecione a lista para esta atividade:</h5>
                                     </div>
-                                    <input type="search" id="input-busca-lista" class="form-control" placeholder="Pesquisar lista...">
+                                    <div class="col-md-4">
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                            </div>
+                                            <input type="search" id="input-busca-lista" class="form-control" placeholder="Pesquisar lista...">
+                                        </div>
+                                    </div>
                                 </div>
+
+                                <div class="scrollable-list p-2 mb-3" id="container-listas-salvas"></div>
+
+                                <button id="btnVincularLista" class="btn btn-success btn-lg btn-block">
+                                    <i class="fas fa-link mr-2"></i> Vincular Lista Selecionada à Atividade
+                                </button>
+                            </div>
+
+                            <div class="tab-pane fade" id="tab-banco-universal" role="tabpanel">
+                                <div class="row mb-3 align-items-center">
+                                    <div class="col-md-8">
+                                        <h5 class="font-weight-bold text-secondary mb-0">Listas compartilhadas pela comunidade:</h5>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                            </div>
+                                            <input type="search" id="input-busca-banco-universal" class="form-control" placeholder="Pesquisar lista ou autor...">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="scrollable-list p-2 mb-3" id="container-banco-universal"></div>
                             </div>
                         </div>
-
-                        <div class="scrollable-list p-2 mb-3" id="container-listas-salvas">
-                            <div class="list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center">
-                                <div class="custom-control custom-radio">
-                                    <input type="radio" id="lista1" name="listaSelecionada" class="custom-control-input" value="1" checked>
-                                    <label class="custom-control-label font-weight-bold" for="lista1">Lista 1: Introdução à Linguagem C (4 exercícios)</label>
-                                </div>
-                                <div>
-                                    <button id="btnPreview" class="btn btn-outline-primary btn-sm">
-                                        <i class="fas fa-eye mr-1"></i> Testar Visão do Aluno
-                                    </button>
-                                    <span class="badge badge-primary badge-pill mr-2">Ativa</span>
-                                </div>
-                            </div>
-
-                            <div class="list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center">
-                                <div class="custom-control custom-radio">
-                                    <input type="radio" id="lista2" name="listaSelecionada" class="custom-control-input" value="2">
-                                    <label class="custom-control-label font-weight-bold" for="lista2">Lista 2: Condicionais e Laços (6 exercícios)</label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <button id="btnVincularLista" class="btn btn-success btn-lg btn-block">
-                            <i class="fas fa-link mr-2"></i> Vincular Lista Selecionada à Atividade
-                        </button>
                     </div>
 
                     <div class="tab-pane fade" id="tab-nova" role="tabpanel">
@@ -125,6 +138,12 @@
                             <div class="col-md-7">
                                 <label class="font-weight-bold">Nome da Nova Lista:</label>
                                 <input type="text" id="nome-nova-lista" class="form-control">
+                                <div class="custom-control custom-checkbox mt-2">
+                                    <input type="checkbox" class="custom-control-input" id="chk-lista-privada">
+                                    <label class="custom-control-label small text-muted cursor-pointer" for="chk-lista-privada">
+                                        <i class="fas fa-lock mr-1"></i> Tornar lista privada (apenas para meu uso)
+                                    </label>
+                                </div>
                             </div>
                             <div class="col-md-5 text-right mt-4">
                                 <button type="button" class="btn btn-outline-primary" data-toggle="modal" data-target="#modalNovoExercicio">
@@ -135,26 +154,52 @@
 
                         <hr>
 
-                        <div class="row mb-2 align-items-center">
-                            <div class="col-md-6">
-                                <span class="font-weight-bold text-secondary">Selecione os exercícios para compor esta lista:</span>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="input-group input-group-sm">
-                                    <div class="input-group-prepend">
-                                        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
-                                    </div>
-                                    <input type="search" id="input-busca-exercicio" class="form-control" placeholder="Pesquisar exercício...">
-                                </div>
-                            </div>
-                        </div>
+                        <ul class="nav nav-pills nav-fill mb-2" id="pills-tipo-exercicio" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active py-1 font-weight-bold" id="pill-meus-ex" data-toggle="pill" href="#tab-meus-exercicios" role="tab">
+                                    <i class="fas fa-user-edit mr-1"></i> Meus Exercícios
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link py-1 font-weight-bold" id="pill-comunidade-ex" data-toggle="pill" href="#tab-banco-exercicios" role="tab">
+                                    <i class="fas fa-globe mr-1"></i> Banco Universal de Exercícios
+                                </a>
+                            </li>
+                        </ul>
 
-                        <div class="scrollable-list p-2 mb-3" id="container-exercicios-disponiveis">
-                            <div class="custom-control custom-checkbox border-bottom p-2 pl-4">
-                                <input type="checkbox" class="custom-control-input chk-exercicio" id="ex1" value="id_ex_1">
-                                <label class="custom-control-label w-100 cursor-pointer ml-2" for="ex1">
-                                    <strong>Exercício 1:</strong> Soma de dois números inteiros
-                                </label>
+                        <div class="tab-content mb-3">
+                            <div class="tab-pane fade show active" id="tab-meus-exercicios" role="tabpanel">
+                                <div class="row mb-2 align-items-center">
+                                    <div class="col-md-6">
+                                        <span class="font-weight-bold text-secondary">Selecione os exercícios para compor esta lista:</span>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="input-group input-group-sm">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                            </div>
+                                            <input type="search" id="input-busca-exercicio" class="form-control" placeholder="Pesquisar exercício...">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="scrollable-list p-2" id="container-exercicios-disponiveis"></div>
+                            </div>
+
+                            <div class="tab-pane fade" id="tab-banco-exercicios" role="tabpanel">
+                                <div class="row mb-2 align-items-center">
+                                    <div class="col-md-6">
+                                        <span class="font-weight-bold text-secondary">Exercícios públicos da comunidade:</span>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="input-group input-group-sm">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                            </div>
+                                            <input type="search" id="input-busca-banco-ex" class="form-control" placeholder="Pesquisar exercício público...">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="scrollable-list p-2" id="container-banco-exercicios-comunidade"></div>
                             </div>
                         </div>
 
@@ -339,6 +384,12 @@
                     <div class="form-group">
                         <label class="font-weight-bold">Descrição da atividade:</label>
                         <textarea id="modal-desc" class="form-control" rows="3" placeholder="Explique o que o aluno precisa programar..."></textarea>
+                        <div class="custom-control custom-checkbox mt-2">
+                            <input type="checkbox" class="custom-control-input" id="modal-exercicio-privado">
+                            <label class="custom-control-label small text-muted cursor-pointer" for="modal-exercicio-privado">
+                                <i class="fas fa-lock mr-1"></i> Tornar exercício privado (não compartilhar no Banco Universal)
+                            </label>
+                        </div>
                     </div>
                     <hr>
                     <h6 class="font-weight-bold"><i class="fas fa-vial mr-1"></i> Casos de Teste</h6>
@@ -363,6 +414,76 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
                     <button type="button" id="modalBtnSalvarEx" class="btn btn-primary">Salvar Exercício</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Visualizar Exercícios de uma Lista do Banco Universal -->
+    <div class="modal fade" id="modalVerExerciciosLista" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header bg-light py-2">
+                    <h5 class="modal-title font-weight-bold text-dark" id="modalVerListaTitulo">
+                        <i class="fas fa-list-alt text-primary mr-2"></i> Exercícios da Lista
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body p-3" style="max-height: 520px; overflow-y: auto;">
+                    <div class="mb-3 d-flex justify-content-between align-items-center pb-2 border-bottom">
+                        <div>
+                            <span class="text-muted small">Criado por:</span>
+                            <strong id="modalVerListaAutor" class="text-dark ml-1">-</strong>
+                        </div>
+                        <span id="modalVerListaQtd" class="badge badge-info p-2 font-weight-bold">0 exercícios</span>
+                    </div>
+                    <div id="modalVerListaConteudo"></div>
+                </div>
+                <div class="modal-footer py-2 bg-light d-flex justify-content-between">
+                    <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Fechar</button>
+                    <button type="button" id="modalBtnImportarListaAberta" class="btn btn-sm btn-success font-weight-bold">
+                        <i class="fas fa-file-import mr-1"></i> Importar esta Lista
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Visualizar Exercício Individual do Banco Universal -->
+    <div class="modal fade" id="modalVerExercicioIndividual" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header bg-light py-2">
+                    <h5 class="modal-title font-weight-bold text-dark" id="modalVerExTitulo">
+                        <i class="fas fa-file-code text-primary mr-2"></i> Exercício
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body p-3" style="max-height: 520px; overflow-y: auto;">
+                    <div class="mb-3 d-flex justify-content-between align-items-center pb-2 border-bottom">
+                        <div>
+                            <span class="text-muted small">Criado por:</span>
+                            <strong id="modalVerExAutor" class="text-dark ml-1">-</strong>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="font-weight-bold text-secondary mb-1">Enunciado:</label>
+                        <div id="modalVerExDescricao" class="p-3 bg-light border rounded text-secondary" style="white-space: pre-line;"></div>
+                    </div>
+                    <div>
+                        <label class="font-weight-bold text-secondary mb-1"><i class="fas fa-vial mr-1"></i> Exemplo de Caso de Teste:</label>
+                        <div id="modalVerExTeste" class="p-2 border rounded bg-white small"></div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2 bg-light d-flex justify-content-between">
+                    <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Fechar</button>
+                    <button type="button" id="modalBtnCopiarExAberto" class="btn btn-sm btn-success font-weight-bold">
+                        <i class="fas fa-file-import mr-1"></i> Copiar para Meus Exercícios
+                    </button>
                 </div>
             </div>
         </div>
