@@ -41,6 +41,26 @@ router.post('/submit', async (req, res) => {
         }
 
         const idExercicioFinal = exercicioAlvo._id;
+        const timeLimit = exercicioAlvo.timeLimit || 1000;
+
+        const isProfessor = req.session?.isProfessor === true || userId === 'professor_test' || userId === 'preview_user';
+
+        if (!isProfessor && activityId && activityId !== 'preview') {
+            const configAtividade = await ActivityConfig.findOne({ activityId });
+            if (configAtividade && configAtividade.isEvaluative) {
+                const totalTentativas = await Submission.countDocuments({
+                    userId,
+                    activityId,
+                    exerciseId: idExercicioFinal
+                });
+                const maxTentativas = configAtividade.maxAttempts || 3;
+                if (totalTentativas >= maxTentativas) {
+                    return res.status(403).json({
+                        error: `Limite de tentativas atingido (${maxTentativas}/${maxTentativas}) para este exercício.`
+                    });
+                }
+            }
+        }
 
         await minioService.salvarRascunho(userId, activityId || 'preview', idExercicioFinal, code);
 
@@ -55,12 +75,11 @@ router.post('/submit', async (req, res) => {
         }
 
         const inicioExec = Date.now();
-        const resultado = await judgeService.runTests(code, testesParaExecutar, containerName);
+        const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit);
         const tempoGastoMs = Date.now() - inicioExec;
 
         const isAccepted = resultado.status === 'Accepted';
 
-        const isProfessor = req.session?.isProfessor === true || userId === 'professor_test' || userId === 'preview_user';
         if (isProfessor) {
             return res.json({
                 ...resultado,
@@ -165,6 +184,18 @@ router.get('/ranking', async (req, res) => {
 
         const submissoes = await Submission.find({ activityId }).lean();
 
+        const configAtividade = await ActivityConfig.findOne({ activityId }).lean();
+        const isEvaluative = configAtividade ? !!configAtividade.isEvaluative : false;
+        const maxAttempts = configAtividade && configAtividade.maxAttempts ? configAtividade.maxAttempts : 3;
+        let minhasTentativasEx = 0;
+        let timeLimitEx = 1000;
+
+        if (exerciseId) {
+            minhasTentativasEx = submissoes.filter(s => s.userId === userId && String(s.exerciseId) === String(exerciseId)).length;
+            const exObj = await Exercise.findById(exerciseId).lean();
+            if (exObj && exObj.timeLimit) timeLimitEx = exObj.timeLimit;
+        }
+
         const statusMeusExercicios = {};
         submissoes.filter(s => s.userId === userId).forEach(s => {
             const exId = String(s.exerciseId);
@@ -236,6 +267,10 @@ router.get('/ranking', async (req, res) => {
 
         res.json({
             success: true,
+            isEvaluative,
+            maxAttempts,
+            minhasTentativasEx,
+            timeLimit: timeLimitEx,
             statusMeusExercicios,
             exercicio: {
                 totalResolvidos: rankingExercicio.length,

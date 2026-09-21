@@ -6,6 +6,7 @@ const ExerciseSchema = new mongoose.Schema({
     authorId: { type: String, default: 'sistema' },
     authorName: { type: String, default: 'Professor' },
     isPublic: { type: Boolean, default: true },
+    timeLimit: { type: Number, default: 1000 },
     tests: [{
         input: { type: String, required: true },
         output: { type: String, required: true }

@@ -109,7 +109,12 @@
             <div class="col-xl-6 col-lg-6 col-md-8 mb-3">
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-body p-4">
-                        <h4 class="text-primary font-weight-bold mb-2" id="nome-questao">{{NOME_QUESTAO}}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
+                            <h4 class="text-primary font-weight-bold mb-0" id="nome-questao">{{NOME_QUESTAO}}</h4>
+                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold" style="font-size: 0.85rem;">
+                                <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">1000 ms</span>
+                            </span>
+                        </div>
                         <p class="text-secondary" id="descricao-questao" style="white-space: pre-line;">{{DESCRICAO_QUESTAO}}</p>
                         
                         <div class="alert alert-secondary py-2 px-3 small border-0 bg-light">
@@ -138,9 +143,14 @@
                                 </button>
                             </div>
 
-                            <button id="btnSubmit" class="btn btn-primary btn-lg px-5 shadow-sm font-weight-bold">
-                                <i class="fas fa-play mr-2"></i> Compilar
-                            </button>
+                            <div class="d-flex align-items-center">
+                                <span id="badge-tentativas" class="badge badge-light border text-muted p-2 mr-3 font-weight-bold" style="display: none; font-size: 0.88rem;">
+                                    <i class="fas fa-history mr-1"></i> Tentativas: <span id="contador-tentativas">0 / 0</span>
+                                </span>
+                                <button id="btnSubmit" class="btn btn-primary btn-lg px-5 shadow-sm font-weight-bold">
+                                    <i class="fas fa-play mr-2"></i> Compilar
+                                </button>
+                            </div>
                         </div>
 
                         <div id="result" class="mt-3"></div>

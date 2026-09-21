@@ -29,7 +29,7 @@ async function gerarTituloUnicoLista(baseTitle, authorId) {
 // Cria novo exercício
 router.post('/exercicio', async (req, res) => {
     try {
-        const { title, description, tests, isPrivate } = req.body;
+        const { title, description, tests, isPrivate, timeLimit } = req.body;
         const authorId = req.session?.userId || 'preview_user';
         const authorName = req.session?.userName || 'Professor';
 
@@ -45,7 +45,8 @@ router.post('/exercicio', async (req, res) => {
             tests, 
             authorId, 
             authorName,
-            isPublic: !isPrivate
+            isPublic: !isPrivate,
+            timeLimit: parseInt(timeLimit, 10) || 1000
         });
         res.json({ success: true, exercicio });
     } catch (e) {
@@ -82,7 +83,7 @@ router.post('/lista', async (req, res) => {
 // Vincular Lista Selecionada à Atividade
 router.post('/atividade/vincular', async (req, res) => {
     try {
-        const { activityId, listId, force } = req.body;
+        const { activityId, listId, isEvaluative, maxAttempts, force } = req.body;
 
         const vinculoAtual = await ActivityConfig.findOne({ activityId });
 
@@ -96,7 +97,12 @@ router.post('/atividade/vincular', async (req, res) => {
 
         await ActivityConfig.findOneAndUpdate(
             { activityId },
-            { listId, updatedAt: new Date() },
+            { 
+                listId, 
+                isEvaluative: isEvaluative === true || isEvaluative === 'true',
+                maxAttempts: parseInt(maxAttempts, 10) || 3,
+                updatedAt: new Date() 
+            },
             { upsert: true }
         );
 
@@ -166,7 +172,9 @@ router.get('/professor/dados', async (req, res) => {
             bancoUniversalListas,
             meusExercicios,
             bancoUniversalExercicios,
-            listaVinculadaId: vinculo ? vinculo.listId : null
+            listaVinculadaId: vinculo ? vinculo.listId : null,
+            isEvaluative: vinculo ? !!vinculo.isEvaluative : false,
+            maxAttempts: vinculo && vinculo.maxAttempts ? vinculo.maxAttempts : 3
         });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -308,7 +316,8 @@ router.post('/professor/exercicio/importar', async (req, res) => {
             tests: exOriginal.tests,
             authorId: meuId,
             authorName: meuNome,
-            isPublic: exOriginal.isPublic
+            isPublic: exOriginal.isPublic !== false,
+            timeLimit: exOriginal.timeLimit || 1000
         });
 
         res.json({ success: true, exercicio: novoExercicio });
@@ -335,7 +344,7 @@ router.post('/professor/lista/importar', async (req, res) => {
             authorId: meuId,
             authorName: meuNome,
             exercises: listaOriginal.exercises,
-            isPublic: false
+            isPublic: listaOriginal.isPublic !== false
         });
 
         res.json({ success: true, lista: novaLista });

@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tituloEl = document.getElementById('nome-questao');
     const descEl = document.getElementById('descricao-questao');
     const exemploEl = document.getElementById('exemplo-questao');
+    const valTempoLimite = document.getElementById('val-tempo-limite');
     const navContainer = document.getElementById('container-nav-questoes');
     const btnAnterior = document.getElementById('btn-exercicio-anterior');
     const btnProximo = document.getElementById('btn-exercicio-proximo');
@@ -19,6 +20,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rankLiderTempo = document.getElementById('rank-lider-tempo');
     const tbodyModalRanking = document.getElementById('tbody-modal-ranking');
     const btnRestaurarCodigo = document.getElementById('btnRestaurarCodigo');
+    const badgeTentativas = document.getElementById('badge-tentativas');
+    const contadorTentativas = document.getElementById('contador-tentativas');
     const rascunhosSessao = {};
     let listaExercicios = [];
     let indiceAtual = -1;
@@ -83,6 +86,38 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!data.success) return;
 
             mapaStatusQuestoes = data.statusMeusExercicios || {};
+
+            if (data.isEvaluative) {
+                if (badgeTentativas && contadorTentativas) {
+                    badgeTentativas.style.display = 'inline-block';
+                    const tentativasFeitas = data.minhasTentativasEx || 0;
+                    const limiteMax = data.maxAttempts || 3;
+                    contadorTentativas.innerText = `${tentativasFeitas} / ${limiteMax}`;
+
+                    if (tentativasFeitas >= limiteMax) {
+                        badgeTentativas.className = "badge badge-danger p-2 mr-3 font-weight-bold";
+                        if (btnSubmit) {
+                            btnSubmit.disabled = true;
+                            btnSubmit.dataset.esgotado = "true";
+                            btnSubmit.title = "Limite de tentativas atingido para este exercício.";
+                        }
+                    } else {
+                        badgeTentativas.className = "badge badge-light border text-muted p-2 mr-3 font-weight-bold";
+                        if (btnSubmit) {
+                            btnSubmit.dataset.esgotado = "false";
+                            btnSubmit.disabled = false;
+                            btnSubmit.removeAttribute('title');
+                        }
+                    }
+                }
+            } else {
+                if (badgeTentativas) badgeTentativas.style.display = 'none';
+                if (btnSubmit) {
+                    btnSubmit.dataset.esgotado = "false";
+                    btnSubmit.disabled = false;
+                    btnSubmit.removeAttribute('title');
+                }
+            }
 
             if (data.exercicio.minhaPosicao) {
                 rankPos.className = "badge badge-success p-2 font-weight-bold";
@@ -162,6 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (tituloEl) tituloEl.innerText = ex.title;
         if (descEl) descEl.innerText = ex.description;
+        if (valTempoLimite) valTempoLimite.innerText = `${ex.timeLimit || 1000} ms`;
         if (exemploEl) {
             exemploEl.innerText = ex.tests?.length 
                 ? `Entrada(s): ${ex.tests[0].input || '(vazio)'} | Saída: ${ex.tests[0].output}` 
@@ -303,11 +339,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     await atualizarRankingEStatus();
                 } else {
                     resultDiv.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Erro ao processar submissão.'}</div>`;
+                    await atualizarRankingEStatus();
                 }
             } catch (err) {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-2">Erro de conexão com o servidor.</div>`;
             } finally {
-                btnSubmit.disabled = false;
+                btnSubmit.disabled = btnSubmit.dataset.esgotado === "true";
             }
         };
     }

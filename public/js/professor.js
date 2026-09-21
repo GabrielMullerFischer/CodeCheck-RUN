@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const setupProfessor = document.getElementById('setup-professor');
     const areaPreview = document.getElementById('area-preview');
     const iframeAluno = document.getElementById('iframe-aluno');
-    const btnPreview = document.getElementById('btnPreview');
     const btnVoltarConfig = document.getElementById('btnVoltarConfig');
     const containerExercicios = document.getElementById('container-exercicios-disponiveis');
     const contadorEl = document.getElementById('contador-selecionados');
@@ -27,6 +26,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const containerBancoUniversal = document.getElementById('container-banco-universal');
     const containerBancoEx = document.getElementById('container-banco-exercicios-comunidade');
     const labelTotalAlunos = document.getElementById('labelTotalAlunos');
+    const chkLimiteTentativas = document.getElementById('chk-limite-tentativas');
+    const boxTentativas = document.getElementById('box-tentativas');
+    const inputMaxTentativas = document.getElementById('input-max-tentativas');
+    const chkDefinirTempo = document.getElementById('chk-definir-tempo-limite');
+    const boxCampoTempo = document.getElementById('box-campo-tempo-limite');
+    let idListaAtivaVinculada = null;
     let dadosTurmaCarregados = [];
     let submissaoAtivaParaCompilar = null;
     let alunoSelecionado = null;
@@ -34,25 +39,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let indiceExercicioModal = 0;
     let metricasGlobaisExercicios = [];
 
-    // Fixar os botões de ação na lista ativa
-    function fixarBotoesNaListaAtiva(listId) {
-        const radioVinculado = document.querySelector(`input[name="listaSelecionada"][value="${listId}"]`);
-        const containerBotoes = btnPreview ? btnPreview.parentElement : null;
-
-        if (radioVinculado) {
-            const linhaItem = radioVinculado.closest('.list-group-item');
-            if (linhaItem) {
-                if (containerBotoes) {
-                    linhaItem.appendChild(containerBotoes);
-                }
-                if (containerListas) {
-                    containerListas.prepend(linhaItem);
-                }
-            }
-        }
+    if (chkLimiteTentativas && boxTentativas) {
+        chkLimiteTentativas.addEventListener('change', () => {
+            boxTentativas.style.display = chkLimiteTentativas.checked ? 'flex' : 'none';
+        });
     }
 
-    // Atualizar o contador de exercícios selecionados
+    if (chkDefinirTempo && boxCampoTempo) {
+        chkDefinirTempo.addEventListener('change', () => {
+            boxCampoTempo.style.display = chkDefinirTempo.checked ? 'block' : 'none';
+        });
+    }
+
     function atualizarContador() {
         const selecionados = containerExercicios ? containerExercicios.querySelectorAll('.chk-exercicio:checked').length : 0;
         if (contadorEl) {
@@ -60,7 +58,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Carregar estado inicial da página
     async function carregarEstadoInicial() {
         const activityIdMeta = document.querySelector('meta[name="activity-id"]');
         const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
@@ -69,6 +66,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (!res.ok || !data.success) return;
 
+            idListaAtivaVinculada = data.listaVinculadaId || null;
+
+            if (chkLimiteTentativas) {
+                chkLimiteTentativas.checked = !!data.isEvaluative;
+                if (boxTentativas) {
+                    boxTentativas.style.display = chkLimiteTentativas.checked ? 'flex' : 'none';
+                }
+            }
+            if (inputMaxTentativas && data.maxAttempts) {
+                inputMaxTentativas.value = data.maxAttempts;
+            }
+
             const meusEx = data.meusExercicios || data.exercicios || [];
             if (containerExercicios && meusEx) {
                 containerExercicios.innerHTML = '';
@@ -76,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     containerExercicios.innerHTML = '<p class="text-muted p-2 mb-0">Nenhum exercício cadastrado ainda.</p>';
                 } else {
                     meusEx.forEach(ex => {
+                        const isPub = ex.isPublic !== false;
                         const div = document.createElement('div');
                         div.className = 'custom-control custom-checkbox border-bottom p-2 pl-4 d-flex justify-content-between align-items-center';
                         div.innerHTML = `
@@ -83,7 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${ex._id}" value="${ex._id}">
                                 <label class="custom-control-label cursor-pointer ml-2" for="ex_${ex._id}">
                                     <strong>${ex.title}</strong>
-                                    ${ex.isPublic === false ? '<span class="badge badge-secondary ml-1"><i class="fas fa-lock mr-1"></i>Privado</span>' : ''}
+                                    <span class="badge badge-light border ml-1">${ex.timeLimit || 1000} ms</span>
+                                    ${isPub 
+                                        ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Público</span>' 
+                                        : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privado</span>'}
                                 </label>
                             </div>
                         `;
@@ -102,11 +115,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     containerBancoEx.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhum exercício compartilhado ainda.</p>';
                 } else {
                     bancoEx.forEach(ex => {
+                        const isPub = ex.isPublic !== false;
                         const div = document.createElement('div');
                         div.className = 'border-bottom p-2 d-flex justify-content-between align-items-center';
                         div.innerHTML = `
                             <div class="text-truncate mr-2">
                                 <strong class="text-dark">${ex.title}</strong>
+                                <span class="badge badge-light border ml-1">${ex.timeLimit || 1000} ms</span>
+                                ${isPub 
+                                    ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Público</span>' 
+                                    : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privado</span>'}
                                 <small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${ex.authorName || 'Professor'}</small>
                             </div>
                             <div class="text-nowrap">
@@ -130,6 +148,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${ex.title}`;
                             document.getElementById('modalVerExAutor').innerText = ex.authorName || 'Outro Professor';
                             document.getElementById('modalVerExDescricao').innerText = ex.description || 'Sem descrição cadastrada.';
+                            const badgeTempo = document.getElementById('modalVerExTempoLimite');
+                            if (badgeTempo) badgeTempo.innerText = `${ex.timeLimit || 1000} ms`;
 
                             const containerTeste = document.getElementById('modalVerExTeste');
                             if (ex.tests && ex.tests.length > 0) {
@@ -180,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     alert("Exercício copiado com sucesso para seus exercícios!");
                                     await carregarEstadoInicial();
                                 } else {
-                                    alert("Erro ao copiar exercício: " + (impExData.error || "Erro interno"));
+                                    alert(impExData.error || "Erro ao copiar exercício.");
                                     btn.disabled = false;
                                 }
                             } catch (err) {
@@ -192,31 +212,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // 2. Renderiza "Minhas Listas"
             if (containerListas && data.minhasListas) {
                 containerListas.innerHTML = '';
                 if (data.minhasListas.length === 0) {
                     containerListas.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Você ainda não criou nenhuma lista. Crie uma na Aba 2 ou importe do Banco Universal.</p>';
                 } else {
                     data.minhasListas.forEach(lista => {
-                        const isVinculada = data.listaVinculadaId && (String(lista._id) === String(data.listaVinculadaId));
+                        const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
+                        const isPub = lista.isPublic !== false;
                         const div = document.createElement('div');
                         div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center';
+                        
+                        let infoLimite = '';
+                        if (isVinculada && data.isEvaluative) {
+                            infoLimite = `<span class="badge badge-warning text-dark ml-2" title="Atividade com limite de tentativas"><i class="fas fa-history mr-1"></i>Com Limite (${data.maxAttempts} tent.)</span>`;
+                        }
+
                         div.innerHTML = `
-                            <div class="custom-control custom-radio">
+                            <div class="custom-control custom-radio mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
                                 <input type="radio" id="lista_${lista._id}" name="listaSelecionada" class="custom-control-input" value="${lista._id}" ${isVinculada ? 'checked' : ''}>
                                 <label class="custom-control-label font-weight-bold" for="lista_${lista._id}">
-                                    ${lista.title} <span class="badge badge-light border text-muted ml-1">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
-                                    ${lista.isPublic === false ? '<span class="badge badge-secondary ml-1"><i class="fas fa-lock mr-1"></i>Privada</span>' : ''}
+                                    <span>${lista.title}</span>
+                                    <span class="badge badge-light border text-muted ml-1">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
+                                    ${isPub 
+                                        ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Pública</span>' 
+                                        : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privada</span>'}
+                                    ${infoLimite}
                                 </label>
                             </div>
+                            ${isVinculada ? `
+                            <div class="text-nowrap d-flex align-items-center">
+                                <button type="button" class="btn btn-outline-primary btn-sm mr-2 btn-preview-aluno" data-listid="${lista._id}">
+                                    <i class="fas fa-eye mr-1"></i> Testar Visão do Aluno
+                                </button>
+                                <span class="badge badge-primary badge-pill">Ativa</span>
+                            </div>` : ''}
                         `;
-                        containerListas.appendChild(div);
+
+                        if (isVinculada) {
+                            containerListas.prepend(div);
+                        } else {
+                            containerListas.appendChild(div);
+                        }
+                    });
+
+                    containerListas.querySelectorAll('.btn-preview-aluno').forEach(btn => {
+                        btn.onclick = () => {
+                            const listId = btn.dataset.listid;
+                            if (setupProfessor) setupProfessor.style.display = 'none';
+                            if (areaPreview) areaPreview.style.display = 'block';
+                            const targetUrl = `/?mode=preview&listId=${listId}` + (ltiToken ? `&ltik=${ltiToken}` : '');
+                            if (iframeAluno) iframeAluno.src = targetUrl;
+                        };
                     });
                 }
             }
 
-            // 3. Renderiza "Banco Universal" (Comunidade)
             const listasComunidade = data.bancoUniversal || data.bancoUniversalListas || [];
             window.listasComunidadeCache = listasComunidade;
 
@@ -226,19 +277,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     containerBancoUniversal.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhuma lista compartilhada por outros professores ainda.</p>';
                 } else {
                     listasComunidade.forEach(lista => {
+                        const isPub = lista.isPublic !== false;
                         const div = document.createElement('div');
                         div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center';
                         div.innerHTML = `
                             <div class="text-truncate mr-2">
                                 <strong class="text-dark">${lista.title}</strong>
                                 <span class="badge badge-light border text-muted ml-1">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
+                                ${isPub 
+                                    ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Pública</span>' 
+                                    : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privada</span>'}
                                 <small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${lista.authorName || 'Professor'}</small>
                             </div>
                             <div class="text-nowrap">
                                 <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 mr-1 btn-ver-lista" data-listid="${lista._id}">
                                     <i class="fas fa-eye mr-1"></i> Ver Exercícios
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 font-weight-bold btn-importar-lista" data-listid="${lista._id}">
+                                <button type="button" class="btn btn-sm btn-outline-success font-weight-bold btn-importar-lista" data-listid="${lista._id}">
                                     <i class="fas fa-file-import mr-1"></i> Importar
                                 </button>
                             </div>
@@ -266,8 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const card = document.createElement('div');
                                     card.className = 'card mb-2 border shadow-sm';
                                     card.innerHTML = `
-                                        <div class="card-header bg-white py-2 font-weight-bold text-dark">
+                                        <div class="card-header bg-white py-2 font-weight-bold text-dark d-flex justify-content-between align-items-center">
                                             <span><strong>#${idx + 1}</strong> - ${ex.title}</span>
+                                            <span class="badge badge-light border">${ex.timeLimit || 1000} ms</span>
                                         </div>
                                         <div class="card-body p-2 bg-light">
                                             <p class="mb-0 text-secondary small" style="white-space: pre-line;">${ex.description || 'Sem enunciado cadastrado.'}</p>
@@ -310,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const pillMinhas = document.getElementById('pill-minhas-listas');
                                     if (window.$ && pillMinhas) $(pillMinhas).tab('show');
                                 } else {
-                                    alert("Erro ao importar lista: " + (impData.error || "Erro interno"));
+                                    alert(impData.error || "Erro ao importar lista.");
                                     btn.disabled = false;
                                     btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
                                 }
@@ -324,30 +380,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (data.listaVinculadaId) {
-                fixarBotoesNaListaAtiva(data.listaVinculadaId);
-            }
-
         } catch (err) {
             console.error("Erro ao carregar listas do banco:", err);
         }
     }
 
-    // Fixar os botões de ação na lista ativa
-    if (btnPreview) {
-        btnPreview.onclick = () => {
-            if (setupProfessor) setupProfessor.style.display = 'none';
-            if (areaPreview) areaPreview.style.display = 'block';
-            const radioDestaLinha = btnPreview.closest('.list-group-item')?.querySelector('input[type="radio"]');
-            const listId = radioDestaLinha ? radioDestaLinha.value : '';
-            const targetUrl = `/?mode=preview&listId=${listId}` + (ltiToken ? `&ltik=${ltiToken}` : '');
-            if (iframeAluno) {
-                iframeAluno.src = targetUrl;
-            }
-        };
-    }
-
-    // Voltar para a configuração da atividade
     if (btnVoltarConfig) {
         btnVoltarConfig.onclick = () => {
             if (areaPreview) areaPreview.style.display = 'none';
@@ -355,7 +392,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Atualizar contador de exercícios selecionados
     if (containerExercicios) {
         containerExercicios.addEventListener('change', (e) => {
             if (e.target.classList.contains('chk-exercicio')) {
@@ -391,12 +427,15 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Salvar novo exercício
     if (modalBtnSalvarEx) {
         modalBtnSalvarEx.onclick = async () => {
             const title = document.getElementById('modal-titulo')?.value.trim();
             const description = document.getElementById('modal-desc')?.value.trim();
             const isPrivate = document.getElementById('modal-exercicio-privado')?.checked || false;
+            const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
+            const timeLimit = (chkDefinirTempoEl && chkDefinirTempoEl.checked) 
+                ? (parseInt(document.getElementById('modal-tempo-limite')?.value, 10) || 1000) 
+                : 1000;
 
             if (!title || !description) {
                 alert("Preencha o título e a descrição do exercício.");
@@ -417,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch(`/judge/exercicio` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, description, tests, isPrivate })
+                    body: JSON.stringify({ title, description, tests, isPrivate, timeLimit })
                 });
                 const data = await res.json();
 
@@ -427,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     limparModalNovoExercicio();
                     carregarEstadoInicial();
                 } else {
-                    alert("Erro ao salvar: " + (data.error || "Não autorizado"));
+                    alert(data.error || "Não autorizado");
                 }
             } catch (err) {
                 alert("Erro de conexão ao salvar exercício.");
@@ -442,7 +481,6 @@ document.addEventListener('DOMContentLoaded', () => {
         limparModalNovoExercicio();
     });
 
-    // Salvar nova lista de exercícios
     if (btnSalvarNovaLista) {
         btnSalvarNovaLista.onclick = async () => {
             const title = nomeNovaLista?.value.trim();
@@ -476,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     await carregarEstadoInicial();
                     $('#tab-listas-link').tab('show');
                 } else {
-                    alert("Erro ao criar lista: " + (data.error || "Não autorizado"));
+                    alert(data.error || "Não autorizado");
                 }
             } catch (err) {
                 alert("Erro de conexão ao criar lista.");
@@ -487,7 +525,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Vincular lista selecionada à atividade
     if (btnVincularLista) {
         btnVincularLista.onclick = async () => {
             const rad = document.querySelector('input[name="listaSelecionada"]:checked');
@@ -497,6 +534,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert("Selecione uma lista primeiro.");
                 return;
             }
+
+            const isEvaluative = chkLimiteTentativas ? chkLimiteTentativas.checked : false;
+            const maxAttempts = inputMaxTentativas ? parseInt(inputMaxTentativas.value, 10) || 3 : 3;
+
             async function executarVinculo(forcar = false) {
                 btnVincularLista.disabled = true;
                 btnVincularLista.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Vinculando...';
@@ -504,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const res = await fetch(`/judge/atividade/vincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ activityId, listId: rad.value, force: forcar })
+                        body: JSON.stringify({ activityId, listId: rad.value, isEvaluative, maxAttempts, force: forcar })
                     });
                     const data = await res.json();
                     if (data.requiresConfirmation) {
@@ -516,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     if (res.ok && data.success) {
                         alert("Atividade vinculada com sucesso!");
-                        fixarBotoesNaListaAtiva(rad.value);
+                        await carregarEstadoInicial();
                     } else {
                         alert("Erro ao vincular: " + (data.error || "Não autorizado"));
                     }
@@ -531,7 +572,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Atualizar contador de exercícios selecionados
     if (inputBuscaLista && containerListas) {
         inputBuscaLista.addEventListener('input', () => {
             const termo = inputBuscaLista.value.trim().toLowerCase();
@@ -547,7 +587,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Atualizar contador de exercícios selecionados
     if (inputBuscaExercicio && containerExercicios) {
         inputBuscaExercicio.addEventListener('input', () => {
             const termo = inputBuscaExercicio.value.trim().toLowerCase();
@@ -594,7 +633,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Carregar métricas da turma
     async function carregarMetricasTurma() {
         const activityIdMeta = document.querySelector('meta[name="activity-id"]');
         const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
@@ -907,16 +945,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Limpar campos do novo exercício
     function limparModalNovoExercicio() {
         const inputTitulo = document.getElementById('modal-titulo');
         const inputDesc = document.getElementById('modal-desc');
+        const inputTempo = document.getElementById('modal-tempo-limite');
         const containerTestes = document.getElementById('modal-container-testes');
         const chkPrivado = document.getElementById('modal-exercicio-privado');
+        const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
+        const boxCampoTempoEl = document.getElementById('box-campo-tempo-limite');
 
         if (inputTitulo) inputTitulo.value = '';
         if (inputDesc) inputDesc.value = '';
+        if (inputTempo) inputTempo.value = '1000';
         if (chkPrivado) chkPrivado.checked = false;
+        if (chkDefinirTempoEl) chkDefinirTempoEl.checked = false;
+        if (boxCampoTempoEl) boxCampoTempoEl.style.display = 'none';
 
         if (containerTestes) {
             containerTestes.innerHTML = `
