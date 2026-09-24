@@ -41,6 +41,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const labelHistoricoSub = document.getElementById('labelHistoricoSub');
     const MODELO_PADRAO = '#include <stdio.h>\n\nint main() {\n    \n    return 0;\n}';
 
+    const badgeCronometro = document.getElementById('badge-cronometro-atividade');
+    const valCronometro = document.getElementById('val-cronometro-atividade');
+    const btnConfirmarInicio = document.getElementById('btnConfirmarInicio');
+    let intervaloTimer = null;
+    let timerBloqueado = false;
+
     const rascunhosSessao = {};
     let listaExercicios = [];
     let indiceAtual = -1;
@@ -138,6 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function posicionarCursorAposAspas() {
+        if (timerBloqueado) return;
         setTimeout(() => {
             const totalLinhas = editorCM.lineCount();
             for (let i = 0; i < totalLinhas; i++) {
@@ -200,6 +207,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             box.onclick = (e) => {
                 e.preventDefault();
+                if (timerBloqueado) return;
                 selecionarQuestao(index);
             };
 
@@ -232,6 +240,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function atualizarEstadoBotaoCompilar() {
         if (!btnSubmit) return;
+
+        if (timerBloqueado) {
+            btnSubmit.disabled = true;
+            btnSubmit.style.pointerEvents = 'none';
+            btnSubmit.classList.remove('btn-primary');
+            btnSubmit.classList.add('btn-secondary');
+            btnSubmit.style.opacity = '0.65';
+            return;
+        }
 
         if (indiceSubmissaoAtiva !== -1) {
             btnSubmit.disabled = true;
@@ -278,9 +295,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-        function atualizarBotoesHistorico() {
+    function atualizarBotoesHistorico() {
         if (!navHistoricoSubmissoes) return;
         const total = listaSubmissoesMeta.length;
+
+        if (timerBloqueado) {
+            editorCM.setOption('readOnly', true);
+            atualizarEstadoBotaoCompilar();
+            return;
+        }
 
         if (total === 0) {
             navHistoricoSubmissoes.style.display = 'none';
@@ -339,6 +362,104 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!log) return null;
         const match = log.match(/:(\d+):(?:\d+:)?\s*(?:fatal\s+)?error:/i);
         return match ? parseInt(match[1], 10) : null;
+    }
+
+    async function checarTimerAtividade() {
+        if (!activityId || activityId === 'preview' || urlParams.get('mode') === 'preview') return;
+
+        try {
+            const res = await fetch(`/judge/atividade/timer-status?activityId=${activityId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const data = await res.json();
+
+            if (!data.success || !data.hasTimeLimit) return;
+
+            if (!data.started) {
+                timerBloqueado = true;
+                const spanMinutos = document.getElementById('modal-tempo-limite-minutos');
+                if (spanMinutos) spanMinutos.innerText = data.timeLimitMinutes;
+                
+                if (btnSubmit) btnSubmit.disabled = true;
+                editorCM.setOption('readOnly', true);
+
+                document.getElementById('conteudo-principal-aluno')?.classList.add('conteudo-bloqueado-esfumacado');
+                
+                $('#modalConfirmarInicioTempo').modal('show');
+            } else {
+                timerBloqueado = false;
+                iniciarContagemRegressiva(data.expiresAt, data.serverTime);
+            }
+        } catch (e) {
+            console.error("Erro ao verificar tempo da atividade:", e);
+        }
+    }
+
+    if (btnConfirmarInicio) {
+        btnConfirmarInicio.onclick = async () => {
+            btnConfirmarInicio.disabled = true;
+            btnConfirmarInicio.innerText = "Iniciando...";
+
+            try {
+                const res = await fetch(`/judge/atividade/iniciar-timer` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activityId })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    $('#modalConfirmarInicioTempo').modal('hide');
+
+                    timerBloqueado = false; // Libera a trava
+                    document.getElementById('conteudo-principal-aluno')?.classList.remove('conteudo-bloqueado-esfumacado');
+                    
+                    editorCM.setOption('readOnly', false);
+                    atualizarEstadoBotaoCompilar();
+                    posicionarCursorAposAspas();
+                    iniciarContagemRegressiva(data.expiresAt, data.serverTime);
+                } else {
+                    alert(data.error || "Erro ao iniciar contagem de tempo.");
+                    btnConfirmarInicio.disabled = false;
+                    btnConfirmarInicio.innerText = "Iniciar Atividade";
+                }
+            } catch (err) {
+                alert("Falha de conexão ao iniciar contagem de tempo.");
+                btnConfirmarInicio.disabled = false;
+                btnConfirmarInicio.innerText = "Iniciar Atividade";
+            }
+        };
+    }
+
+    function iniciarContagemRegressiva(expiresAtIso, serverTimeMs) {
+        if (!badgeCronometro || !valCronometro) return;
+        badgeCronometro.style.display = 'inline-block';
+
+        const expiresAt = new Date(expiresAtIso).getTime();
+        const delta = (serverTimeMs || Date.now()) - Date.now();
+
+        if (intervaloTimer) clearInterval(intervaloTimer);
+
+        intervaloTimer = setInterval(() => {
+            const agoraServidor = Date.now() + delta;
+            const restanteMs = expiresAt - agoraServidor;
+
+            if (restanteMs <= 0) {
+                clearInterval(intervaloTimer);
+                valCronometro.innerText = "00:00:00";
+                badgeCronometro.className = "badge badge-danger p-2 mr-3 font-weight-bold";
+                editorCM.setOption('readOnly', true);
+                if (btnSubmit) {
+                    btnSubmit.disabled = true;
+                    btnSubmit.dataset.esgotado = "true";
+                }
+                alert("O tempo limite para realização desta atividade encerrou! As submissões foram finalizadas.");
+                return;
+            }
+
+            const horas = Math.floor(restanteMs / 3600000);
+            const minutos = Math.floor((restanteMs % 3600000) / 60000);
+            const segundos = Math.floor((restanteMs % 60000) / 1000);
+
+            valCronometro.innerText = `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+        }, 1000);
     }
 
     async function carregarLista() {
@@ -575,7 +696,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function buscarCarregarCodigoSubmissao(subId) {
         setCodigoNoEditor("// Carregando submissão anterior...");
         try {
-            const res = await fetch(`/judge/aluno/submissao-codigo?submissionId=${subId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const res = await fetch(`/judge/aluno/submissao-codigo?submissionId=${subId}` + (ltiToken ? `?ltik=${ltiToken}` : ''));
             const data = await res.json();
             if (res.ok && data.success) {
                 setCodigoNoEditor(data.code || '');
@@ -690,6 +811,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (btnExecutarTesteCustom) {
         btnExecutarTesteCustom.onclick = async () => {
+            if (timerBloqueado) return;
             const code = editorCM.getValue();
             const input = customInputStdin ? customInputStdin.value : '';
             const exercicioAtual = listaExercicios[indiceAtual];
@@ -769,6 +891,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (btnSubmit) {
         btnSubmit.onclick = async () => {
+            if (timerBloqueado) return;
             if (indiceSubmissaoAtiva !== -1) {
                 alert("É necessário voltar para a compilação atual para poder compilar.");
                 return;
@@ -873,6 +996,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (btnRestaurarCodigo) {
         btnRestaurarCodigo.onclick = () => {
+            if (timerBloqueado) return;
             const exercicioAtual = listaExercicios[indiceAtual];
             if (!exercicioAtual) return;
 
@@ -902,5 +1026,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
+    checarTimerAtividade();
     carregarLista();
 });

@@ -24,31 +24,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbodyRanking = document.getElementById('tbody-ranking-turma');
     const containerBancoUniversal = document.getElementById('container-banco-universal');
     const containerBancoEx = document.getElementById('container-banco-exercicios-comunidade');
+
     const chkLimiteTentativas = document.getElementById('chk-limite-tentativas');
     const boxTentativas = document.getElementById('box-tentativas');
     const inputMaxTentativas = document.getElementById('input-max-tentativas');
-    const chkDefinirTempo = document.getElementById('chk-definir-tempo-limite');
-    const boxCampoTempo = document.getElementById('box-campo-tempo-limite');
-    const labelMaxTempo = document.getElementById('label-max-tempo-limite');
+    const chkTempoAtividade = document.getElementById('chk-tempo-atividade');
+    const boxTempoAtividade = document.getElementById('box-tempo-atividade');
+    const inputTempoAtividade = document.getElementById('input-tempo-atividade');
+
     const tabGerenciarLink = document.getElementById('tab-gerenciar-link');
     const tabListasLink = document.getElementById('tab-listas-link');
     const nomeAtividadeGerenciar = document.getElementById('nome-atividade-gerenciar');
     const btnEditarAtividadeAtiva = document.getElementById('btnEditarAtividadeAtiva');
     const btnPreview = document.getElementById('btnPreview');
-    const circleTaxaAcerto = document.getElementById('circle-taxa-acerto');
-    const circleTempoMedio = document.getElementById('circle-tempo-medio');
-    const btnAbrirModalNovoExercicio = document.getElementById('btnAbrirModalNovoExercicio');
-    const modalEditChkLimite = document.getElementById('modal-edit-chk-limite-tentativas');
-    const modalEditBoxTentativas = document.getElementById('modal-edit-box-tentativas');
-    const modalEditInputMaxTentativas = document.getElementById('modal-edit-input-max-tentativas');
-    const modalBtnSalvarEdicaoLista = document.getElementById('modalBtnSalvarEdicaoLista');
     const btnDesvincularAtividade = document.getElementById('btnDesvincularAtividade');
 
+    const circleTaxaAcerto = document.getElementById('circle-taxa-acerto');
+    const circleTempoMedio = document.getElementById('circle-tempo-medio');
     const selectProfExRanking = document.getElementById('select-prof-ex-ranking');
     const tbodyProfRankingEx = document.getElementById('tbody-prof-ranking-exercicio');
     const cardProfLiderEx = document.getElementById('card-prof-lider-ex');
     const profLiderNome = document.getElementById('prof-lider-nome');
     const profLiderTempo = document.getElementById('prof-lider-tempo');
+
+    const btnAbrirModalNovoExercicio = document.getElementById('btnAbrirModalNovoExercicio');
+    const chkDefinirTempo = document.getElementById('chk-definir-tempo-limite');
+    const boxCampoTempo = document.getElementById('box-campo-tempo-limite');
+    const labelMaxTempo = document.getElementById('label-max-tempo-limite');
+
+    const modalBtnSalvarEdicaoLista = document.getElementById('modalBtnSalvarEdicaoLista');
+
+    const modalAtivChkTentativas = document.getElementById('modal-ativ-chk-tentativas');
+    const modalAtivBoxTentativas = document.getElementById('modal-ativ-box-tentativas');
+    const modalAtivInputTentativas = document.getElementById('modal-ativ-input-tentativas');
+    const modalAtivChkTempo = document.getElementById('modal-ativ-chk-tempo');
+    const modalAtivBoxTempo = document.getElementById('modal-ativ-box-tempo');
+    const modalAtivInputTempo = document.getElementById('modal-ativ-input-tempo');
+    const btnSalvarConfigAtividadeModal = document.getElementById('btnSalvarConfigAtividadeModal');
 
     let idListaAtivaVinculada = null;
     let listaAtivaObjeto = null;
@@ -68,10 +80,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (modalEditChkLimite && modalEditBoxTentativas) {
-        modalEditChkLimite.addEventListener('change', () => {
-            modalEditBoxTentativas.style.display = modalEditChkLimite.checked ? 'flex' : 'none';
+    if (chkTempoAtividade && boxTempoAtividade) {
+        chkTempoAtividade.addEventListener('change', () => {
+            boxTempoAtividade.style.display = chkTempoAtividade.checked ? 'flex' : 'none';
         });
+    }
+
+    if (modalAtivChkTentativas && modalAtivBoxTentativas) {
+        modalAtivChkTentativas.onchange = () => {
+            modalAtivBoxTentativas.style.display = modalAtivChkTentativas.checked ? 'flex' : 'none';
+        };
+    }
+
+    if (modalAtivChkTempo && modalAtivBoxTempo) {
+        modalAtivChkTempo.onchange = () => {
+            modalAtivBoxTempo.style.display = modalAtivChkTempo.checked ? 'flex' : 'none';
+        };
     }
 
     if (chkDefinirTempo && boxCampoTempo) {
@@ -128,20 +152,32 @@ document.addEventListener('DOMContentLoaded', () => {
             window.todosMeusExerciciosCache = data.meusExercicios || [];
             window.minhasListasCache = data.minhasListas || [];
 
+            window.atividadeAtivaConfig = {
+                isEvaluative: !!data.isEvaluative,
+                maxAttempts: data.maxAttempts || 3,
+                hasTimeLimit: !!data.hasTimeLimit,
+                timeLimitMinutes: data.timeLimitMinutes || 60
+            };
+
             renderizarMeusExercicios(data.meusExercicios || []);
             renderizarBancoExercicios(data.bancoUniversalExercicios || []);
             renderizarMinhasListas(data.minhasListas || []);
             renderizarBancoListas(data.bancoUniversal || data.bancoUniversalListas || []);
 
-            const tentativasSalvas = data.maxAttempts ? parseInt(data.maxAttempts, 10) : 3;
             if (chkLimiteTentativas) {
                 chkLimiteTentativas.checked = !!data.isEvaluative;
-                if (boxTentativas) {
-                    boxTentativas.style.display = chkLimiteTentativas.checked ? 'flex' : 'none';
-                }
+                if (boxTentativas) boxTentativas.style.display = chkLimiteTentativas.checked ? 'flex' : 'none';
             }
             if (inputMaxTentativas) {
-                inputMaxTentativas.value = tentativasSalvas;
+                inputMaxTentativas.value = data.maxAttempts || 3;
+            }
+
+            if (chkTempoAtividade) {
+                chkTempoAtividade.checked = !!data.hasTimeLimit;
+                if (boxTempoAtividade) boxTempoAtividade.style.display = chkTempoAtividade.checked ? 'flex' : 'none';
+            }
+            if (inputTempoAtividade) {
+                inputTempoAtividade.value = data.timeLimitMinutes || 60;
             }
 
             if (idListaAtivaVinculada && listaAtivaObjeto) {
@@ -168,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     $(tabListasLink).tab('show');
                 }
             }
-
         } catch (err) {
             console.error("Erro ao carregar listas do banco:", err);
         }
@@ -186,11 +221,11 @@ document.addEventListener('DOMContentLoaded', () => {
         meusEx.forEach(ex => {
             const isPub = ex.isPublic !== false;
             const div = document.createElement('div');
-            div.className = 'custom-control custom-checkbox border-bottom p-2 pl-4 d-flex justify-content-between align-items-center';
+            div.className = 'border-bottom p-2 d-flex justify-content-between align-items-center';
             div.innerHTML = `
-                <div class="text-truncate mr-2">
+                <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem;">
                     <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${ex._id}" value="${ex._id}">
-                    <label class="custom-control-label cursor-pointer ml-2" for="ex_${ex._id}">
+                    <label class="custom-control-label cursor-pointer ml-1" for="ex_${ex._id}">
                         <strong>${ex.title}</strong>
                         ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
                     </label>
@@ -521,14 +556,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modal-edit-lista-titulo').value = lista.title;
         document.getElementById('modal-edit-lista-privada').checked = (lista.isPublic === false);
 
-        const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
-        const isEval = isVinculada ? (chkLimiteTentativas && chkLimiteTentativas.checked) : (lista.isEvaluative || false);
-        const maxAtt = isVinculada && inputMaxTentativas ? (parseInt(inputMaxTentativas.value, 10) || 3) : (lista.maxAttempts || 3);
-
-        if (modalEditChkLimite) modalEditChkLimite.checked = isEval;
-        if (modalEditInputMaxTentativas) modalEditInputMaxTentativas.value = maxAtt;
-        if (modalEditBoxTentativas) modalEditBoxTentativas.style.display = isEval ? 'flex' : 'none';
-
         const containerExs = document.getElementById('modal-edit-lista-exercicios');
         containerExs.innerHTML = '';
 
@@ -558,11 +585,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const title = document.getElementById('modal-edit-lista-titulo').value.trim();
             const isPrivate = document.getElementById('modal-edit-lista-privada').checked;
             const exercises = Array.from(document.querySelectorAll('.chk-edit-lista-ex:checked')).map(c => c.value);
-            const isEvaluative = modalEditChkLimite ? modalEditChkLimite.checked : false;
-            const maxAttempts = modalEditInputMaxTentativas ? parseInt(modalEditInputMaxTentativas.value, 10) || 3 : 3;
-
-            const activityIdMeta = document.querySelector('meta[name="activity-id"]');
-            const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
 
             if (!title) {
                 alert("Informe um nome para a lista.");
@@ -580,14 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch(`/judge/lista/${listId}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        title, 
-                        exercises, 
-                        isPrivate, 
-                        isEvaluative, 
-                        maxAttempts, 
-                        activityId 
-                    })
+                    body: JSON.stringify({ title, exercises, isPrivate })
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
@@ -716,8 +731,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (btnEditarAtividadeAtiva) {
         btnEditarAtividadeAtiva.onclick = () => {
-            if (idListaAtivaVinculada) {
-                abrirModalEditarLista(idListaAtivaVinculada);
+            if (!idListaAtivaVinculada) {
+                alert("Nenhuma atividade vinculada no momento.");
+                return;
+            }
+
+            const cfg = window.atividadeAtivaConfig || {};
+            if (modalAtivChkTentativas) {
+                modalAtivChkTentativas.checked = !!cfg.isEvaluative;
+                modalAtivBoxTentativas.style.display = cfg.isEvaluative ? 'flex' : 'none';
+                modalAtivInputTentativas.value = cfg.maxAttempts || 3;
+            }
+
+            if (modalAtivChkTempo) {
+                modalAtivChkTempo.checked = !!cfg.hasTimeLimit;
+                modalAtivBoxTempo.style.display = cfg.hasTimeLimit ? 'flex' : 'none';
+                modalAtivInputTempo.value = cfg.timeLimitMinutes || 60;
+            }
+
+            $('#modalEditarAtividade').modal('show');
+        };
+    }
+
+    if (btnSalvarConfigAtividadeModal) {
+        btnSalvarConfigAtividadeModal.onclick = async () => {
+            const activityIdMeta = document.querySelector('meta[name="activity-id"]');
+            const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
+            if (!activityId) return;
+
+            btnSalvarConfigAtividadeModal.disabled = true;
+            btnSalvarConfigAtividadeModal.innerText = "Salvando...";
+
+            try {
+                const res = await fetch(`/judge/atividade/config` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        activityId,
+                        isEvaluative: modalAtivChkTentativas.checked,
+                        maxAttempts: parseInt(modalAtivInputTentativas.value, 10) || 3,
+                        hasTimeLimit: modalAtivChkTempo.checked,
+                        timeLimitMinutes: parseInt(modalAtivInputTempo.value, 10) || 0
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    alert("Regras da atividade salvas com sucesso!");
+                    $('#modalEditarAtividade').modal('hide');
+                    await carregarEstadoInicial();
+                } else {
+                    alert(data.error || "Erro ao salvar regras.");
+                }
+            } catch (err) {
+                alert("Erro de conexão ao salvar regras.");
+            } finally {
+                btnSalvarConfigAtividadeModal.disabled = false;
+                btnSalvarConfigAtividadeModal.innerText = "Salvar Regras da Atividade";
             }
         };
     }
@@ -917,6 +987,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const isEvaluative = chkLimiteTentativas ? chkLimiteTentativas.checked : false;
             const maxAttempts = inputMaxTentativas ? parseInt(inputMaxTentativas.value, 10) || 3 : 3;
+            const hasTimeLimit = chkTempoAtividade ? chkTempoAtividade.checked : false;
+            const timeLimitMinutes = inputTempoAtividade ? parseInt(inputTempoAtividade.value, 10) || 0 : 0;
 
             async function executarVinculo(forcar = false) {
                 btnVincularLista.disabled = true;
@@ -925,7 +997,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     const res = await fetch(`/judge/atividade/vincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ activityId, listId: rad.value, isEvaluative, maxAttempts, force: forcar })
+                        body: JSON.stringify({ 
+                            activityId, 
+                            listId: rad.value, 
+                            isEvaluative, 
+                            maxAttempts, 
+                            hasTimeLimit, 
+                            timeLimitMinutes, 
+                            force: forcar 
+                        })
                     });
                     const data = await res.json();
                     if (data.requiresConfirmation) {
@@ -966,10 +1046,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (inputBuscaExercicio && containerExercicios) {
         inputBuscaExercicio.addEventListener('input', () => {
             const termo = inputBuscaExercicio.value.trim().toLowerCase();
-            const itensExercicios = containerExercicios.querySelectorAll('.custom-checkbox');
+            const itensExercicios = containerExercicios.querySelectorAll('.border-bottom');
             itensExercicios.forEach(containerItem => {
                 const texto = containerItem.textContent.toLowerCase();
-                containerItem.style.display = texto.includes(termo) ? '' : 'none';
+                containerItem.style.display = texto.includes(termo) ? 'flex' : 'none';
             });
         });
     }
@@ -1319,7 +1399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const exId = this.dataset.ex;
             const exTitle = this.dataset.title;
 
-            labelArquivo.innerHTML = `<i class="fas fa-file-code mr-1"></i> Inspecionando: <strong>${exTitle}</strong> (${codePath})`;
+            labelArquivo.innerHTML = `<i class="fas fa-code mr-1"></i> Inspecionando: <strong>${exTitle}</strong> (${codePath})`;
             editor.value = "// Carregando código do MinIO...";
             divResultado.innerHTML = '';
             submissaoAtivaParaCompilar = { exerciseId: exId };

@@ -5,6 +5,7 @@ const Exercise = require('../models/Exercise');
 const ExerciseList = require('../models/ExerciseList');
 const ActivityConfig = require('../models/ActivityConfig');
 const Submission = require('../models/Submission');
+const ActivityAttempt = require('../models/ActivityAttempt');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
@@ -29,7 +30,6 @@ async function gerarTituloUnicoLista(baseTitle, authorId) {
     return title;
 }
 
-// Cria novo exercício
 router.post('/exercicio', async (req, res) => {
     try {
         const { title, description, tests, isPrivate, timeLimit } = req.body;
@@ -71,7 +71,6 @@ router.post('/exercicio', async (req, res) => {
     }
 });
 
-// Editar exercício
 router.put('/exercicio/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -112,7 +111,6 @@ router.put('/exercicio/:id', async (req, res) => {
     }
 });
 
-// Excluir exercício com opção de manter nas listas existentes
 router.delete('/exercicio/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -140,10 +138,9 @@ router.delete('/exercicio/:id', async (req, res) => {
     }
 });
 
-// Salvar Nova Lista
 router.post('/lista', async (req, res) => {
     try {
-        const { title, exercises, isPrivate, isEvaluative, maxAttempts } = req.body;
+        const { title, exercises, isPrivate } = req.body;
         const authorId = req.session?.userId || 'preview_user';
         const authorName = req.session?.userName || 'Professor';
 
@@ -158,9 +155,7 @@ router.post('/lista', async (req, res) => {
             exercises, 
             authorId, 
             authorName,
-            isPublic: !isPrivate,
-            isEvaluative: isEvaluative === true || isEvaluative === 'true',
-            maxAttempts: parseInt(maxAttempts, 10) || 3
+            isPublic: !isPrivate
         });
         res.json({ success: true, lista });
     } catch (e) {
@@ -168,11 +163,10 @@ router.post('/lista', async (req, res) => {
     }
 });
 
-// Editar lista
 router.put('/lista/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, exercises, isPrivate, isEvaluative, maxAttempts, activityId } = req.body;
+        const { title, exercises, isPrivate } = req.body;
         const meuId = String(req.session?.userId || 'preview_user');
 
         const lista = await ExerciseList.findById(id);
@@ -185,25 +179,8 @@ router.put('/lista/:id', async (req, res) => {
         lista.title = (title || '').trim();
         lista.exercises = exercises;
         lista.isPublic = !isPrivate;
-        if (typeof isEvaluative !== 'undefined') {
-            lista.isEvaluative = isEvaluative === true || isEvaluative === 'true';
-        }
-        if (typeof maxAttempts !== 'undefined') {
-            lista.maxAttempts = parseInt(maxAttempts, 10) || 3;
-        }
         lista.updatedAt = new Date();
         await lista.save();
-
-        // Se houver uma atividade vinculada a esta lista, sincroniza as tentativas nela também
-        const queryUpdate = activityId ? { activityId, listId: id } : { listId: id };
-        await ActivityConfig.updateMany(
-            queryUpdate,
-            {
-                isEvaluative: lista.isEvaluative,
-                maxAttempts: lista.maxAttempts,
-                updatedAt: new Date()
-            }
-        );
 
         res.json({ success: true, lista });
     } catch (e) {
@@ -211,7 +188,6 @@ router.put('/lista/:id', async (req, res) => {
     }
 });
 
-// Excluir lista
 router.delete('/lista/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -233,23 +209,26 @@ router.delete('/lista/:id', async (req, res) => {
     }
 });
 
-// Vincular Lista Selecionada à Atividade
 router.post('/atividade/vincular', async (req, res) => {
     try {
-        const { activityId, listId, isEvaluative, maxAttempts, force } = req.body;
+        const { activityId, listId, isEvaluative, maxAttempts, hasTimeLimit, timeLimitMinutes, force } = req.body;
 
         const vinculoAtual = await ActivityConfig.findOne({ activityId });
 
-        if (vinculoAtual && vinculoAtual.listId && String(vinculoAtual.listId) !== String(listId) && !force) {
+        const houveTrocaDeLista = vinculoAtual && vinculoAtual.listId && String(vinculoAtual.listId) !== String(listId);
+
+        if (houveTrocaDeLista && !force) {
             return res.json({
                 success: false,
                 requiresConfirmation: true,
-                message: "⚠️ ATENÇÃO: Esta atividade já está configurada com outra lista.\n\nTrocar a lista agora fará com que a turma veja outros exercícios e pode causar perda ou inconsistência nas respostas dos alunos.\n\nDeseja realmente trocar a atividade vinculada?"
+                message: "⚠️ ATENÇÃO: Esta atividade já está configurada com outra lista.\n\nTrocar a lista agora fará com que todos os dados anteriores dos alunos (tentativas, timers e códigos enviados) sejam apagados para iniciar a nova atividade do zero.\n\nDeseja realmente trocar a atividade vinculada?"
             });
         }
 
         const isEvalBool = isEvaluative === true || isEvaluative === 'true';
         const maxAttInt = parseInt(maxAttempts, 10) || 3;
+        const hasTimeLimitBool = hasTimeLimit === true || hasTimeLimit === 'true';
+        const timeLimitMinInt = parseInt(timeLimitMinutes, 10) || 0;
 
         await ActivityConfig.findOneAndUpdate(
             { activityId },
@@ -257,16 +236,17 @@ router.post('/atividade/vincular', async (req, res) => {
                 listId, 
                 isEvaluative: isEvalBool,
                 maxAttempts: maxAttInt,
+                hasTimeLimit: hasTimeLimitBool,
+                timeLimitMinutes: timeLimitMinInt,
                 updatedAt: new Date() 
             },
             { upsert: true }
         );
 
-        // Atualiza também na própria lista para manter o histórico coerente
-        await ExerciseList.findByIdAndUpdate(listId, {
-            isEvaluative: isEvalBool,
-            maxAttempts: maxAttInt
-        });
+        if (houveTrocaDeLista) {
+            await ActivityAttempt.deleteMany({ activityId });
+            await Submission.deleteMany({ activityId });
+        }
 
         res.json({ success: true });
     } catch (e) {
@@ -274,7 +254,42 @@ router.post('/atividade/vincular', async (req, res) => {
     }
 });
 
-// Carregar exercícios da lista vinculada OU exercício individual para teste
+router.post('/atividade/config', async (req, res) => {
+    try {
+        const { activityId, isEvaluative, maxAttempts, hasTimeLimit, timeLimitMinutes } = req.body;
+        if (!activityId) return res.status(400).json({ success: false, error: "activityId ausente." });
+
+        const duracaoMinutos = parseInt(timeLimitMinutes, 10) || 0;
+        const temLimiteTempo = hasTimeLimit === true || hasTimeLimit === 'true';
+
+        const config = await ActivityConfig.findOneAndUpdate(
+            { activityId },
+            {
+                isEvaluative: isEvaluative === true || isEvaluative === 'true',
+                maxAttempts: parseInt(maxAttempts, 10) || 3,
+                hasTimeLimit: temLimiteTempo,
+                timeLimitMinutes: duracaoMinutos,
+                updatedAt: new Date()
+            },
+            { upsert: true, new: true }
+        );
+
+        if (temLimiteTempo && duracaoMinutos > 0) {
+            const tentativasAtivas = await ActivityAttempt.find({ activityId });
+            for (const attempt of tentativasAtivas) {
+                attempt.expiresAt = new Date(attempt.startedAt.getTime() + (duracaoMinutos * 60 * 1000));
+                await attempt.save();
+            }
+        } else if (!temLimiteTempo) {
+            await ActivityAttempt.deleteMany({ activityId });
+        }
+
+        res.json({ success: true, config });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 router.get('/atividade/exercicios', async (req, res) => {
     try {
         const { activityId, listId, exerciseId } = req.query;
@@ -326,7 +341,6 @@ router.get('/atividade/exercicios', async (req, res) => {
     }
 });
 
-// Dados do professor (padrão fixo de 3 tentativas)
 router.get('/professor/dados', async (req, res) => {
     try {
         const { activityId } = req.query;
@@ -355,6 +369,8 @@ router.get('/professor/dados', async (req, res) => {
             listaVinculada: vinculo ? vinculo.listId : null,
             isEvaluative: vinculo ? !!vinculo.isEvaluative : false,
             maxAttempts: vinculo && vinculo.maxAttempts ? vinculo.maxAttempts : 3,
+            hasTimeLimit: vinculo ? !!vinculo.hasTimeLimit : false,
+            timeLimitMinutes: vinculo && vinculo.timeLimitMinutes ? vinculo.timeLimitMinutes : 0,
             maxExecutionTimeLimitMs: MAX_TIME_LIMIT_MS,
             defaultExecutionTimeLimitMs: DEFAULT_TIME_LIMIT_MS
         });
@@ -363,7 +379,6 @@ router.get('/professor/dados', async (req, res) => {
     }
 });
 
-// Métricas da turma
 router.get('/professor/turma-metricas', async (req, res) => {
     try {
         const { activityId } = req.query;
@@ -491,7 +506,6 @@ router.get('/professor/turma-metricas', async (req, res) => {
     }
 });
 
-// Importar lista de exercícios
 router.post('/professor/exercicio/importar', async (req, res) => {
     try {
         const { exerciseId } = req.body;
@@ -539,9 +553,7 @@ router.post('/professor/lista/importar', async (req, res) => {
             authorId: meuId,
             authorName: meuNome,
             exercises: listaOriginal.exercises,
-            isPublic: listaOriginal.isPublic !== false,
-            isEvaluative: listaOriginal.isEvaluative || false,
-            maxAttempts: listaOriginal.maxAttempts || 3
+            isPublic: listaOriginal.isPublic !== false
         });
 
         res.json({ success: true, lista: novaLista });
@@ -550,7 +562,6 @@ router.post('/professor/lista/importar', async (req, res) => {
     }
 });
 
-// Desvincular lista da atividade
 router.post('/atividade/desvincular', async (req, res) => {
     try {
         const { activityId } = req.body;
@@ -562,6 +573,8 @@ router.post('/atividade/desvincular', async (req, res) => {
             { activityId },
             { $unset: { listId: "" }, updatedAt: new Date() }
         );
+
+        await ActivityAttempt.deleteMany({ activityId });
 
         res.json({ success: true });
     } catch (e) {

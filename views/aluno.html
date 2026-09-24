@@ -139,11 +139,27 @@
             font-weight: 700;
             border: 1px solid #00539b;
         }
+        .modal-backdrop.show {
+            backdrop-filter: blur(14px) !important;
+            -webkit-backdrop-filter: blur(14px) !important;
+            background-color: rgba(15, 23, 42, 0.65) !important;
+        }
+        #modalConfirmarInicioTempo {
+            backdrop-filter: blur(14px) !important;
+            -webkit-backdrop-filter: blur(14px) !important;
+        }
+        .conteudo-bloqueado-esfumacado {
+            filter: blur(16px) !important;
+            -webkit-filter: blur(16px) !important;
+            pointer-events: none !important;
+            user-select: none !important;
+            transition: filter 0.3s ease-out;
+        }
     </style>
 </head>
 <body>
 
-    <div class="container-fluid px-4 py-3">
+    <div class="container-fluid px-4 py-3" id="conteudo-principal-aluno">
         <div class="row">
             <div class="col-xl-3 col-lg-3 col-md-12 mb-3">
                 <div class="card shadow-sm border-0 mb-3">
@@ -250,9 +266,14 @@
                             </div>
 
                             <div class="d-flex align-items-center">
+                                <span id="badge-cronometro-atividade" class="badge badge-warning text-dark border p-2 mr-3 font-weight-bold" style="display: none; font-size: 0.88rem;">
+                                    <i class="fas fa-stopwatch mr-1"></i> Tempo: <span id="val-cronometro-atividade">--:--</span>
+                                </span>
+
                                 <span id="badge-tentativas" class="badge badge-light border text-muted p-2 mr-3 font-weight-bold" style="display: none; font-size: 0.88rem;">
                                     <i class="fas fa-history mr-1"></i> Tentativas: <span id="contador-tentativas">0 / 0</span>
                                 </span>
+
                                 <span id="wrapperBtnSubmit" class="d-inline-block">
                                     <button id="btnSubmit" class="btn btn-primary btn-lg px-5 shadow-sm font-weight-bold">
                                         <i class="fas fa-play mr-2"></i> Compilar
@@ -340,7 +361,25 @@
         </div>
     </div>
 
-    <!-- Modal do Placar da Turma com 2 Visões: Geral da Lista e Por Exercício -->
+    <div class="modal fade" id="modalConfirmarInicioTempo" data-backdrop="static" data-keyboard="false" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content shadow border-0 text-center p-4">
+                <div class="modal-body p-0">
+                    <i class="fas fa-stopwatch text-warning mb-3" style="font-size: 3.2rem;"></i>
+                    <h5 class="font-weight-bold text-dark mb-2">Atividade Cronometrada</h5>
+                    <p class="text-secondary small mb-3">
+                        Esta atividade possui um limite de <strong id="modal-tempo-limite-minutos">-</strong> minutos para conclusão.<br>
+                        Assim que você iniciar, o tempo começará a correr!
+                    </p>
+                    <p class="small font-weight-bold text-dark mb-4">Deseja começar?</p>
+                    <button type="button" id="btnConfirmarInicio" class="btn btn-primary btn-block font-weight-bold py-2 shadow-sm">
+                        <i class="fas fa-play mr-1"></i> Iniciar Atividade
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalRankingGeral" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">
             <div class="modal-content">

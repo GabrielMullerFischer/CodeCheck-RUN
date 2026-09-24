@@ -159,7 +159,7 @@
                                     </div>
                                     <div class="mt-2 mt-md-0 d-flex align-items-center">
                                         <button type="button" id="btnEditarAtividadeAtiva" class="btn btn-outline-secondary btn-sm mr-2 font-weight-bold shadow-sm">
-                                            <i class="fas fa-pencil-alt mr-1"></i> Editar Lista
+                                            <i class="fas fa-sliders-h mr-1"></i> Editar Atividade
                                         </button>
                                         <button type="button" id="btnPreview" class="btn btn-outline-primary btn-sm mr-2 font-weight-bold shadow-sm">
                                             <i class="fas fa-eye mr-1"></i> Modo Aluno
@@ -183,7 +183,6 @@
                                             </button>
                                         </div>
 
-                                        <!-- Sub-abas do Ranking do Professor -->
                                         <div class="px-3 pt-3">
                                             <ul class="nav nav-pills nav-fill nav-segmented mb-3" role="tablist">
                                                 <li class="nav-item">
@@ -200,7 +199,6 @@
                                         </div>
 
                                         <div class="tab-content">
-                                            <!-- Visão 1: Geral da Lista -->
                                             <div class="tab-pane fade show active" id="tab-prof-ranking-geral" role="tabpanel">
                                                 <div class="table-responsive">
                                                     <table class="table table-hover align-middle mb-0" style="font-size: 0.92rem;">
@@ -218,7 +216,6 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Visão 2: Por Exercício -->
                                             <div class="tab-pane fade px-3 pb-3" id="tab-prof-ranking-exercicio" role="tabpanel">
                                                 <div class="form-group mb-2">
                                                     <label class="small text-muted font-weight-bold mb-1">Selecione o Exercício:</label>
@@ -312,18 +309,47 @@
                                     <div class="scrollable-list p-2 mb-3" id="container-listas-salvas"></div>
 
                                     <div class="card p-3 mb-3 bg-white border rounded">
-                                        <div class="d-flex align-items-center flex-wrap">
-                                            <div class="custom-control custom-switch">
-                                                <input type="checkbox" class="custom-control-input" id="chk-limite-tentativas">
-                                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer" for="chk-limite-tentativas">
-                                                    Limite de Tentativas por Exercício
-                                                </label>
+                                        <div class="row align-items-center">
+                                            <div class="col-md-6 border-right">
+                                                <div class="d-flex align-items-center flex-wrap">
+                                                    <div class="custom-control custom-switch">
+                                                        <input type="checkbox" class="custom-control-input" id="chk-limite-tentativas">
+                                                        <label class="custom-control-label font-weight-bold text-dark cursor-pointer mb-0" for="chk-limite-tentativas">
+                                                            Limite de Tentativas por Exercício
+                                                        </label>
+                                                    </div>
+                                                    <div id="box-tentativas" class="align-items-center ml-3 mt-1 mt-sm-0" style="display: none;">
+                                                        <label for="input-max-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
+                                                            Tentativas:
+                                                        </label>
+                                                        <input type="number" id="input-max-tentativas" class="form-control form-control-sm" min="1" max="10" value="3" style="width: 70px;">
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div id="box-tentativas" class="align-items-center ml-4" style="display: none;">
-                                                <label for="input-max-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
-                                                    Tentativas:
-                                                </label>
-                                                <input type="number" id="input-max-tentativas" class="form-control form-control-sm" min="1" value="3" style="width: 75px;">
+
+                                            <div class="col-md-6 mt-3 mt-md-0">
+                                                <div class="d-flex align-items-center flex-wrap">
+                                                    <div class="custom-control custom-switch">
+                                                        <input type="checkbox" class="custom-control-input" id="chk-tempo-atividade">
+                                                        <label class="custom-control-label font-weight-bold text-dark cursor-pointer mb-0" for="chk-tempo-atividade">
+                                                            <i class="fas fa-stopwatch text-warning mr-1"></i> Tempo Limite da Atividade
+                                                        </label>
+                                                    </div>
+                                                    <div id="box-tempo-atividade" class="align-items-center ml-3 mt-1 mt-sm-0" style="display: none;">
+                                                        <label for="input-tempo-atividade" class="small text-muted mb-0 mr-2 font-weight-bold">
+                                                            Duração (min):
+                                                        </label>
+                                                        <input type="number" 
+                                                            id="input-tempo-atividade" 
+                                                            class="form-control form-control-sm text-center font-weight-bold" 
+                                                            min="5" 
+                                                            max="720" 
+                                                            step="5" 
+                                                            value="60" 
+                                                            onwheel="this.blur()" 
+                                                            style="width: 85px;">
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -576,29 +602,76 @@
                             </label>
                         </div>
 
-                        <div class="card p-3 mb-3 bg-light border rounded">
-                            <div class="d-flex align-items-center flex-wrap">
-                                <div class="custom-control custom-switch">
-                                    <input type="checkbox" class="custom-control-input" id="modal-edit-chk-limite-tentativas">
-                                    <label class="custom-control-label font-weight-bold text-dark cursor-pointer" for="modal-edit-chk-limite-tentativas">
-                                        Com limite de tentativas por exercício
-                                    </label>
-                                </div>
-                                <div id="modal-edit-box-tentativas" class="align-items-center ml-4" style="display: none;">
-                                    <label for="modal-edit-input-max-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
-                                        Tentativas:
-                                    </label>
-                                    <input type="number" id="modal-edit-input-max-tentativas" class="form-control form-control-sm" min="1" value="3" style="width: 75px;">
-                                </div>
-                            </div>
-                        </div>
-
                         <label class="font-weight-bold">Exercícios selecionados para esta lista:</label>
                         <div id="modal-edit-lista-exercicios" class="scrollable-list p-2 mb-2" style="max-height: 250px;"></div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
                         <button type="button" id="modalBtnSalvarEdicaoLista" class="btn btn-success font-weight-bold">Salvar Alterações</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="modalEditarAtividade" tabindex="-1" role="dialog" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content shadow border-0">
+                    <div class="modal-header bg-primary text-white py-2">
+                        <h6 class="modal-title font-weight-bold">
+                            <i class="fas fa-sliders-h mr-2"></i> Regras da Atividade Ativa
+                        </h6>
+                        <button type="button" class="close text-white" data-dismiss="modal">
+                            <span>&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body p-3">
+                        <p class="small text-muted mb-3">
+                            Estas regras afetam apenas a aplicação desta atividade para a turma atual.
+                        </p>
+
+                        <div class="card p-3 mb-3 bg-light border rounded">
+                            <div class="custom-control custom-switch mb-2">
+                                <input type="checkbox" class="custom-control-input" id="modal-ativ-chk-tentativas">
+                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer" for="modal-ativ-chk-tentativas">
+                                    Limite de Tentativas por Exercício
+                                </label>
+                            </div>
+                            <div id="modal-ativ-box-tentativas" class="align-items-center ml-4 mt-2" style="display: none;">
+                                <label for="modal-ativ-input-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
+                                    Tentativas:
+                                </label>
+                                <input type="number" id="modal-ativ-input-tentativas" class="form-control form-control-sm" min="1" max="10" value="3" style="width: 75px;">
+                            </div>
+                        </div>
+
+                        <div class="card p-3 bg-light border rounded">
+                            <div class="custom-control custom-switch mb-2">
+                                <input type="checkbox" class="custom-control-input" id="modal-ativ-chk-tempo">
+                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer" for="modal-ativ-chk-tempo">
+                                    Tempo Limite para Realização da Atividade
+                                </label>
+                            </div>
+                            <div id="modal-ativ-box-tempo" class="align-items-center ml-4 mt-2" style="display: none;">
+                                <label for="modal-ativ-input-tempo" class="small text-muted mb-0 mr-2 font-weight-bold">
+                                    Duração total (em minutos):
+                                </label>
+                                <input type="number" 
+                                    id="modal-ativ-input-tempo" 
+                                    class="form-control form-control-sm text-center font-weight-bold" 
+                                    min="5" 
+                                    max="720" 
+                                    step="5" 
+                                    value="60" 
+                                    onwheel="this.blur()" 
+                                    style="width: 85px;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer py-2 bg-light">
+                        <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancelar</button>
+                        <button type="button" id="btnSalvarConfigAtividadeModal" class="btn btn-sm btn-primary font-weight-bold">
+                            Salvar Regras da Atividade
+                        </button>
                     </div>
                 </div>
             </div>

@@ -6,6 +6,7 @@ const ActivityConfig = require('../models/ActivityConfig');
 const ExerciseList = require('../models/ExerciseList');
 const Exercise = require('../models/Exercise');
 const Submission = require('../models/Submission');
+const ActivityAttempt = require('../models/ActivityAttempt');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
@@ -42,6 +43,74 @@ function gerarDicaDidatica(status, details, got) {
     }
     return null;
 }
+// Consulta o status do cronômetro do aluno na atividade
+router.get('/atividade/timer-status', async (req, res) => {
+    const { activityId, mode } = req.query;
+    const userId = req.session?.userId || req.query.userId || 'preview_user';
+
+    const isProfessor = req.session?.isProfessor === true || userId === 'preview_user' || userId === 'professor_test' || mode === 'preview';
+
+    if (isProfessor || !activityId || activityId === 'preview') {
+        return res.json({ success: true, hasTimeLimit: false });
+    }
+
+    try {
+        const config = await ActivityConfig.findOne({ activityId });
+        if (!config || !config.hasTimeLimit) {
+            return res.json({ success: true, hasTimeLimit: false });
+        }
+
+        const attempt = await ActivityAttempt.findOne({ userId, activityId });
+
+        res.json({
+            success: true,
+            hasTimeLimit: true,
+            timeLimitMinutes: config.timeLimitMinutes || 0,
+            started: !!attempt,
+            expiresAt: attempt ? attempt.expiresAt : null,
+            serverTime: Date.now()
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Inicia a contagem oficial da avaliação no servidor
+router.post('/atividade/iniciar-timer', async (req, res) => {
+    const { activityId } = req.body;
+    const userId = req.session?.userId || req.body.userId || 'preview_user';
+
+    if (!activityId || activityId === 'preview') {
+        return res.json({ success: true, hasTimeLimit: false });
+    }
+
+    try {
+        const config = await ActivityConfig.findOne({ activityId });
+        if (!config || !config.hasTimeLimit) {
+            return res.json({ success: true, hasTimeLimit: false });
+        }
+
+        let attempt = await ActivityAttempt.findOne({ userId, activityId });
+        if (!attempt) {
+            const startedAt = new Date();
+            const expiresAt = new Date(startedAt.getTime() + (config.timeLimitMinutes * 60 * 1000));
+            attempt = await ActivityAttempt.create({
+                userId,
+                activityId,
+                startedAt,
+                expiresAt
+            });
+        }
+
+        res.json({
+            success: true,
+            expiresAt: attempt.expiresAt,
+            serverTime: Date.now()
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 
 // Submissão oficial
 router.post('/submit', async (req, res) => {
@@ -86,9 +155,22 @@ router.post('/submit', async (req, res) => {
 
         const isProfessorReal = req.session?.isProfessor === true || userId === 'professor_test';
 
-        // Validação de limite de tentativas apenas para alunos reais em atividades avaliativas
+        // Validações antifraude e restrições para alunos
         if (!isProfessorReal && userId !== 'preview_user' && activityId && activityId !== 'preview') {
             const configAtividade = await ActivityConfig.findOne({ activityId });
+            
+            // Trava de Tempo Limite da Avaliação
+            if (configAtividade && configAtividade.hasTimeLimit) {
+                const attempt = await ActivityAttempt.findOne({ userId, activityId });
+                if (!attempt) {
+                    return res.status(403).json({ error: "Você precisa iniciar a contagem de tempo da atividade primeiro." });
+                }
+                if (Date.now() > new Date(attempt.expiresAt).getTime()) {
+                    return res.status(403).json({ error: "O tempo limite de entrega desta atividade encerrou." });
+                }
+            }
+
+            // Validação de limite de tentativas apenas para alunos reais em atividades avaliativas
             if (configAtividade && configAtividade.isEvaluative) {
                 const totalTentativas = await Submission.countDocuments({
                     userId,
