@@ -10,6 +10,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
 
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+
     <style>
         body { background-color: #f4f6f9; font-size: 0.92rem; }
         .moodle-nav-box {
@@ -57,19 +62,82 @@
         .moodle-nav-box.status-wrong .status-strip {
             background-color: #dc3545;
         }
-        @keyframes piscarLinhaSuave {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
+        .CodeMirror {
+            height: 520px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
+            font-size: 0.96rem;
+            border: 1px solid #ced4da;
+            line-height: 1.5;
         }
-        .overlay-linha-erro {
+        .linha-erro-cm {
+            background-color: rgba(220, 53, 69, 0.28) !important;
+            border-left: 4px solid #dc3545;
+        }
+        .pre-io {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.88rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-bottom: 0;
+            background-color: #f8f9fa;
+        }
+        .theme-floating-pill {
             position: absolute;
-            background-color: rgba(220, 53, 69, 0.38);
-            border-left: 5px solid #dc3545;
-            border-radius: 4px;
-            pointer-events: none;
-            z-index: 5;
-            animation: piscarLinhaSuave 0.5s ease-in-out 3;
-            animation-fill-mode: forwards;
+            top: 10px;
+            right: 18px;
+            z-index: 9;
+            display: inline-flex;
+            align-items: center;
+            background: rgba(24, 28, 36, 0.82);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 20px;
+            padding: 3px 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+            transition: all 0.2s ease-in-out;
+        }
+        .theme-floating-pill:hover {
+            background: rgba(18, 22, 28, 0.95);
+            border-color: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+        }
+        .theme-floating-select {
+            background: transparent;
+            color: #f8f9fa;
+            border: none;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            padding: 1px 4px;
+        }
+        .theme-floating-select option {
+            background-color: #212529;
+            color: #ffffff;
+        }
+        .nav-segmented {
+            background-color: #f4f7fa;
+            padding: 4px;
+            border-radius: 8px;
+            border: 1.5px solid #00539b;
+            gap: 4px;
+        }
+        .nav-segmented .nav-link {
+            color: #00539b !important;
+            border-radius: 6px;
+            background-color: transparent;
+            border: 1px solid transparent;
+            transition: all 0.2s ease-in-out;
+            text-align: center;
+            font-weight: 600;
+        }
+        .nav-segmented .nav-link.active {
+            background-color: #00539b !important;
+            color: #ffffff !important;
+            font-weight: 700;
+            border: 1px solid #00539b;
         }
     </style>
 </head>
@@ -77,7 +145,152 @@
 
     <div class="container-fluid px-4 py-3">
         <div class="row">
-            <div class="col-xl-3 col-lg-3 col-md-4 mb-3">
+            <div class="col-xl-3 col-lg-3 col-md-12 mb-3">
+                <div class="card shadow-sm border-0 mb-3">
+                    <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom">
+                        <i class="fas fa-vial text-primary mr-1"></i> Exemplo de Teste
+                    </div>
+                    <div class="card-body p-3" id="container-exemplos-questao">
+                        <span class="text-muted small">Carregando exemplo...</span>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0 mb-3" id="card-depuracao-livre">
+                    <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-keyboard text-info mr-1"></i> Depuração</span>
+                        <span id="badge-status-depuracao" class="badge badge-warning text-dark font-weight-bold" style="display: none;">
+                            <i class="fas fa-lock mr-1"></i> Indisponível
+                        </span>
+                    </div>
+
+                    <div class="card-body p-3" id="body-depuracao-livre">
+                        <label class="small text-muted mb-1 font-weight-bold">Entradas para o teste:</label>
+                        <textarea id="customInputStdin" class="form-control form-control-sm mb-2 font-monospace" rows="3" placeholder="Digite os valores lidos pelo seu programa..."></textarea>
+                        
+                        <button type="button" id="btnExecutarTesteCustom" class="btn btn-sm btn-outline-info btn-block font-weight-bold py-2 shadow-sm mb-2">
+                            <i class="fas fa-play mr-1"></i> Compilar
+                        </button>
+                        
+                        <div id="resultTesteCustom"></div>
+
+                        <div class="alert alert-light border small text-muted p-2 mt-2 mb-0">
+                            <i class="fas fa-info-circle text-info mr-1"></i> Utilize essa área para testar a saída resultante das suas entradas.
+                        </div>
+                    </div>
+
+                    <div class="card-body p-4 text-center bg-light" id="box-depuracao-bloqueada" style="display: none;">
+                        <i class="fas fa-lock text-muted mb-3" style="font-size: 2.2rem;"></i>
+                        <h6 class="font-weight-bold text-dark mb-1">Recurso Indisponível</h6>
+                        <p class="small text-muted mb-0">
+                            A depuração com entradas livres está desativada nesta atividade porque há um <strong>limite de tentativas</strong> configurado.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
+                <div class="card shadow-sm border-0 mb-3">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
+                            <h4 class="text-primary font-weight-bold mb-0" id="nome-questao">{{NOME_QUESTAO}}</h4>
+                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold" style="display: none; font-size: 0.85rem;">
+                                <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">-</span>
+                            </span>
+                        </div>
+                        <p class="text-secondary" id="descricao-questao" style="white-space: pre-line;">{{DESCRICAO_QUESTAO}}</p>
+
+                        <hr>
+
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
+                            <div class="mb-1 mb-md-0">
+                                <button type="button" id="btnRestaurarCodigo" class="btn btn-sm btn-outline-secondary py-1 px-3 font-weight-bold shadow-sm" style="font-size: 0.82rem;" title="Voltar ao código padrão">
+                                    <i class="fas fa-undo-alt mr-1"></i> Restaurar main()
+                                </button>
+                            </div>
+
+                            <div class="d-flex align-items-center">
+                                <div class="btn-group btn-group-sm shadow-sm" id="nav-historico-submissoes" style="display: none;">
+                                    <button type="button" id="btnSubAnterior" class="btn btn-outline-primary px-2 font-weight-bold" style="min-width: 32px;" title="Submissão mais antiga" disabled>
+                                        <i class="fas fa-chevron-left"></i>
+                                    </button>
+
+                                    <span id="labelHistoricoSub" class="btn btn-light border text-muted py-1 d-flex align-items-center justify-content-center small font-weight-bold" style="width: 165px; min-width: 165px; max-width: 165px; cursor: default; pointer-events: none; white-space: nowrap;">
+                                        Rascunho Atual
+                                    </span>
+
+                                    <button type="button" id="btnSubProximo" class="btn btn-outline-primary px-2 font-weight-bold" style="min-width: 32px;" title="Submissão mais recente" disabled>
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="position-relative mb-3">
+                            <div class="theme-floating-pill">
+                                <i class="fas fa-palette text-warning mr-1" style="font-size: 0.78rem;"></i>
+                                <select id="select-tema-editor" class="theme-floating-select" title="Alterar tema visual do editor">
+                                    <option value="dracula">Dracula</option>
+                                    <option value="monokai">Monokai</option>
+                                    <option value="default">Claro</option>
+                                </select>
+                            </div>
+
+                            <textarea id="editor"></textarea>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <button type="button" id="btn-exercicio-anterior" class="btn btn-outline-secondary btn-sm" disabled>
+                                    <i class="fas fa-arrow-left mr-1"></i> Anterior
+                                </button>
+                                <button type="button" id="btn-exercicio-proximo" class="btn btn-outline-secondary btn-sm ml-1">
+                                    Próximo <i class="fas fa-arrow-right ml-1"></i>
+                                </button>
+                            </div>
+
+                            <div class="d-flex align-items-center">
+                                <span id="badge-tentativas" class="badge badge-light border text-muted p-2 mr-3 font-weight-bold" style="display: none; font-size: 0.88rem;">
+                                    <i class="fas fa-history mr-1"></i> Tentativas: <span id="contador-tentativas">0 / 0</span>
+                                </span>
+                                <span id="wrapperBtnSubmit" class="d-inline-block">
+                                    <button id="btnSubmit" class="btn btn-primary btn-lg px-5 shadow-sm font-weight-bold">
+                                        <i class="fas fa-play mr-2"></i> Compilar
+                                    </button>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div id="result" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-lg-3 col-md-12 mb-3">
+                <div class="card shadow-sm border-0 mb-3">
+                    <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom">
+                        <i class="fas fa-th-large text-primary mr-1"></i> Navegação da Atividade
+                    </div>
+                    <div class="card-body p-3">
+                        <div id="container-nav-questoes" class="d-flex flex-wrap" style="gap: 8px;"></div>
+                        <hr class="my-3">
+                        <div class="small text-muted">
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="badge badge-success mr-2" style="width: 12px; height: 12px; padding: 0;">&nbsp;</span>
+                                Exercício Resolvido
+                            </div>
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="badge badge-danger mr-2" style="width: 12px; height: 12px; padding: 0;">&nbsp;</span>
+                                Tentativa Incorreta
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <span class="badge badge-secondary mr-2" style="width: 12px; height: 12px; padding: 0;">&nbsp;</span>
+                                Não Respondido
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom">
                         <i class="fas fa-tachometer-alt text-primary mr-1"></i> Estatísticas da Questão
@@ -97,97 +310,37 @@
                     </div>
                 </div>
 
-                <div class="card shadow-sm border-0 text-center p-3">
-                    <h6 class="font-weight-bold text-dark mb-1"><i class="fas fa-trophy text-warning mr-1"></i> Placar da Turma</h6>
-                    <p class="small text-muted mb-3">Veja quem acertou mais questões e lidera os menores tempos.</p>
+                <div class="card shadow-sm border-0 p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="font-weight-bold text-dark mb-0">
+                            <i class="fas fa-trophy text-warning mr-1"></i> Placar da Turma
+                        </h6>
+                        <span id="placar-minha-badge-geral" class="badge badge-light border text-muted small font-weight-bold">
+                            Posição: -
+                        </span>
+                    </div>
+
+                    <div id="container-top3-placar" class="mb-3">
+                        <div class="text-center text-muted small py-2">Carregando placar...</div>
+                    </div>
+
+                    <div id="box-minha-posicao-destaque" class="alert alert-primary py-1 px-2 small mb-3 border-0" style="display: none;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><strong>Sua Posição Geral:</strong></span>
+                            <span id="label-minha-pos-geral" class="badge badge-primary font-weight-bold">#-</span>
+                        </div>
+                    </div>
+
                     <button type="button" class="btn btn-outline-primary btn-sm btn-block font-weight-bold" data-toggle="modal" data-target="#modalRankingGeral">
-                        <i class="fas fa-list-ol mr-1"></i> Ver Classificação Geral
+                        <i class="fas fa-list-ol mr-1"></i> Ver Classificação Completa
                     </button>
                 </div>
+
             </div>
-
-            <div class="col-xl-6 col-lg-6 col-md-8 mb-3">
-                <div class="card shadow-sm border-0 mb-3">
-                    <div class="card-body p-4">
-                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
-                            <h4 class="text-primary font-weight-bold mb-0" id="nome-questao">{{NOME_QUESTAO}}</h4>
-                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold" style="font-size: 0.85rem;">
-                                <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">1000 ms</span>
-                            </span>
-                        </div>
-                        <p class="text-secondary" id="descricao-questao" style="white-space: pre-line;">{{DESCRICAO_QUESTAO}}</p>
-                        
-                        <div class="alert alert-secondary py-2 px-3 small border-0 bg-light">
-                            <i class="fas fa-info-circle text-info mr-1"></i> <strong>Exemplo:</strong> 
-                            <span id="exemplo-questao">{{EXEMPLO_QUESTAO}}</span>
-                        </div>
-
-                        <hr>
-
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <label for="editor" class="font-weight-bold mb-0">Implemente sua solução em C:</label>
-                            <button type="button" id="btnRestaurarCodigo" class="btn btn-sm btn-outline-secondary py-0 px-2 font-weight-bold" style="font-size: 0.8rem;" title="Voltar ao código padrão">
-                                <i class="fas fa-undo-alt mr-1"></i> Restaurar main()
-                            </button>
-                        </div>
-
-                        <textarea id="editor" class="form-control mb-3" rows="14" style="font-family: 'Courier New', monospace; font-size: 0.95rem;"></textarea>
-
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <button type="button" id="btn-exercicio-anterior" class="btn btn-outline-secondary btn-sm" disabled>
-                                    <i class="fas fa-arrow-left mr-1"></i> Anterior
-                                </button>
-                                <button type="button" id="btn-exercicio-proximo" class="btn btn-outline-secondary btn-sm ml-1">
-                                    Próximo <i class="fas fa-arrow-right ml-1"></i>
-                                </button>
-                            </div>
-
-                            <div class="d-flex align-items-center">
-                                <span id="badge-tentativas" class="badge badge-light border text-muted p-2 mr-3 font-weight-bold" style="display: none; font-size: 0.88rem;">
-                                    <i class="fas fa-history mr-1"></i> Tentativas: <span id="contador-tentativas">0 / 0</span>
-                                </span>
-                                <button id="btnSubmit" class="btn btn-primary btn-lg px-5 shadow-sm font-weight-bold">
-                                    <i class="fas fa-play mr-2"></i> Compilar
-                                </button>
-                            </div>
-                        </div>
-
-                        <div id="result" class="mt-3"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-xl-3 col-lg-3 col-md-12 mb-3">
-                <div class="card shadow-sm border-0 mb-3">
-                    <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom">
-                        <i class="fas fa-th-large text-primary mr-1"></i> Navegação da Atividade
-                    </div>
-                    <div class="card-body p-3">
-                        <div id="container-nav-questoes" class="d-flex flex-wrap" style="gap: 8px;">
-                        </div>
-                        <hr class="my-3">
-                        <div class="small text-muted">
-                            <div class="d-flex align-items-center mb-1">
-                                <span class="badge badge-success mr-2" style="width: 12px; height: 12px; padding: 0;">&nbsp;</span>
-                                Exercício Resolvido
-                            </div>
-                            <div class="d-flex align-items-center mb-1">
-                                <span class="badge badge-danger mr-2" style="width: 12px; height: 12px; padding: 0;">&nbsp;</span>
-                                Tentativa Incorreta
-                            </div>
-                            <div class="d-flex align-items-center">
-                                <span class="badge badge-secondary mr-2" style="width: 12px; height: 12px; padding: 0;">&nbsp;</span>
-                                Não Respondido
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
         </div>
     </div>
 
+    <!-- Modal do Placar da Turma com 2 Visões: Geral da Lista e Por Exercício -->
     <div class="modal fade" id="modalRankingGeral" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">
             <div class="modal-content">
@@ -199,23 +352,64 @@
                         <span>&times;</span>
                     </button>
                 </div>
-                <div class="modal-body p-0">
-                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                        <table class="table table-sm table-hover mb-0" style="font-size: 0.88rem;">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>#</th>
-                                    <th>Aluno</th>
-                                    <th class="text-center">Resolvidos</th>
-                                    <th class="text-right">Tempo Total</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tbody-modal-ranking">
-                                <tr><td colspan="4" class="text-center text-muted py-3">Carregando placar...</td></tr>
-                            </tbody>
-                        </table>
+                
+                <div class="modal-body p-3">
+                    <ul class="nav nav-pills nav-fill nav-segmented mb-3" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active font-weight-bold py-1" data-toggle="pill" href="#tab-aluno-ranking-geral" role="tab">
+                                <i class="fas fa-trophy mr-1"></i> Geral da Lista
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link font-weight-bold py-1" data-toggle="pill" href="#tab-aluno-ranking-exercicio" role="tab">
+                                <i class="fas fa-stopwatch mr-1"></i> Por Exercício
+                            </a>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-aluno-ranking-geral" role="tabpanel">
+                            <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0" style="font-size: 0.88rem;">
+                                    <thead class="thead-light">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Aluno</th>
+                                            <th class="text-center">Resolvidos</th>
+                                            <th class="text-right">Tempo Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-modal-ranking">
+                                        <tr><td colspan="4" class="text-center text-muted py-3">Carregando placar...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade" id="tab-aluno-ranking-exercicio" role="tabpanel">
+                            <div class="form-group mb-2">
+                                <label class="small text-muted font-weight-bold mb-1">Selecione o Exercício:</label>
+                                <select id="select-aluno-ex-ranking" class="form-control form-control-sm font-weight-bold text-dark"></select>
+                            </div>
+
+                            <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0" style="font-size: 0.88rem;">
+                                    <thead class="thead-light">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Aluno</th>
+                                            <th class="text-right">Melhor Tempo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-aluno-ranking-exercicio">
+                                        <tr><td colspan="3" class="text-center text-muted py-3">Selecione um exercício acima.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
                 <div class="modal-footer py-2 bg-light">
                     <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Fechar</button>
                 </div>
@@ -225,6 +419,13 @@
 
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
+
     <script src="/js/aluno.js"></script>
 </body>
 </html>

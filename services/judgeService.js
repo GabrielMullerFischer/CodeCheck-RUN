@@ -6,12 +6,12 @@ const execPromise = util.promisify(exec);
 
 async function isAlreadyRunning(containerName) {
     try {
-        const { stdout } = await execPromise(`docker ps -aq -f name=^/${containerName}$_${id}$`);
+        const { stdout } = await execPromise(`docker ps -aq -f name=^/${containerName}$`);
         return stdout.trim().length > 0;
     } catch (e) { return false; }
 }
 
-async function runTests(code, tests, containerName) {
+async function runTests(code, tests, containerName, timeLimitMs) {
     const id = Date.now();
     const tempDir = path.resolve(__dirname, '../tmp', `${id}`);
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
@@ -22,7 +22,7 @@ async function runTests(code, tests, containerName) {
     const cpuLimit = process.env.DOCKER_CPU_LIMIT || "0.25";
     const memLimit = process.env.DOCKER_MEMORY_LIMIT || "128m";
     const timeoutComp = Number(process.env.COMPILE_TIMEOUT) || 30000;
-    const timeoutAluno = Number(process.env.TIMEOUT_ALUNO) || 10000;
+    const timeoutAluno = Number(timeLimitMs) || Number(process.env.TIMEOUT_ALUNO) || 10000;
 
     return new Promise(async (resolve) => {
         const compileCmd = `docker run --rm -v "${tempDir}":/code -w /code gcc gcc main.c -o prog`;
@@ -30,31 +30,49 @@ async function runTests(code, tests, containerName) {
             await execPromise(compileCmd, { timeout: timeoutComp });
         } catch (err) {
             limparPasta(tempDir);
-            return resolve({ status: 'Compilation Error',
-                             details: err.stderr || 'Erro desconhecido na compilação!' });
+            return resolve({ 
+                status: 'Compilation Error',
+                details: err.stderr || 'Erro desconhecido na compilação!' 
+            });
         }
 
-        let results = [];
-        const normalize = s => s.toString().replace(/\r/g, '').replace(/\s+/g, ' ').trim();
+        const normalize = s => {
+            if (!s) return '';
+            return s.toString()
+                .replace(/\r/g, '')
+                .split('\n')
+                .map(line => line.trimEnd())
+                .join('\n')
+                .trim();
+        };
 
         const executarTeste = (index) => {
             if (index === tests.length) {
                 limparPasta(tempDir);
-                const passedAll = results.every(r => r.passed);
                 return resolve({ status: 'Accepted', message: "Correto!" });
             }
 
             const t = tests[index];
             const runCmd = `docker run --rm --name ${containerName} --cpus="${cpuLimit}" --memory="${memLimit}" --network none -i -v "${tempDir}":/code -w /code gcc ./prog`;
 
-            const child = exec(runCmd, { timeout: timeoutAluno }, (runErr, studentOut) => {
-                if (runErr) {
+            const startTime = Date.now();
+            const child = exec(runCmd, { timeout: timeoutAluno }, (runErr, studentOut, studentErr) => {
+                const executionTime = Date.now() - startTime;
 
+                if (runErr) {
                     exec(`docker rm -f ${containerName}`, () => {
                         limparPasta(tempDir);
-                        return resolve({ 
-                            status: "Time Limit", 
-                            message: `Tempo limite de execução excedido!`
+                        if (runErr.killed || runErr.signal === 'SIGTERM' || executionTime >= timeoutAluno) {
+                            return resolve({ 
+                                status: "Time Limit", 
+                                message: "Tempo limite de execução excedido!",
+                                executionTime
+                            });
+                        }
+                        return resolve({
+                            status: "Runtime Error",
+                            details: studentErr || runErr.message,
+                            executionTime
                         });
                     });
                     return;
@@ -69,8 +87,9 @@ async function runTests(code, tests, containerName) {
                         status: 'Wrong Answer', 
                         message: "A saída não corresponde!",
                         input: t.input,
-                        got: studentOut.toString(),
-                        expected: t.output
+                        got: studentOut ? studentOut.toString() : '',
+                        expected: t.output,
+                        executionTime
                     });
                 }
 

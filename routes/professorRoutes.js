@@ -6,6 +6,9 @@ const ExerciseList = require('../models/ExerciseList');
 const ActivityConfig = require('../models/ActivityConfig');
 const Submission = require('../models/Submission');
 
+const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
+const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
+
 async function gerarTituloUnicoExercicio(baseTitle, authorId) {
     let title = baseTitle;
     let count = 1;
@@ -34,9 +37,23 @@ router.post('/exercicio', async (req, res) => {
         const authorName = req.session?.userName || 'Professor';
 
         const tituloFormatado = (title || '').trim();
-        const existe = await Exercise.findOne({ title: tituloFormatado, authorId });
+        const existe = await Exercise.findOne({ title: tituloFormatado, authorId, isArchived: { $ne: true } });
         if (existe) {
             return res.status(400).json({ success: false, error: "Você já possui um exercício cadastrado com este título." });
+        }
+
+        let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : null;
+        if (timeLimitVal !== null) {
+            if (isNaN(timeLimitVal) || timeLimitVal < 100) {
+                return res.status(400).json({ success: false, error: "O tempo limite deve ser de pelo menos 100 ms." });
+            }
+            if (timeLimitVal > MAX_TIME_LIMIT_MS) {
+                const horas = (MAX_TIME_LIMIT_MS / 3600000).toFixed(1).replace('.0', '');
+                return res.status(400).json({
+                    success: false,
+                    error: `O tempo limite não pode exceder o teto máximo do servidor de ${MAX_TIME_LIMIT_MS} ms (${horas}h).`
+                });
+            }
         }
 
         const exercicio = await Exercise.create({ 
@@ -46,9 +63,78 @@ router.post('/exercicio', async (req, res) => {
             authorId, 
             authorName,
             isPublic: !isPrivate,
-            timeLimit: parseInt(timeLimit, 10) || 1000
+            timeLimit: timeLimitVal
         });
         res.json({ success: true, exercicio });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Editar exercício
+router.put('/exercicio/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, tests, isPrivate, timeLimit } = req.body;
+        const meuId = String(req.session?.userId || 'preview_user');
+
+        const ex = await Exercise.findById(id);
+        if (!ex) return res.status(404).json({ success: false, error: "Exercício não encontrado." });
+
+        if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
+            return res.status(403).json({ success: false, error: "Sem permissão para alterar este exercício." });
+        }
+
+        let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : null;
+        if (timeLimitVal !== null) {
+            if (isNaN(timeLimitVal) || timeLimitVal < 100) {
+                return res.status(400).json({ success: false, error: "O tempo limite deve ser de pelo menos 100 ms." });
+            }
+            if (timeLimitVal > MAX_TIME_LIMIT_MS) {
+                const horas = (MAX_TIME_LIMIT_MS / 3600000).toFixed(1).replace('.0', '');
+                return res.status(400).json({
+                    success: false,
+                    error: `O tempo limite não pode exceder o teto máximo do servidor de ${MAX_TIME_LIMIT_MS} ms (${horas}h).`
+                });
+            }
+        }
+
+        ex.title = (title || '').trim();
+        ex.description = description;
+        ex.tests = tests;
+        ex.isPublic = !isPrivate;
+        ex.timeLimit = timeLimitVal;
+        await ex.save();
+
+        res.json({ success: true, exercicio: ex });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Excluir exercício com opção de manter nas listas existentes
+router.delete('/exercicio/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { removeFromAllLists } = req.query;
+        const meuId = String(req.session?.userId || 'preview_user');
+
+        const ex = await Exercise.findById(id);
+        if (!ex) return res.status(404).json({ success: false, error: "Exercício não encontrado." });
+
+        if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
+            return res.status(403).json({ success: false, error: "Sem permissão para excluir este exercício." });
+        }
+
+        if (removeFromAllLists === 'true') {
+            await Exercise.findByIdAndDelete(id);
+            await ExerciseList.updateMany({ exercises: id }, { $pull: { exercises: id } });
+        } else {
+            ex.isArchived = true;
+            await ex.save();
+        }
+
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -57,7 +143,7 @@ router.post('/exercicio', async (req, res) => {
 // Salvar Nova Lista
 router.post('/lista', async (req, res) => {
     try {
-        const { title, exercises, isPrivate } = req.body;
+        const { title, exercises, isPrivate, isEvaluative, maxAttempts } = req.body;
         const authorId = req.session?.userId || 'preview_user';
         const authorName = req.session?.userName || 'Professor';
 
@@ -72,9 +158,76 @@ router.post('/lista', async (req, res) => {
             exercises, 
             authorId, 
             authorName,
-            isPublic: !isPrivate
+            isPublic: !isPrivate,
+            isEvaluative: isEvaluative === true || isEvaluative === 'true',
+            maxAttempts: parseInt(maxAttempts, 10) || 3
         });
         res.json({ success: true, lista });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Editar lista
+router.put('/lista/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, exercises, isPrivate, isEvaluative, maxAttempts, activityId } = req.body;
+        const meuId = String(req.session?.userId || 'preview_user');
+
+        const lista = await ExerciseList.findById(id);
+        if (!lista) return res.status(404).json({ success: false, error: "Lista não encontrada." });
+
+        if (String(lista.authorId) !== meuId && meuId !== 'preview_user') {
+            return res.status(403).json({ success: false, error: "Sem permissão para alterar esta lista." });
+        }
+
+        lista.title = (title || '').trim();
+        lista.exercises = exercises;
+        lista.isPublic = !isPrivate;
+        if (typeof isEvaluative !== 'undefined') {
+            lista.isEvaluative = isEvaluative === true || isEvaluative === 'true';
+        }
+        if (typeof maxAttempts !== 'undefined') {
+            lista.maxAttempts = parseInt(maxAttempts, 10) || 3;
+        }
+        lista.updatedAt = new Date();
+        await lista.save();
+
+        // Se houver uma atividade vinculada a esta lista, sincroniza as tentativas nela também
+        const queryUpdate = activityId ? { activityId, listId: id } : { listId: id };
+        await ActivityConfig.updateMany(
+            queryUpdate,
+            {
+                isEvaluative: lista.isEvaluative,
+                maxAttempts: lista.maxAttempts,
+                updatedAt: new Date()
+            }
+        );
+
+        res.json({ success: true, lista });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Excluir lista
+router.delete('/lista/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const meuId = String(req.session?.userId || 'preview_user');
+
+        const lista = await ExerciseList.findById(id);
+        if (!lista) return res.status(404).json({ success: false, error: "Lista não encontrada." });
+
+        if (String(lista.authorId) !== meuId && meuId !== 'preview_user') {
+            return res.status(403).json({ success: false, error: "Sem permissão para excluir esta lista." });
+        }
+
+        await ExerciseList.findByIdAndDelete(id);
+        await ActivityConfig.updateMany({ listId: id }, { $unset: { listId: "" } });
+
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -95,16 +248,25 @@ router.post('/atividade/vincular', async (req, res) => {
             });
         }
 
+        const isEvalBool = isEvaluative === true || isEvaluative === 'true';
+        const maxAttInt = parseInt(maxAttempts, 10) || 3;
+
         await ActivityConfig.findOneAndUpdate(
             { activityId },
             { 
                 listId, 
-                isEvaluative: isEvaluative === true || isEvaluative === 'true',
-                maxAttempts: parseInt(maxAttempts, 10) || 3,
+                isEvaluative: isEvalBool,
+                maxAttempts: maxAttInt,
                 updatedAt: new Date() 
             },
             { upsert: true }
         );
+
+        // Atualiza também na própria lista para manter o histórico coerente
+        await ExerciseList.findByIdAndUpdate(listId, {
+            isEvaluative: isEvalBool,
+            maxAttempts: maxAttInt
+        });
 
         res.json({ success: true });
     } catch (e) {
@@ -112,10 +274,24 @@ router.post('/atividade/vincular', async (req, res) => {
     }
 });
 
-// Carregar exercícios da lista vinculada à atividade
+// Carregar exercícios da lista vinculada OU exercício individual para teste
 router.get('/atividade/exercicios', async (req, res) => {
     try {
-        const { activityId, listId } = req.query;
+        const { activityId, listId, exerciseId } = req.query;
+
+        if (exerciseId) {
+            const exercicioIndividual = await Exercise.findById(exerciseId);
+            if (exercicioIndividual) {
+                return res.json({
+                    success: true,
+                    lista: {
+                        _id: 'individual_preview',
+                        title: `Teste: ${exercicioIndividual.title}`,
+                        exercises: [exercicioIndividual]
+                    }
+                });
+            }
+        }
 
         let targetListId = listId;
         if (!targetListId && activityId) {
@@ -150,7 +326,7 @@ router.get('/atividade/exercicios', async (req, res) => {
     }
 });
 
-// routes/professorRoutes.js
+// Dados do professor (padrão fixo de 3 tentativas)
 router.get('/professor/dados', async (req, res) => {
     try {
         const { activityId } = req.query;
@@ -160,11 +336,14 @@ router.get('/professor/dados', async (req, res) => {
         const minhasListas = todasListas.filter(l => String(l.authorId) === meuId);
         const bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
 
-        const todosExercicios = await Exercise.find().sort({ _id: -1 }).lean();
+        const todosExercicios = await Exercise.find({ isArchived: { $ne: true } }).sort({ _id: -1 }).lean();
         const meusExercicios = todosExercicios.filter(e => String(e.authorId) === meuId);
         const bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
 
-        const vinculo = activityId ? await ActivityConfig.findOne({ activityId }) : null;
+        const vinculo = activityId ? await ActivityConfig.findOne({ activityId }).populate({
+            path: 'listId',
+            populate: { path: 'exercises' }
+        }) : null;
 
         res.json({
             success: true,
@@ -172,9 +351,12 @@ router.get('/professor/dados', async (req, res) => {
             bancoUniversalListas,
             meusExercicios,
             bancoUniversalExercicios,
-            listaVinculadaId: vinculo ? vinculo.listId : null,
+            listaVinculadaId: vinculo && vinculo.listId ? vinculo.listId._id : null,
+            listaVinculada: vinculo ? vinculo.listId : null,
             isEvaluative: vinculo ? !!vinculo.isEvaluative : false,
-            maxAttempts: vinculo && vinculo.maxAttempts ? vinculo.maxAttempts : 3
+            maxAttempts: vinculo && vinculo.maxAttempts ? vinculo.maxAttempts : 3,
+            maxExecutionTimeLimitMs: MAX_TIME_LIMIT_MS,
+            defaultExecutionTimeLimitMs: DEFAULT_TIME_LIMIT_MS
         });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -207,12 +389,19 @@ router.get('/professor/turma-metricas', async (req, res) => {
             userId: { $nin: ['professor_test', 'preview_user'] } 
         }).sort({ createdAt: -1 }).lean();
 
+        let totalGeralEnvios = 0;
+        let totalGeralAceitos = 0;
+        let somaTempoAceitos = 0;
+
         const metricasExercicios = exercicios.map(ex => {
             const subsEx = submissoes.filter(s => String(s.exerciseId) === String(ex._id));
             const totalEnvios = subsEx.length;
             const enviosAceitos = subsEx.filter(s => s.isAccepted).length;
             const alunosQueResolveram = new Set(subsEx.filter(s => s.isAccepted).map(s => s.userId)).size;
             const taxaAcerto = totalEnvios > 0 ? Math.round((enviosAceitos / totalEnvios) * 100) : 0;
+
+            totalGeralEnvios += totalEnvios;
+            totalGeralAceitos += enviosAceitos;
 
             return {
                 exerciseId: ex._id,
@@ -251,6 +440,7 @@ router.get('/professor/turma-metricas', async (req, res) => {
             };
 
             if (sub.isAccepted) {
+                somaTempoAceitos += itemSub.executionTime;
                 alunosMap[sub.userId].resolvidos.add(String(sub.exerciseId));
                 alunosMap[sub.userId].submissoesAcertos.push(itemSub);
 
@@ -284,10 +474,15 @@ router.get('/professor/turma-metricas', async (req, res) => {
             return a.tempoTotalMs - b.tempoTotalMs;
         });
 
+        const taxaGeralAcertos = totalGeralEnvios > 0 ? Math.round((totalGeralAceitos / totalGeralEnvios) * 100) : 0;
+        const tempoMedioMs = totalGeralAceitos > 0 ? Math.round(somaTempoAceitos / totalGeralAceitos) : 0;
+
         res.json({
             success: true,
             totalExercicios: exercicios.length,
             metricasExercicios,
+            taxaGeralAcertos,
+            tempoMedioMs,
             ranking
         });
     } catch (e) {
@@ -317,7 +512,7 @@ router.post('/professor/exercicio/importar', async (req, res) => {
             authorId: meuId,
             authorName: meuNome,
             isPublic: exOriginal.isPublic !== false,
-            timeLimit: exOriginal.timeLimit || 1000
+            timeLimit: exOriginal.timeLimit || null
         });
 
         res.json({ success: true, exercicio: novoExercicio });
@@ -344,10 +539,31 @@ router.post('/professor/lista/importar', async (req, res) => {
             authorId: meuId,
             authorName: meuNome,
             exercises: listaOriginal.exercises,
-            isPublic: listaOriginal.isPublic !== false
+            isPublic: listaOriginal.isPublic !== false,
+            isEvaluative: listaOriginal.isEvaluative || false,
+            maxAttempts: listaOriginal.maxAttempts || 3
         });
 
         res.json({ success: true, lista: novaLista });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Desvincular lista da atividade
+router.post('/atividade/desvincular', async (req, res) => {
+    try {
+        const { activityId } = req.body;
+        if (!activityId) {
+            return res.status(400).json({ success: false, error: "activityId ausente." });
+        }
+
+        await ActivityConfig.findOneAndUpdate(
+            { activityId },
+            { $unset: { listId: "" }, updatedAt: new Date() }
+        );
+
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }

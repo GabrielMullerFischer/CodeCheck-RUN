@@ -9,6 +9,7 @@ const minioClient = new Minio.Client({
     secretKey: process.env.MINIO_SECRET_KEY
 });
 
+const MAX_SUBMISSION_HISTORY = parseInt(process.env.MAX_SUBMISSION_HISTORY, 10) || 10;
 const BUCKET_NAME = process.env.MINIO_NAME || 'arquivos-alunos';
 
 async function initMinio() {
@@ -61,9 +62,9 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
         stream.on('error', () => resolve());
     });
 
-    if (objetos.length >= 10) {
+    if (objetos.length >= MAX_SUBMISSION_HISTORY) {
         objetos.sort((a, b) => new Date(a.lastModified) - new Date(b.lastModified));
-        const excedentes = objetos.slice(0, objetos.length - 9);
+        const excedentes = objetos.slice(0, objetos.length - (MAX_SUBMISSION_HISTORY - 1));
         for (const ex of excedentes) {
             await minioClient.removeObject(BUCKET_NAME, ex.name).catch(() => {});
         }
@@ -76,6 +77,7 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
     return nomeArquivo;
 }
 
+// Lê arquivo do MinIO por caminho
 async function lerArquivoPorPath(caminho) {
     const stream = await minioClient.getObject(BUCKET_NAME, caminho);
     return new Promise((resolve, reject) => {
@@ -86,6 +88,7 @@ async function lerArquivoPorPath(caminho) {
     });
 }
 
+// Remove arquivo do MinIO
 async function removerArquivo(objectName) {
     try {
         await minioClient.removeObject(BUCKET_NAME, objectName);

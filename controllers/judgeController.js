@@ -7,13 +7,50 @@ const ExerciseList = require('../models/ExerciseList');
 const Exercise = require('../models/Exercise');
 const Submission = require('../models/Submission');
 
+const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
+const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
+
+function gerarDicaDidatica(status, details, got) {
+    const txt = `${details || ''} ${got || ''}`;
+
+    if (/SIGSEGV|segmentation fault|core dumped/i.test(txt)) {
+        return "Falha de segmentação (Segmentation Fault): Seu código tentou acessar um endereço de memória inválido. Verifique se não ultrapassou o tamanho de um vetor (índice fora dos limites), se não usou ponteiro não inicializado ou se não esqueceu o '&' no scanf.";
+    }
+    if (/SIGFPE|floating point exception/i.test(txt)) {
+        return "Erro aritmético de execução: Provavelmente ocorreu uma divisão por zero (x / 0) ou resto de divisão por zero (x % 0). Verifique os valores do divisor.";
+    }
+    if (/expected ';' before/i.test(txt)) {
+        return "Ponto e vírgula (;) ausente: O compilador esperava um ';' antes deste trecho ou na linha imediatamente anterior.";
+    }
+    if (/expected '\)' before|expected '}' before|expected '\]' before/i.test(txt)) {
+        return "Fechamento ausente: Verifique se todos os parênteses '()', colchetes '[]' ou chaves '{}' abertos foram devidamente fechados.";
+    }
+    if (/undeclared \(first use in this function\)/i.test(txt)) {
+        return "Variável não declarada: O compilador encontrou um nome desconhecido. Verifique se declarou a variável antes de usar ou se houve erro de digitação.";
+    }
+    if (/undefined reference to `?main'?/i.test(txt)) {
+        return "Função main ausente: Todo programa em C precisa de uma função principal 'int main() { ... }' para ser executado.";
+    }
+    if (/format '%[a-zA-Z]+' expects argument of type/i.test(txt)) {
+        return "Incompatibilidade no printf/scanf: O tipo especificado no marcador (ex: %d, %f, %s) não corresponde ao tipo da variável informada.";
+    }
+    if (/suggest parentheses around assignment used as truth value/i.test(txt)) {
+        return "Possível erro de lógica no 'if': Você usou '=' (atribuição) em vez de '==' (comparação de igualdade).";
+    }
+    if (status === 'Time Limit') {
+        return "Tempo limite excedido: Seu programa demorou mais que o permitido para responder. Verifique se não há laços infinitos (como 'while(1)') ou se a condição de parada do laço está correta.";
+    }
+    return null;
+}
+
+// Submissão oficial
 router.post('/submit', async (req, res) => {
     const { code, activityId, listId, exerciseId, draftOnly } = req.body;
     const userId = req.session?.userId || req.body.userId || 'preview_user';
-    const userName = req.session?.userName || req.body.userName || 'Aluno';
+    const userName = req.session?.userName || req.body.userName || (userId === 'preview_user' ? 'Professor (Preview)' : 'Aluno');
 
-    if (!activityId && !listId) {
-        return res.status(400).json({ error: "ID da atividade ou lista faltando." });
+    if (!activityId && !listId && !exerciseId) {
+        return res.status(400).json({ error: "ID da atividade, lista ou exercício faltando." });
     }
 
     try {
@@ -25,7 +62,6 @@ router.post('/submit', async (req, res) => {
             const lista = await ExerciseList.findById(listId).populate('exercises');
             if (lista?.exercises?.length > 0) exercicioAlvo = lista.exercises[0];
         }
-
         if (!exercicioAlvo && activityId) {
             const config = await ActivityConfig.findOne({ activityId }).populate({
                 path: 'listId',
@@ -35,17 +71,23 @@ router.post('/submit', async (req, res) => {
         }
 
         let testesParaExecutar = exercicioAlvo ? exercicioAlvo.tests : null;
-
         if (!testesParaExecutar || testesParaExecutar.length === 0) {
             return res.status(404).json({ error: "Nenhum teste encontrado para esta questão." });
         }
 
         const idExercicioFinal = exercicioAlvo._id;
-        const timeLimit = exercicioAlvo.timeLimit || 1000;
 
-        const isProfessor = req.session?.isProfessor === true || userId === 'professor_test' || userId === 'preview_user';
+        let timeLimit = exercicioAlvo.timeLimit;
+        if (!timeLimit || isNaN(timeLimit)) {
+            timeLimit = DEFAULT_TIME_LIMIT_MS;
+        } else if (timeLimit > MAX_TIME_LIMIT_MS) {
+            timeLimit = MAX_TIME_LIMIT_MS;
+        }
 
-        if (!isProfessor && activityId && activityId !== 'preview') {
+        const isProfessorReal = req.session?.isProfessor === true || userId === 'professor_test';
+
+        // Validação de limite de tentativas apenas para alunos reais em atividades avaliativas
+        if (!isProfessorReal && userId !== 'preview_user' && activityId && activityId !== 'preview') {
             const configAtividade = await ActivityConfig.findOne({ activityId });
             if (configAtividade && configAtividade.isEvaluative) {
                 const totalTentativas = await Submission.countDocuments({
@@ -68,7 +110,7 @@ router.post('/submit', async (req, res) => {
             return res.json({ success: true, draftSaved: true });
         }
 
-        const containerName = `judge_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}`;
+        const containerName = `judge_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
         const isRunning = await judgeService.isAlreadyRunning(containerName);
         if (isRunning) {
             return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
@@ -79,22 +121,38 @@ router.post('/submit', async (req, res) => {
         const tempoGastoMs = Date.now() - inicioExec;
 
         const isAccepted = resultado.status === 'Accepted';
+        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
 
-        if (isProfessor) {
+        // Apenas o teste interno não grava histórico
+        if (userId === 'professor_test') {
             return res.json({
                 ...resultado,
-                executionTime: tempoGastoMs
+                executionTime: tempoGastoMs,
+                didacticHint: dicaDidatica
             });
         }
 
+        // Busca o código do melhor tempo para imunizar da remoção
+        const melhorEnvio = await Submission.findOne({
+            userId,
+            activityId: activityId || 'preview',
+            exerciseId: idExercicioFinal,
+            isAccepted: true
+        }).sort({ executionTime: 1 }).select('codePath').lean();
+
+        const melhorCodePath = melhorEnvio ? melhorEnvio.codePath : null;
+
+        // Salva a submissão no MinIO protegendo o menor tempo
         const caminhoMinio = await minioService.arquivarSubmissao(
             userId, 
             activityId || 'preview', 
             idExercicioFinal, 
             isAccepted, 
-            code
+            code,
+            melhorCodePath
         );
 
+        // Grava no MongoDB
         await Submission.create({
             userId,
             userName,
@@ -106,55 +164,10 @@ router.post('/submit', async (req, res) => {
             executionTime: isAccepted ? tempoGastoMs : null
         });
 
-        if (isAccepted) {
-            const acertos = await Submission.find({
-                userId,
-                activityId: activityId || 'preview',
-                exerciseId: idExercicioFinal,
-                isAccepted: true
-            }).sort({ createdAt: 1 });
-
-            if (acertos.length > 5) {
-                // Localiza o menor tempo para não apagar
-                let recorde = acertos[0];
-                for (const sub of acertos) {
-                    if (sub.executionTime !== null && (recorde.executionTime === null || sub.executionTime < recorde.executionTime)) {
-                        recorde = sub;
-                    }
-                }
-
-                // Apaga os mais antigos, pulando o que tem melhor tempo
-                const descartaveis = acertos.filter(s => String(s._id) !== String(recorde._id));
-                const qtdRemover = acertos.length - 5;
-                const paraExcluir = descartaveis.slice(0, qtdRemover);
-
-                for (const subEx of paraExcluir) {
-                    await minioService.removerArquivo(subEx.codePath);
-                    await Submission.findByIdAndDelete(subEx._id);
-                }
-            }
-        } else {
-            const erros = await Submission.find({
-                userId,
-                activityId: activityId || 'preview',
-                exerciseId: idExercicioFinal,
-                isAccepted: false
-            }).sort({ createdAt: 1 });
-
-            if (erros.length > 5) {
-                const qtdRemover = erros.length - 5;
-                const paraExcluir = erros.slice(0, qtdRemover);
-
-                for (const subEx of paraExcluir) {
-                    await minioService.removerArquivo(subEx.codePath);
-                    await Submission.findByIdAndDelete(subEx._id);
-                }
-            }
-        }
-
         res.json({
             ...resultado,
-            executionTime: tempoGastoMs
+            executionTime: tempoGastoMs,
+            didacticHint: dicaDidatica
         });
     } catch (err) {
         console.error("Erro na submissão:", err);
@@ -162,9 +175,106 @@ router.post('/submit', async (req, res) => {
     }
 });
 
+// Execução livre com entrada customizada do aluno (sem gravar histórico)
+router.post('/test-custom', async (req, res) => {
+    const { code, input, exerciseId, activityId } = req.body;
+    const userId = req.session?.userId || req.body.userId || 'preview_user';
+    const isProfessor = req.session?.isProfessor === true || userId === 'professor_test' || userId === 'preview_user';
+
+    if (!code) return res.status(400).json({ error: "Código vazio." });
+
+    try {
+        if (!isProfessor && activityId && activityId !== 'preview') {
+            const configAtividade = await ActivityConfig.findOne({ activityId });
+            if (configAtividade && configAtividade.isEvaluative) {
+                return res.status(403).json({ 
+                    error: "A depuração com entradas livres está desativada para atividades com limite de tentativas." 
+                });
+            }
+        }
+
+        let timeLimit = DEFAULT_TIME_LIMIT_MS;
+        if (exerciseId) {
+            const ex = await Exercise.findById(exerciseId).lean();
+            if (ex && ex.timeLimit) timeLimit = ex.timeLimit;
+        }
+
+        const containerName = `test_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
+        const isRunning = await judgeService.isAlreadyRunning(containerName);
+        if (isRunning) {
+            return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
+        }
+
+        const testes = [{ input: input || '', output: '' }];
+        const inicioExec = Date.now();
+        const resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
+        const tempoGastoMs = Date.now() - inicioExec;
+
+        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
+
+        res.json({
+            success: true,
+            status: resultado.status === 'Accepted' ? 'Success' : resultado.status,
+            output: resultado.got || '',
+            details: resultado.details || '',
+            executionTime: tempoGastoMs,
+            didacticHint: dicaDidatica
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Erro ao executar teste: " + err.message });
+    }
+});
+
+// Lista de submissões do aluno
+router.get('/aluno/submissoes', async (req, res) => {
+    const { activityId, exerciseId } = req.query;
+    const userId = req.session?.userId || req.query.userId || 'preview_user';
+
+    if (!exerciseId) return res.status(400).json({ success: false, error: "exerciseId ausente." });
+
+    try {
+        const ultimasSubmissoes = await Submission.find({
+            userId,
+            activityId: activityId || 'preview',
+            exerciseId
+        })
+        .sort({ createdAt: -1 })
+        .limit(MAX_SUBMISSION_HISTORY)
+        .select('_id status isAccepted executionTime createdAt codePath')
+        .lean();
+
+        const submissoes = ultimasSubmissoes.reverse();
+
+        res.json({ success: true, submissoes });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Carregamento sob demanda do código de uma submissão passada
+router.get('/aluno/submissao-codigo', async (req, res) => {
+    const { submissionId } = req.query;
+    const userId = req.session?.userId || req.query.userId || 'preview_user';
+    const isProfessor = req.session?.isProfessor === true || userId === 'preview_user';
+
+    try {
+        const sub = await Submission.findById(submissionId);
+        if (!sub) return res.status(404).json({ error: "Submissão não encontrada." });
+
+        if (sub.userId !== userId && !isProfessor) {
+            return res.status(403).json({ error: "Não autorizado a acessar esta submissão." });
+        }
+
+        const codigo = await minioService.lerArquivoPorPath(sub.codePath);
+        res.json({ success: true, code: codigo });
+    } catch (e) {
+        res.status(404).json({ error: "Erro ao carregar código do MinIO." });
+    }
+});
+
 router.get('/get-draft', async (req, res) => {
     const { activityId, exerciseId } = req.query;
-    const userId = req.session?.userId || 'preview_user';
+    const userId = req.session?.userId || req.query.userId || 'preview_user';
     if (!activityId || !exerciseId) return res.status(400).json({ error: "Dados ausentes" });
 
     try {
@@ -177,18 +287,26 @@ router.get('/get-draft', async (req, res) => {
 
 router.get('/ranking', async (req, res) => {
     const { activityId, exerciseId } = req.query;
-    const userId = req.session?.userId || 'preview_user';
+    const userId = req.session?.userId || req.query.userId || 'preview_user';
 
     try {
-        if (!activityId) return res.status(400).json({ success: false, error: "activityId ausente." });
+        const submissoes = activityId && activityId !== 'preview' 
+            ? await Submission.find({ activityId, userId: { $nin: ['professor_test', 'preview_user'] } }).lean() 
+            : [];
 
-        const submissoes = await Submission.find({ activityId }).lean();
+        const configAtividade = activityId && activityId !== 'preview' 
+            ? await ActivityConfig.findOne({ activityId }).populate({
+                path: 'listId',
+                populate: { path: 'exercises' }
+            }).lean() 
+            : null;
 
-        const configAtividade = await ActivityConfig.findOne({ activityId }).lean();
         const isEvaluative = configAtividade ? !!configAtividade.isEvaluative : false;
         const maxAttempts = configAtividade && configAtividade.maxAttempts ? configAtividade.maxAttempts : 3;
+        const exercicios = configAtividade?.listId?.exercises || [];
+
         let minhasTentativasEx = 0;
-        let timeLimitEx = 1000;
+        let timeLimitEx = null;
 
         if (exerciseId) {
             minhasTentativasEx = submissoes.filter(s => s.userId === userId && String(s.exerciseId) === String(exerciseId)).length;
@@ -206,6 +324,7 @@ router.get('/ranking', async (req, res) => {
             }
         });
 
+        // Estatísticas do exercício ativo na tela
         let rankingExercicio = [];
         let minhaPosicaoEx = null;
         let meuTempoEx = null;
@@ -232,6 +351,7 @@ router.get('/ranking', async (req, res) => {
             }
         }
 
+        // Classificação Geral da Lista Completa
         const alunosGeral = {};
         submissoes.forEach(sub => {
             if (!alunosGeral[sub.userId]) {
@@ -239,14 +359,19 @@ router.get('/ranking', async (req, res) => {
                     userId: sub.userId,
                     userName: sub.userName || 'Aluno',
                     resolvidos: new Set(),
-                    tempoTotalMs: 0
+                    melhoresTemposPorEx: {}
                 };
             }
 
             if (sub.isAccepted) {
-                alunosGeral[sub.userId].resolvidos.add(String(sub.exerciseId));
-                if (sub.executionTime) {
-                    alunosGeral[sub.userId].tempoTotalMs += sub.executionTime;
+                const exId = String(sub.exerciseId);
+                alunosGeral[sub.userId].resolvidos.add(exId);
+                const t = sub.executionTime || 0;
+                if (
+                    alunosGeral[sub.userId].melhoresTemposPorEx[exId] === undefined ||
+                    t < alunosGeral[sub.userId].melhoresTemposPorEx[exId]
+                ) {
+                    alunosGeral[sub.userId].melhoresTemposPorEx[exId] = t;
                 }
             }
         });
@@ -255,15 +380,36 @@ router.get('/ranking', async (req, res) => {
             userId: a.userId,
             userName: a.userName,
             totalResolvidos: a.resolvidos.size,
-            tempoTotalMs: a.tempoTotalMs
+            tempoTotalMs: Object.values(a.melhoresTemposPorEx).reduce((acc, t) => acc + t, 0)
         })).sort((a, b) => {
-            if (b.totalResolvidos !== a.totalResolvidos) {
-                return b.totalResolvidos - a.totalResolvidos;
-            }
+            if (b.totalResolvidos !== a.totalResolvidos) return b.totalResolvidos - a.totalResolvidos;
             return a.tempoTotalMs - b.tempoTotalMs;
         });
 
         const posGeralIdx = rankingGeral.findIndex(r => r.userId === userId);
+
+        // Classificação por Exercício
+        const rankingPorExercicio = {};
+        exercicios.forEach(ex => {
+            const exId = String(ex._id);
+            const subsEsteEx = submissoes.filter(s => String(s.exerciseId) === exId && s.isAccepted);
+            const mapa = {};
+            subsEsteEx.forEach(sub => {
+                if (!mapa[sub.userId] || sub.executionTime < mapa[sub.userId].executionTime) {
+                    mapa[sub.userId] = {
+                        userId: sub.userId,
+                        userName: sub.userName || 'Aluno',
+                        executionTime: sub.executionTime
+                    };
+                }
+            });
+            const ordenados = Object.values(mapa).sort((a, b) => a.executionTime - b.executionTime);
+            rankingPorExercicio[exId] = {
+                title: ex.title,
+                lider: ordenados[0] || null,
+                ranking: ordenados
+            };
+        });
 
         res.json({
             success: true,
@@ -282,138 +428,12 @@ router.get('/ranking', async (req, res) => {
                 minhaPosicaoGeral: posGeralIdx !== -1 ? posGeralIdx + 1 : null,
                 totalAlunos: rankingGeral.length,
                 rankingCompleto: rankingGeral
-            }
+            },
+            rankingPorExercicio
         });
     } catch (e) {
         console.error("Erro na rota /ranking:", e);
         res.status(500).json({ success: false, error: e.message });
-    }
-});
-
-// Dados e Métricas da Turma
-router.get('/professor/turma-metricas', async (req, res) => {
-    try {
-        const { activityId } = req.query;
-        if (!activityId) return res.status(400).json({ success: false, error: "activityId ausente." });
-
-        const config = await ActivityConfig.findOne({ activityId }).populate({
-            path: 'listId',
-            populate: { path: 'exercises' }
-        });
-
-        if (!config || !config.listId) {
-            return res.json({ success: false, semVinculo: true, message: "Vincule uma lista a esta atividade primeiro." });
-        }
-
-        const exercicios = config.listId.exercises || [];
-        const mapaExercicios = {};
-        exercicios.forEach(ex => {
-            mapaExercicios[String(ex._id)] = ex.title;
-        });
-
-        const submissoes = await Submission.find({ 
-            activityId, 
-            userId: { $nin: ['professor_test', 'preview_user'] } 
-        }).sort({ createdAt: -1 }).lean();
-
-        // Taxa de Acertos por Exercício
-        const metricasExercicios = exercicios.map(ex => {
-            const subsEx = submissoes.filter(s => String(s.exerciseId) === String(ex._id));
-            const totalEnvios = subsEx.length;
-            const enviosAceitos = subsEx.filter(s => s.isAccepted).length;
-            const alunosQueResolveram = new Set(subsEx.filter(s => s.isAccepted).map(s => s.userId)).size;
-            const taxaAcerto = totalEnvios > 0 ? Math.round((enviosAceitos / totalEnvios) * 100) : 0;
-
-            return {
-                exerciseId: ex._id,
-                title: ex.title,
-                totalEnvios,
-                enviosAceitos,
-                alunosQueResolveram,
-                taxaAcerto
-            };
-        });
-
-        const alunosMap = {};
-        submissoes.forEach(sub => {
-            if (!alunosMap[sub.userId]) {
-                alunosMap[sub.userId] = {
-                    userId: sub.userId,
-                    userName: sub.userName || 'Aluno',
-                    resolvidos: new Set(),
-                    melhoresTemposPorEx: {},
-                    submissoesAcertos: [],
-                    submissoesErros: [],
-                    ultimaAtividade: sub.createdAt
-                };
-            }
-
-            const itemSub = {
-                _id: sub._id,
-                exerciseId: sub.exerciseId,
-                exerciseTitle: mapaExercicios[String(sub.exerciseId)] || 'Exercício',
-                status: sub.status,
-                isAccepted: sub.isAccepted,
-                executionTime: typeof sub.executionTime === 'number' ? sub.executionTime : 0,
-                codePath: sub.codePath,
-                createdAt: sub.createdAt
-            };
-
-            if (sub.isAccepted) {
-                alunosMap[sub.userId].resolvidos.add(String(sub.exerciseId));
-                alunosMap[sub.userId].submissoesAcertos.push(itemSub);
-
-                const tempoAtual = typeof sub.executionTime === 'number' ? sub.executionTime : 0;
-                if (
-                    alunosMap[sub.userId].melhoresTemposPorEx[sub.exerciseId] === undefined ||
-                    tempoAtual < alunosMap[sub.userId].melhoresTemposPorEx[sub.exerciseId]
-                ) {
-                    alunosMap[sub.userId].melhoresTemposPorEx[sub.exerciseId] = tempoAtual;
-                }
-            } else {
-                alunosMap[sub.userId].submissoesErros.push(itemSub);
-            }
-        });
-
-        const ranking = Object.values(alunosMap).map(aluno => {
-            const tempoTotalMs = Object.values(aluno.melhoresTemposPorEx).reduce((acc, t) => acc + t, 0);
-            return {
-                userId: aluno.userId,
-                userName: aluno.userName,
-                totalResolvidos: aluno.resolvidos.size,
-                tempoTotalMs,
-                ultimaAtividade: aluno.ultimaAtividade,
-                submissoesAcertos: aluno.submissoesAcertos,
-                submissoesErros: aluno.submissoesErros,
-                totalTentativas: aluno.submissoesAcertos.length + aluno.submissoesErros.length
-            };
-        }).sort((a, b) => {
-            if (b.totalResolvidos !== a.totalResolvidos) return b.totalResolvidos - a.totalResolvidos;
-            return a.tempoTotalMs - b.tempoTotalMs;
-        });
-
-        res.json({
-            success: true,
-            totalExercicios: exercicios.length,
-            metricasExercicios,
-            ranking
-        });
-    } catch (e) {
-        console.error("Erro nas métricas:", e);
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-
-// Leitura do Código no MinIO
-router.get('/professor/submissao-codigo', async (req, res) => {
-    try {
-        const { codePath } = req.query;
-        if (!codePath) return res.status(400).json({ error: "Caminho ausente." });
-
-        const codigo = await minioService.lerArquivoPorPath(codePath);
-        res.json({ success: true, code: codigo });
-    } catch (e) {
-        res.status(404).json({ error: "Código não encontrado no MinIO." });
     }
 });
 

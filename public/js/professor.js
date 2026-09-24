@@ -15,29 +15,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalContainerTestes = document.getElementById('modal-container-testes');
     const modalBtnMaisTeste = document.getElementById('modalBtnMaisTeste');
     const modalBtnSalvarEx = document.getElementById('modalBtnSalvarEx');
-    const inputBuscaLista = document.getElementById('input-busca-lista') || document.querySelector('input[placeholder*="Pesquisar lista"]');
-    const inputBuscaExercicio = document.getElementById('input-busca-exercicio') || document.querySelector('input[placeholder*="Pesquisar exercício"]');
+    const inputBuscaLista = document.getElementById('input-busca-lista');
+    const inputBuscaExercicio = document.getElementById('input-busca-exercicio');
     const inputBuscaBancoUniversal = document.getElementById('input-busca-banco-universal');
     const inputBuscaBancoEx = document.getElementById('input-busca-banco-ex');
-    const tabTurmaLink = document.getElementById('tab-turma-link');
     const btnAtualizarTurma = document.getElementById('btnAtualizarTurma');
     const containerTaxas = document.getElementById('container-taxas-exercicios');
     const tbodyRanking = document.getElementById('tbody-ranking-turma');
     const containerBancoUniversal = document.getElementById('container-banco-universal');
     const containerBancoEx = document.getElementById('container-banco-exercicios-comunidade');
-    const labelTotalAlunos = document.getElementById('labelTotalAlunos');
     const chkLimiteTentativas = document.getElementById('chk-limite-tentativas');
     const boxTentativas = document.getElementById('box-tentativas');
     const inputMaxTentativas = document.getElementById('input-max-tentativas');
     const chkDefinirTempo = document.getElementById('chk-definir-tempo-limite');
     const boxCampoTempo = document.getElementById('box-campo-tempo-limite');
+    const labelMaxTempo = document.getElementById('label-max-tempo-limite');
+    const tabGerenciarLink = document.getElementById('tab-gerenciar-link');
+    const tabListasLink = document.getElementById('tab-listas-link');
+    const nomeAtividadeGerenciar = document.getElementById('nome-atividade-gerenciar');
+    const btnEditarAtividadeAtiva = document.getElementById('btnEditarAtividadeAtiva');
+    const btnPreview = document.getElementById('btnPreview');
+    const circleTaxaAcerto = document.getElementById('circle-taxa-acerto');
+    const circleTempoMedio = document.getElementById('circle-tempo-medio');
+    const btnAbrirModalNovoExercicio = document.getElementById('btnAbrirModalNovoExercicio');
+    const modalEditChkLimite = document.getElementById('modal-edit-chk-limite-tentativas');
+    const modalEditBoxTentativas = document.getElementById('modal-edit-box-tentativas');
+    const modalEditInputMaxTentativas = document.getElementById('modal-edit-input-max-tentativas');
+    const modalBtnSalvarEdicaoLista = document.getElementById('modalBtnSalvarEdicaoLista');
+    const btnDesvincularAtividade = document.getElementById('btnDesvincularAtividade');
+
+    const selectProfExRanking = document.getElementById('select-prof-ex-ranking');
+    const tbodyProfRankingEx = document.getElementById('tbody-prof-ranking-exercicio');
+    const cardProfLiderEx = document.getElementById('card-prof-lider-ex');
+    const profLiderNome = document.getElementById('prof-lider-nome');
+    const profLiderTempo = document.getElementById('prof-lider-tempo');
+
     let idListaAtivaVinculada = null;
+    let listaAtivaObjeto = null;
     let dadosTurmaCarregados = [];
+    let rankingPorExercicioCarregado = {};
     let submissaoAtivaParaCompilar = null;
     let alunoSelecionado = null;
     let listaExerciciosModal = [];
     let indiceExercicioModal = 0;
     let metricasGlobaisExercicios = [];
+    let idExercicioParaExcluir = null;
+    let maxExecutionTimeLimitMs = 7200000;
 
     if (chkLimiteTentativas && boxTentativas) {
         chkLimiteTentativas.addEventListener('change', () => {
@@ -45,10 +68,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (modalEditChkLimite && modalEditBoxTentativas) {
+        modalEditChkLimite.addEventListener('change', () => {
+            modalEditBoxTentativas.style.display = modalEditChkLimite.checked ? 'flex' : 'none';
+        });
+    }
+
     if (chkDefinirTempo && boxCampoTempo) {
         chkDefinirTempo.addEventListener('change', () => {
             boxCampoTempo.style.display = chkDefinirTempo.checked ? 'block' : 'none';
+            if (chkDefinirTempo.checked) {
+                const inputTempo = document.getElementById('modal-tempo-limite');
+                if (inputTempo && !inputTempo.value) inputTempo.value = '1000';
+            }
         });
+    }
+
+    if (btnAbrirModalNovoExercicio) {
+        btnAbrirModalNovoExercicio.onclick = () => {
+            limparModalNovoExercicio();
+            document.getElementById('modalExercicioTituloCabecalho').innerHTML = '<i class="fas fa-plus-circle mr-2"></i> Cadastrar Novo Exercício';
+            $('#modalNovoExercicio').modal('show');
+        };
     }
 
     function atualizarContador() {
@@ -56,6 +97,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (contadorEl) {
             contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} ${selecionados === 1 ? 'exercício selecionado' : 'exercícios selecionados'}`;
         }
+    }
+
+    function abrirVisualizadorAluno(paramsQuery) {
+        if (setupProfessor) setupProfessor.style.display = 'none';
+        if (areaPreview) areaPreview.style.display = 'block';
+        const targetUrl = `/?mode=preview&${paramsQuery}` + (ltiToken ? `&ltik=${ltiToken}` : '');
+        if (iframeAluno) iframeAluno.src = targetUrl;
     }
 
     async function carregarEstadoInicial() {
@@ -67,322 +115,621 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok || !data.success) return;
 
             idListaAtivaVinculada = data.listaVinculadaId || null;
+            listaAtivaObjeto = data.listaVinculada || null;
 
+            if (data.maxExecutionTimeLimitMs) {
+                maxExecutionTimeLimitMs = data.maxExecutionTimeLimitMs;
+                const horas = (maxExecutionTimeLimitMs / 3600000).toFixed(1).replace('.0', '');
+                if (labelMaxTempo) {
+                    labelMaxTempo.innerText = `Máximo permitido: ${maxExecutionTimeLimitMs.toLocaleString()} ms - equivalente a ${horas} horas`;
+                }
+            }
+
+            window.todosMeusExerciciosCache = data.meusExercicios || [];
+            window.minhasListasCache = data.minhasListas || [];
+
+            renderizarMeusExercicios(data.meusExercicios || []);
+            renderizarBancoExercicios(data.bancoUniversalExercicios || []);
+            renderizarMinhasListas(data.minhasListas || []);
+            renderizarBancoListas(data.bancoUniversal || data.bancoUniversalListas || []);
+
+            const tentativasSalvas = data.maxAttempts ? parseInt(data.maxAttempts, 10) : 3;
             if (chkLimiteTentativas) {
                 chkLimiteTentativas.checked = !!data.isEvaluative;
                 if (boxTentativas) {
                     boxTentativas.style.display = chkLimiteTentativas.checked ? 'flex' : 'none';
                 }
             }
-            if (inputMaxTentativas && data.maxAttempts) {
-                inputMaxTentativas.value = data.maxAttempts;
+            if (inputMaxTentativas) {
+                inputMaxTentativas.value = tentativasSalvas;
             }
 
-            const meusEx = data.meusExercicios || data.exercicios || [];
-            if (containerExercicios && meusEx) {
-                containerExercicios.innerHTML = '';
-                if (meusEx.length === 0) {
-                    containerExercicios.innerHTML = '<p class="text-muted p-2 mb-0">Nenhum exercício cadastrado ainda.</p>';
-                } else {
-                    meusEx.forEach(ex => {
-                        const isPub = ex.isPublic !== false;
-                        const div = document.createElement('div');
-                        div.className = 'custom-control custom-checkbox border-bottom p-2 pl-4 d-flex justify-content-between align-items-center';
-                        div.innerHTML = `
-                            <div>
-                                <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${ex._id}" value="${ex._id}">
-                                <label class="custom-control-label cursor-pointer ml-2" for="ex_${ex._id}">
-                                    <strong>${ex.title}</strong>
-                                    <span class="badge badge-light border ml-1">${ex.timeLimit || 1000} ms</span>
-                                    ${isPub 
-                                        ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Público</span>' 
-                                        : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privado</span>'}
-                                </label>
-                            </div>
-                        `;
-                        containerExercicios.appendChild(div);
-                    });
-                    atualizarContador();
+            if (idListaAtivaVinculada && listaAtivaObjeto) {
+                if (tabGerenciarLink) {
+                    tabGerenciarLink.classList.remove('disabled');
+                    tabGerenciarLink.removeAttribute('title');
                 }
-            }
-
-            const bancoEx = data.bancoUniversalExercicios || [];
-            window.exerciciosComunidadeCache = bancoEx;
-
-            if (containerBancoEx && bancoEx) {
-                containerBancoEx.innerHTML = '';
-                if (bancoEx.length === 0) {
-                    containerBancoEx.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhum exercício compartilhado ainda.</p>';
-                } else {
-                    bancoEx.forEach(ex => {
-                        const isPub = ex.isPublic !== false;
-                        const div = document.createElement('div');
-                        div.className = 'border-bottom p-2 d-flex justify-content-between align-items-center';
-                        div.innerHTML = `
-                            <div class="text-truncate mr-2">
-                                <strong class="text-dark">${ex.title}</strong>
-                                <span class="badge badge-light border ml-1">${ex.timeLimit || 1000} ms</span>
-                                ${isPub 
-                                    ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Público</span>' 
-                                    : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privado</span>'}
-                                <small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${ex.authorName || 'Professor'}</small>
-                            </div>
-                            <div class="text-nowrap">
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 mr-1 btn-ver-ex" data-exid="${ex._id}">
-                                    <i class="fas fa-eye mr-1"></i> Ver
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-success font-weight-bold btn-importar-ex py-0 px-2" data-exid="${ex._id}">
-                                    <i class="fas fa-file-import mr-1"></i> Copiar para Meus Exercícios
-                                </button>
-                            </div>
-                        `;
-                        containerBancoEx.appendChild(div);
-                    });
-
-                    containerBancoEx.querySelectorAll('.btn-ver-ex').forEach(btn => {
-                        btn.onclick = () => {
-                            const exerciseId = btn.dataset.exid;
-                            const ex = (window.exerciciosComunidadeCache || []).find(e => String(e._id) === String(exerciseId));
-                            if (!ex) return;
-
-                            document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${ex.title}`;
-                            document.getElementById('modalVerExAutor').innerText = ex.authorName || 'Outro Professor';
-                            document.getElementById('modalVerExDescricao').innerText = ex.description || 'Sem descrição cadastrada.';
-                            const badgeTempo = document.getElementById('modalVerExTempoLimite');
-                            if (badgeTempo) badgeTempo.innerText = `${ex.timeLimit || 1000} ms`;
-
-                            const containerTeste = document.getElementById('modalVerExTeste');
-                            if (ex.tests && ex.tests.length > 0) {
-                                const t = ex.tests[0];
-                                containerTeste.innerHTML = `
-                                    <div class="row">
-                                        <div class="col-md-6 mb-1 mb-md-0">
-                                            <strong class="d-block text-muted">Entrada (stdin):</strong>
-                                            <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.input ? t.input : '<em>(Vazio)</em>'}</pre>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <strong class="d-block text-muted">Saída Esperada (stdout):</strong>
-                                            <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.output ? t.output : '<em>(Vazio)</em>'}</pre>
-                                        </div>
-                                    </div>
-                                `;
-                            } else {
-                                containerTeste.innerHTML = '<span class="text-muted">Nenhum caso de teste disponível para exibição.</span>';
-                            }
-
-                            const btnCopiarModal = document.getElementById('modalBtnCopiarExAberto');
-                            if (btnCopiarModal) {
-                                btnCopiarModal.onclick = () => {
-                                    $('#modalVerExercicioIndividual').modal('hide');
-                                    const btnOriginal = containerBancoEx.querySelector(`.btn-importar-ex[data-exid="${ex._id}"]`);
-                                    if (btnOriginal) btnOriginal.click();
-                                };
-                            }
-
-                            $('#modalVerExercicioIndividual').modal('show');
-                        };
-                    });
-
-                    containerBancoEx.querySelectorAll('.btn-importar-ex').forEach(btn => {
-                        btn.onclick = async () => {
-                            const exerciseId = btn.dataset.exid;
-                            btn.disabled = true;
-                            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Copiando...';
-
-                            try {
-                                const impExRes = await fetch(`/judge/professor/exercicio/importar` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ exerciseId })
-                                });
-                                const impExData = await impExRes.json();
-                                if (impExRes.ok && impExData.success) {
-                                    alert("Exercício copiado com sucesso para seus exercícios!");
-                                    await carregarEstadoInicial();
-                                } else {
-                                    alert(impExData.error || "Erro ao copiar exercício.");
-                                    btn.disabled = false;
-                                }
-                            } catch (err) {
-                                alert("Erro de conexão ao copiar exercício.");
-                                btn.disabled = false;
-                            }
-                        };
-                    });
+                if (nomeAtividadeGerenciar) {
+                    nomeAtividadeGerenciar.innerText = listaAtivaObjeto.title || 'Lista Vinculada';
                 }
-            }
-
-            if (containerListas && data.minhasListas) {
-                containerListas.innerHTML = '';
-                if (data.minhasListas.length === 0) {
-                    containerListas.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Você ainda não criou nenhuma lista. Crie uma na Aba 2 ou importe do Banco Universal.</p>';
-                } else {
-                    data.minhasListas.forEach(lista => {
-                        const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
-                        const isPub = lista.isPublic !== false;
-                        const div = document.createElement('div');
-                        div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center';
-                        
-                        let infoLimite = '';
-                        if (isVinculada && data.isEvaluative) {
-                            infoLimite = `<span class="badge badge-warning text-dark ml-2" title="Atividade com limite de tentativas"><i class="fas fa-history mr-1"></i>Com Limite (${data.maxAttempts} tent.)</span>`;
-                        }
-
-                        div.innerHTML = `
-                            <div class="custom-control custom-radio mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
-                                <input type="radio" id="lista_${lista._id}" name="listaSelecionada" class="custom-control-input" value="${lista._id}" ${isVinculada ? 'checked' : ''}>
-                                <label class="custom-control-label font-weight-bold" for="lista_${lista._id}">
-                                    <span>${lista.title}</span>
-                                    <span class="badge badge-light border text-muted ml-1">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
-                                    ${isPub 
-                                        ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Pública</span>' 
-                                        : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privada</span>'}
-                                    ${infoLimite}
-                                </label>
-                            </div>
-                            ${isVinculada ? `
-                            <div class="text-nowrap d-flex align-items-center">
-                                <button type="button" class="btn btn-outline-primary btn-sm mr-2 btn-preview-aluno" data-listid="${lista._id}">
-                                    <i class="fas fa-eye mr-1"></i> Testar Visão do Aluno
-                                </button>
-                                <span class="badge badge-primary badge-pill">Ativa</span>
-                            </div>` : ''}
-                        `;
-
-                        if (isVinculada) {
-                            containerListas.prepend(div);
-                        } else {
-                            containerListas.appendChild(div);
-                        }
-                    });
-
-                    containerListas.querySelectorAll('.btn-preview-aluno').forEach(btn => {
-                        btn.onclick = () => {
-                            const listId = btn.dataset.listid;
-                            if (setupProfessor) setupProfessor.style.display = 'none';
-                            if (areaPreview) areaPreview.style.display = 'block';
-                            const targetUrl = `/?mode=preview&listId=${listId}` + (ltiToken ? `&ltik=${ltiToken}` : '');
-                            if (iframeAluno) iframeAluno.src = targetUrl;
-                        };
-                    });
+                
+                if (window.$ && tabGerenciarLink) {
+                    $(tabGerenciarLink).tab('show');
                 }
-            }
-
-            const listasComunidade = data.bancoUniversal || data.bancoUniversalListas || [];
-            window.listasComunidadeCache = listasComunidade;
-
-            if (containerBancoUniversal && listasComunidade) {
-                containerBancoUniversal.innerHTML = '';
-                if (listasComunidade.length === 0) {
-                    containerBancoUniversal.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhuma lista compartilhada por outros professores ainda.</p>';
-                } else {
-                    listasComunidade.forEach(lista => {
-                        const isPub = lista.isPublic !== false;
-                        const div = document.createElement('div');
-                        div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center';
-                        div.innerHTML = `
-                            <div class="text-truncate mr-2">
-                                <strong class="text-dark">${lista.title}</strong>
-                                <span class="badge badge-light border text-muted ml-1">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
-                                ${isPub 
-                                    ? '<span class="badge badge-info ml-1"><i class="fas fa-globe mr-1"></i>Pública</span>' 
-                                    : '<span class="badge badge-privada ml-1"><i class="fas fa-lock mr-1"></i>Privada</span>'}
-                                <small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${lista.authorName || 'Professor'}</small>
-                            </div>
-                            <div class="text-nowrap">
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 mr-1 btn-ver-lista" data-listid="${lista._id}">
-                                    <i class="fas fa-eye mr-1"></i> Ver Exercícios
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-success font-weight-bold btn-importar-lista" data-listid="${lista._id}">
-                                    <i class="fas fa-file-import mr-1"></i> Importar
-                                </button>
-                            </div>
-                        `;
-                        containerBancoUniversal.appendChild(div);
-                    });
-
-                    containerBancoUniversal.querySelectorAll('.btn-ver-lista').forEach(btn => {
-                        btn.onclick = () => {
-                            const listId = btn.dataset.listid;
-                            const lista = window.listasComunidadeCache.find(l => String(l._id) === String(listId));
-                            if (!lista) return;
-
-                            document.getElementById('modalVerListaTitulo').innerHTML = `<i class="fas fa-list-alt text-primary mr-2"></i> ${lista.title}`;
-                            document.getElementById('modalVerListaAutor').innerText = lista.authorName || 'Outro Professor';
-                            document.getElementById('modalVerListaQtd').innerText = `${lista.exercises ? lista.exercises.length : 0} exercícios`;
-
-                            const containerConteudo = document.getElementById('modalVerListaConteudo');
-                            containerConteudo.innerHTML = '';
-
-                            if (!lista.exercises || lista.exercises.length === 0) {
-                                containerConteudo.innerHTML = '<p class="text-muted text-center py-3">Esta lista não possui exercícios cadastrados.</p>';
-                            } else {
-                                lista.exercises.forEach((ex, idx) => {
-                                    const card = document.createElement('div');
-                                    card.className = 'card mb-2 border shadow-sm';
-                                    card.innerHTML = `
-                                        <div class="card-header bg-white py-2 font-weight-bold text-dark d-flex justify-content-between align-items-center">
-                                            <span><strong>#${idx + 1}</strong> - ${ex.title}</span>
-                                            <span class="badge badge-light border">${ex.timeLimit || 1000} ms</span>
-                                        </div>
-                                        <div class="card-body p-2 bg-light">
-                                            <p class="mb-0 text-secondary small" style="white-space: pre-line;">${ex.description || 'Sem enunciado cadastrado.'}</p>
-                                        </div>
-                                    `;
-                                    containerConteudo.appendChild(card);
-                                });
-                            }
-
-                            const btnImportarModal = document.getElementById('modalBtnImportarListaAberta');
-                            if (btnImportarModal) {
-                                btnImportarModal.onclick = () => {
-                                    $('#modalVerExerciciosLista').modal('hide');
-                                    const btnOriginal = containerBancoUniversal.querySelector(`.btn-importar-lista[data-listid="${lista._id}"]`);
-                                    if (btnOriginal) btnOriginal.click();
-                                };
-                            }
-
-                            $('#modalVerExerciciosLista').modal('show');
-                        };
-                    });
-
-                    containerBancoUniversal.querySelectorAll('.btn-importar-lista').forEach(btn => {
-                        btn.onclick = async () => {
-                            const listId = btn.dataset.listid;
-                            btn.disabled = true;
-                            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Importando...';
-
-                            try {
-                                const impRes = await fetch(`/judge/professor/lista/importar` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ listId })
-                                });
-                                const impData = await impRes.json();
-
-                                if (impRes.ok && impData.success) {
-                                    alert(`Lista importada com sucesso para "Minhas Listas"!`);
-                                    await carregarEstadoInicial();
-                                    const pillMinhas = document.getElementById('pill-minhas-listas');
-                                    if (window.$ && pillMinhas) $(pillMinhas).tab('show');
-                                } else {
-                                    alert(impData.error || "Erro ao importar lista.");
-                                    btn.disabled = false;
-                                    btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
-                                }
-                            } catch (err) {
-                                alert("Erro de conexão ao importar.");
-                                btn.disabled = false;
-                                btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
-                            }
-                        };
-                    });
+                
+                await carregarMetricasTurma();
+            } else {
+                if (tabGerenciarLink) {
+                    tabGerenciarLink.classList.add('disabled');
+                    tabGerenciarLink.setAttribute('title', 'Vincule uma lista primeiro para liberar esta aba');
+                }
+                
+                if (window.$ && tabListasLink) {
+                    $(tabListasLink).tab('show');
                 }
             }
 
         } catch (err) {
             console.error("Erro ao carregar listas do banco:", err);
         }
+    }
+
+    function renderizarMeusExercicios(meusEx) {
+        if (!containerExercicios) return;
+        containerExercicios.innerHTML = '';
+        if (meusEx.length === 0) {
+            containerExercicios.innerHTML = '<p class="text-muted p-2 mb-0">Nenhum exercício cadastrado ainda.</p>';
+            atualizarContador();
+            return;
+        }
+
+        meusEx.forEach(ex => {
+            const isPub = ex.isPublic !== false;
+            const div = document.createElement('div');
+            div.className = 'custom-control custom-checkbox border-bottom p-2 pl-4 d-flex justify-content-between align-items-center';
+            div.innerHTML = `
+                <div class="text-truncate mr-2">
+                    <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${ex._id}" value="${ex._id}">
+                    <label class="custom-control-label cursor-pointer ml-2" for="ex_${ex._id}">
+                        <strong>${ex.title}</strong>
+                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
+                    </label>
+                </div>
+                <div class="text-nowrap d-flex align-items-center">
+                    ${isPub 
+                        ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>' 
+                        : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
+                    <button type="button" class="btn btn-outline-info btn-sm mr-2 font-weight-bold btn-testar-ex shadow-sm" data-exid="${ex._id}" title="Testar este exercício no Modo Aluno">
+                        <i class="fas fa-play mr-1"></i> Testar
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-ex shadow-sm" data-exid="${ex._id}" title="Editar este exercício">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-ex shadow-sm" data-exid="${ex._id}" title="Excluir este exercício">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            `;
+            containerExercicios.appendChild(div);
+        });
+
+        containerExercicios.querySelectorAll('.btn-testar-ex').forEach(btn => {
+            btn.onclick = () => abrirVisualizadorAluno(`exerciseId=${btn.dataset.exid}`);
+        });
+        containerExercicios.querySelectorAll('.btn-editar-ex').forEach(btn => {
+            btn.onclick = () => abrirModalEditarExercicio(btn.dataset.exid);
+        });
+        containerExercicios.querySelectorAll('.btn-excluir-ex').forEach(btn => {
+            btn.onclick = () => solicitarExclusaoExercicio(btn.dataset.exid);
+        });
+
+        atualizarContador();
+    }
+
+    function renderizarBancoExercicios(bancoEx) {
+        window.exerciciosComunidadeCache = bancoEx;
+        if (!containerBancoEx) return;
+        containerBancoEx.innerHTML = '';
+
+        if (bancoEx.length === 0) {
+            containerBancoEx.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhum exercício compartilhado ainda.</p>';
+            return;
+        }
+
+        bancoEx.forEach(ex => {
+            const isPub = ex.isPublic !== false;
+            const div = document.createElement('div');
+            div.className = 'border-bottom p-2 d-flex justify-content-between align-items-center';
+            div.innerHTML = `
+                <div class="text-truncate mr-2">
+                    <strong class="text-dark">${ex.title}</strong>
+                    ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
+                    <small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${ex.authorName || 'Professor'}</small>
+                </div>
+                <div class="text-nowrap d-flex align-items-center">
+                    ${isPub 
+                        ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>' 
+                        : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
+                    <button type="button" class="btn btn-outline-info btn-sm mr-2 font-weight-bold btn-testar-ex-comunidade shadow-sm" data-exid="${ex._id}" title="Testar no Modo Aluno">
+                        <i class="fas fa-play mr-1"></i> Testar
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-2 mr-1 btn-ver-ex font-weight-bold" data-exid="${ex._id}">
+                        <i class="fas fa-eye mr-1"></i> Ver
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-success font-weight-bold btn-importar-ex py-1 px-2" data-exid="${ex._id}">
+                        <i class="fas fa-file-import mr-1"></i> Importar
+                    </button>
+                </div>
+            `;
+            containerBancoEx.appendChild(div);
+        });
+
+        containerBancoEx.querySelectorAll('.btn-testar-ex-comunidade').forEach(btn => {
+            btn.onclick = () => abrirVisualizadorAluno(`exerciseId=${btn.dataset.exid}`);
+        });
+
+        containerBancoEx.querySelectorAll('.btn-ver-ex').forEach(btn => {
+            btn.onclick = () => {
+                const ex = (window.exerciciosComunidadeCache || []).find(e => String(e._id) === String(btn.dataset.exid));
+                if (!ex) return;
+
+                document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${ex.title}`;
+                document.getElementById('modalVerExAutor').innerText = ex.authorName || 'Outro Professor';
+                document.getElementById('modalVerExDescricao').innerText = ex.description || 'Sem descrição cadastrada.';
+                const badgeTempo = document.getElementById('modalVerExTempoLimite');
+                if (badgeTempo) badgeTempo.innerText = ex.timeLimit ? `${ex.timeLimit} ms` : 'Sem Limite';
+
+                const containerTeste = document.getElementById('modalVerExTeste');
+                if (ex.tests && ex.tests.length > 0) {
+                    const t = ex.tests[0];
+                    containerTeste.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6 mb-1 mb-md-0">
+                                <strong class="d-block text-muted">Entrada:</strong>
+                                <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.input ? t.input : '<em>(Vazio)</em>'}</pre>
+                            </div>
+                            <div class="col-md-6">
+                                <strong class="d-block text-muted">Saída Esperada:</strong>
+                                <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.output ? t.output : '<em>(Vazio)</em>'}</pre>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    containerTeste.innerHTML = '<span class="text-muted">Nenhum caso de teste disponível para exibição.</span>';
+                }
+
+                const btnCopiarModal = document.getElementById('modalBtnCopiarExAberto');
+                if (btnCopiarModal) {
+                    btnCopiarModal.onclick = () => {
+                        $('#modalVerExercicioIndividual').modal('hide');
+                        const btnOriginal = containerBancoEx.querySelector(`.btn-importar-ex[data-exid="${ex._id}"]`);
+                        if (btnOriginal) btnOriginal.click();
+                    };
+                }
+
+                $('#modalVerExercicioIndividual').modal('show');
+            };
+        });
+
+        containerBancoEx.querySelectorAll('.btn-importar-ex').forEach(btn => {
+            btn.onclick = async () => {
+                const exerciseId = btn.dataset.exid;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Copiando...';
+
+                try {
+                    const impExRes = await fetch(`/judge/professor/exercicio/importar` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ exerciseId })
+                    });
+                    const impExData = await impExRes.json();
+                    if (impExRes.ok && impExData.success) {
+                        alert("Exercício copiado com sucesso para seus exercícios!");
+                        await carregarEstadoInicial();
+                    } else {
+                        alert(impExData.error || "Erro ao copiar exercício.");
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
+                    }
+                } catch (err) {
+                    alert("Erro de conexão ao copiar exercício.");
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
+                }
+            };
+        });
+    }
+
+    function renderizarMinhasListas(minhasListas) {
+        if (!containerListas) return;
+        containerListas.innerHTML = '';
+
+        if (minhasListas.length === 0) {
+            containerListas.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Você ainda não criou nenhuma lista. Crie uma na Aba "Criar Lista" ou importe do Banco Universal.</p>';
+            return;
+        }
+
+        minhasListas.forEach(lista => {
+            const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
+            const isPub = lista.isPublic !== false;
+            const div = document.createElement('div');
+            div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
+
+            div.innerHTML = `
+                <div class="custom-control custom-radio mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
+                    <input type="radio" id="lista_${lista._id}" name="listaSelecionada" class="custom-control-input" value="${lista._id}" ${isVinculada ? 'checked' : ''}>
+                    <label class="custom-control-label font-weight-bold" for="lista_${lista._id}">
+                        <span style="font-size: 1.02rem;">${lista.title}</span>
+                        <span class="badge badge-light border text-muted ml-2">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
+                        ${isVinculada ? '<span class="badge badge-success ml-2 font-weight-bold"><i class="fas fa-check-circle mr-1"></i>Ativa</span>' : ''}
+                    </label>
+                </div>
+                <div class="text-nowrap d-flex align-items-center">
+                    ${isPub 
+                        ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>' 
+                        : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
+                    <button type="button" class="btn btn-outline-info btn-sm mr-2 font-weight-bold btn-testar-minha-lista shadow-sm" data-listid="${lista._id}" title="Testar esta lista no Modo Aluno">
+                        <i class="fas fa-play mr-1"></i> Testar
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-action-round mr-2 btn-editar-minha-lista shadow-sm" data-listid="${lista._id}" title="Editar esta lista de atividades">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-minha-lista shadow-sm" data-listid="${lista._id}" title="Excluir esta lista de atividades">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            `;
+
+            if (isVinculada) {
+                containerListas.prepend(div);
+            } else {
+                containerListas.appendChild(div);
+            }
+        });
+
+        containerListas.querySelectorAll('.btn-testar-minha-lista').forEach(btn => {
+            btn.onclick = () => abrirVisualizadorAluno(`listId=${btn.dataset.listid}`);
+        });
+        containerListas.querySelectorAll('.btn-editar-minha-lista').forEach(btn => {
+            btn.onclick = () => abrirModalEditarLista(btn.dataset.listid);
+        });
+        containerListas.querySelectorAll('.btn-excluir-minha-lista').forEach(btn => {
+            btn.onclick = () => excluirLista(btn.dataset.listid);
+        });
+    }
+
+    function renderizarBancoListas(listasComunidade) {
+        window.listasComunidadeCache = listasComunidade;
+        if (!containerBancoUniversal) return;
+        containerBancoUniversal.innerHTML = '';
+
+        if (listasComunidade.length === 0) {
+            containerBancoUniversal.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhuma lista compartilhada por outros professores ainda.</p>';
+            return;
+        }
+
+        listasComunidade.forEach(lista => {
+            const isPub = lista.isPublic !== false;
+            const div = document.createElement('div');
+            div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
+            div.innerHTML = `
+                <div class="text-truncate mr-2">
+                    <strong class="text-dark" style="font-size: 1.02rem;">${lista.title}</strong>
+                    <span class="badge badge-light border text-muted ml-2">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
+                    <small class="text-muted ml-3"><i class="fas fa-user-edit mr-1"></i>${lista.authorName || 'Professor'}</small>
+                </div>
+                <div class="text-nowrap d-flex align-items-center">
+                    ${isPub 
+                        ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>' 
+                        : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-3 mr-2 btn-ver-lista font-weight-bold shadow-sm" data-listid="${lista._id}">
+                        <i class="fas fa-eye mr-1"></i> Ver Exercícios
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm py-1 px-3 font-weight-bold btn-importar-lista shadow-sm" data-listid="${lista._id}">
+                        <i class="fas fa-file-import mr-1"></i> Importar
+                    </button>
+                </div>
+            `;
+            containerBancoUniversal.appendChild(div);
+        });
+
+        containerBancoUniversal.querySelectorAll('.btn-ver-lista').forEach(btn => {
+            btn.onclick = () => abrirModalVerListaComunidade(btn.dataset.listid);
+        });
+
+        containerBancoUniversal.querySelectorAll('.btn-importar-lista').forEach(btn => {
+            btn.onclick = async () => {
+                const listId = btn.dataset.listid;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Importando...';
+
+                try {
+                    const impRes = await fetch(`/judge/professor/lista/importar` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ listId })
+                    });
+                    const impData = await impRes.json();
+
+                    if (impRes.ok && impData.success) {
+                        alert(`Lista importada com sucesso para "Minhas Listas"!`);
+                        await carregarEstadoInicial();
+                        const pillMinhas = document.getElementById('pill-minhas-listas');
+                        if (window.$ && pillMinhas) $(pillMinhas).tab('show');
+                    } else {
+                        alert(impData.error || "Erro ao importar lista.");
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
+                    }
+                } catch (err) {
+                    alert("Erro de conexão ao importar.");
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
+                }
+            };
+        });
+    }
+
+    function abrirModalVerListaComunidade(listId) {
+        const lista = (window.listasComunidadeCache || []).find(l => String(l._id) === String(listId));
+        if (!lista) return;
+
+        document.getElementById('modalVerListaTitulo').innerHTML = `<i class="fas fa-list-alt text-primary mr-2"></i> ${lista.title}`;
+        document.getElementById('modalVerListaAutor').innerText = lista.authorName || 'Professor';
+        document.getElementById('modalVerListaQtd').innerText = `${lista.exercises ? lista.exercises.length : 0} exercícios`;
+
+        const containerConteudo = document.getElementById('modalVerListaConteudo');
+        containerConteudo.innerHTML = '';
+
+        if (!lista.exercises || lista.exercises.length === 0) {
+            containerConteudo.innerHTML = '<p class="text-muted text-center py-3">Esta lista não possui exercícios cadastrados.</p>';
+        } else {
+            lista.exercises.forEach((ex, idx) => {
+                const card = document.createElement('div');
+                card.className = 'card mb-2 border shadow-sm';
+                card.innerHTML = `
+                    <div class="card-header bg-white py-2 font-weight-bold text-dark d-flex justify-content-between align-items-center">
+                        <span><strong>#${idx + 1}</strong> - ${ex.title}</span>
+                        ${ex.timeLimit ? `<span class="badge badge-light border">${ex.timeLimit} ms</span>` : ''}
+                    </div>
+                    <div class="card-body p-2 bg-light">
+                        <p class="mb-0 text-secondary small" style="white-space: pre-line;">${ex.description || 'Sem enunciado cadastrado.'}</p>
+                    </div>
+                `;
+                containerConteudo.appendChild(card);
+            });
+        }
+
+        const btnImportarModal = document.getElementById('modalBtnImportarListaAberta');
+        if (btnImportarModal) {
+            btnImportarModal.onclick = () => {
+                $('#modalVerExerciciosLista').modal('hide');
+                const btnOriginal = containerBancoUniversal.querySelector(`.btn-importar-lista[data-listid="${lista._id}"]`);
+                if (btnOriginal) btnOriginal.click();
+            };
+        }
+
+        $('#modalVerExerciciosLista').modal('show');
+    }
+
+    function abrirModalEditarLista(listId) {
+        const lista = (window.minhasListasCache || []).find(l => String(l._id) === String(listId));
+        if (!lista) return;
+
+        document.getElementById('modal-edit-lista-id').value = lista._id;
+        document.getElementById('modal-edit-lista-titulo').value = lista.title;
+        document.getElementById('modal-edit-lista-privada').checked = (lista.isPublic === false);
+
+        const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
+        const isEval = isVinculada ? (chkLimiteTentativas && chkLimiteTentativas.checked) : (lista.isEvaluative || false);
+        const maxAtt = isVinculada && inputMaxTentativas ? (parseInt(inputMaxTentativas.value, 10) || 3) : (lista.maxAttempts || 3);
+
+        if (modalEditChkLimite) modalEditChkLimite.checked = isEval;
+        if (modalEditInputMaxTentativas) modalEditInputMaxTentativas.value = maxAtt;
+        if (modalEditBoxTentativas) modalEditBoxTentativas.style.display = isEval ? 'flex' : 'none';
+
+        const containerExs = document.getElementById('modal-edit-lista-exercicios');
+        containerExs.innerHTML = '';
+
+        const idsNaLista = (lista.exercises || []).map(e => String(e._id || e));
+        const todosExs = window.todosMeusExerciciosCache || [];
+
+        todosExs.forEach(ex => {
+            const isChecked = idsNaLista.includes(String(ex._id));
+            const div = document.createElement('div');
+            div.className = 'custom-control custom-checkbox border-bottom py-1 pl-4';
+            div.innerHTML = `
+                <input type="checkbox" class="custom-control-input chk-edit-lista-ex" id="edit_ex_${ex._id}" value="${ex._id}" ${isChecked ? 'checked' : ''}>
+                <label class="custom-control-label cursor-pointer ml-1" for="edit_ex_${ex._id}">
+                    <strong>${ex.title}</strong>
+                    ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
+                </label>
+            `;
+            containerExs.appendChild(div);
+        });
+
+        $('#modalEditarLista').modal('show');
+    }
+
+    if (modalBtnSalvarEdicaoLista) {
+        modalBtnSalvarEdicaoLista.onclick = async () => {
+            const listId = document.getElementById('modal-edit-lista-id').value;
+            const title = document.getElementById('modal-edit-lista-titulo').value.trim();
+            const isPrivate = document.getElementById('modal-edit-lista-privada').checked;
+            const exercises = Array.from(document.querySelectorAll('.chk-edit-lista-ex:checked')).map(c => c.value);
+            const isEvaluative = modalEditChkLimite ? modalEditChkLimite.checked : false;
+            const maxAttempts = modalEditInputMaxTentativas ? parseInt(modalEditInputMaxTentativas.value, 10) || 3 : 3;
+
+            const activityIdMeta = document.querySelector('meta[name="activity-id"]');
+            const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
+
+            if (!title) {
+                alert("Informe um nome para a lista.");
+                return;
+            }
+            if (exercises.length === 0) {
+                alert("Selecione pelo menos um exercício.");
+                return;
+            }
+
+            modalBtnSalvarEdicaoLista.disabled = true;
+            modalBtnSalvarEdicaoLista.innerText = "Salvando...";
+
+            try {
+                const res = await fetch(`/judge/lista/${listId}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        title, 
+                        exercises, 
+                        isPrivate, 
+                        isEvaluative, 
+                        maxAttempts, 
+                        activityId 
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    alert("Lista atualizada com sucesso!");
+                    $('#modalEditarLista').modal('hide');
+                    await carregarEstadoInicial();
+                } else {
+                    alert(data.error || "Erro ao atualizar lista.");
+                }
+            } catch (e) {
+                alert("Erro de conexão ao salvar lista.");
+            } finally {
+                modalBtnSalvarEdicaoLista.disabled = false;
+                modalBtnSalvarEdicaoLista.innerText = "Salvar Alterações";
+            }
+        };
+    }
+
+    async function excluirLista(listId) {
+        if (!confirm("Deseja realmente excluir esta lista de atividades?")) return;
+        try {
+            const res = await fetch(`/judge/lista/${listId}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert("Lista excluída com sucesso!");
+                await carregarEstadoInicial();
+            } else {
+                alert(data.error || "Erro ao excluir lista.");
+            }
+        } catch (e) {
+            alert("Erro de conexão ao excluir lista.");
+        }
+    }
+
+    function abrirModalEditarExercicio(exerciseId) {
+        const ex = (window.todosMeusExerciciosCache || []).find(e => String(e._id) === String(exerciseId));
+        if (!ex) return;
+
+        limparModalNovoExercicio();
+
+        document.getElementById('modalExercicioTituloCabecalho').innerHTML = '<i class="fas fa-pencil-alt mr-2"></i> Editar Exercício';
+        document.getElementById('modal-exercicio-id').value = ex._id;
+        document.getElementById('modal-titulo').value = ex.title;
+        document.getElementById('modal-desc').value = ex.description;
+        document.getElementById('modal-exercicio-privado').checked = (ex.isPublic === false);
+
+        if (ex.timeLimit) {
+            document.getElementById('chk-definir-tempo-limite').checked = true;
+            document.getElementById('box-campo-tempo-limite').style.display = 'block';
+            document.getElementById('modal-tempo-limite').value = ex.timeLimit;
+        } else {
+            document.getElementById('chk-definir-tempo-limite').checked = false;
+            document.getElementById('box-campo-tempo-limite').style.display = 'none';
+            document.getElementById('modal-tempo-limite').value = '1000';
+        }
+
+        const containerTestes = document.getElementById('modal-container-testes');
+        containerTestes.innerHTML = '';
+        if (ex.tests && ex.tests.length > 0) {
+            ex.tests.forEach((t, i) => {
+                const div = document.createElement('div');
+                div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
+                div.innerHTML = `
+                    <button type="button" class="close position-absolute" style="top: 4px; right: 10px; z-index: 10;" onclick="this.closest('.teste-item').remove()">&times;</button>
+                    <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #${i + 1}</span>
+                    <div class="row">
+                        <div class="col-md-6 mb-2 mb-md-0">
+                            <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
+                            <textarea class="form-control form-control-sm input-val font-monospace" rows="3">${t.input || ''}</textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
+                            <textarea class="form-control form-control-sm output-val font-monospace" rows="3">${t.output || ''}</textarea>
+                        </div>
+                    </div>
+                `;
+                containerTestes.appendChild(div);
+            });
+        }
+
+        $('#modalNovoExercicio').modal('show');
+    }
+
+    function solicitarExclusaoExercicio(exerciseId) {
+        idExercicioParaExcluir = exerciseId;
+        const ex = (window.todosMeusExerciciosCache || []).find(e => String(e._id) === String(exerciseId));
+        const labelNome = document.getElementById('labelNomeExcluirExercicio');
+        if (labelNome) {
+            labelNome.innerText = `Exercício: ${ex ? ex.title : '-'}`;
+        }
+        $('#modalConfirmExcluirExercicio').modal('show');
+    }
+
+    async function executarExclusaoExercicio(removeFromAllLists) {
+        if (!idExercicioParaExcluir) return;
+        try {
+            const res = await fetch(`/judge/exercicio/${idExercicioParaExcluir}?removeFromAllLists=${removeFromAllLists}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                $('#modalConfirmExcluirExercicio').modal('hide');
+                alert(removeFromAllLists ? "Exercício excluído completamente de todas as listas e do banco!" : "Exercício removido do seu banco pessoal. As listas existentes foram preservadas!");
+                await carregarEstadoInicial();
+            } else {
+                alert(data.error || "Erro ao excluir exercício.");
+            }
+        } catch (e) {
+            alert("Erro de conexão ao excluir exercício.");
+        } finally {
+            idExercicioParaExcluir = null;
+        }
+    }
+
+    const btnExcluirApenasMeuBanco = document.getElementById('btnExcluirApenasMeuBanco');
+    if (btnExcluirApenasMeuBanco) {
+        btnExcluirApenasMeuBanco.onclick = () => executarExclusaoExercicio(false);
+    }
+
+    const btnExcluirDeTodasAsListas = document.getElementById('btnExcluirDeTodasAsListas');
+    if (btnExcluirDeTodasAsListas) {
+        btnExcluirDeTodasAsListas.onclick = () => executarExclusaoExercicio(true);
+    }
+
+    if (btnEditarAtividadeAtiva) {
+        btnEditarAtividadeAtiva.onclick = () => {
+            if (idListaAtivaVinculada) {
+                abrirModalEditarLista(idListaAtivaVinculada);
+            }
+        };
+    }
+
+    if (btnPreview) {
+        btnPreview.onclick = () => {
+            if (!idListaAtivaVinculada) {
+                alert("Nenhuma atividade vinculada no momento.");
+                return;
+            }
+            abrirVisualizadorAluno(`listId=${idListaAtivaVinculada}`);
+        };
     }
 
     if (btnVoltarConfig) {
@@ -402,6 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (modalBtnMaisTeste) {
         modalBtnMaisTeste.onclick = () => {
+            const count = modalContainerTestes.querySelectorAll('.teste-item').length + 1;
             const div = document.createElement('div');
             div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
             div.innerHTML = `
@@ -412,14 +760,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         aria-label="Fechar">
                     <span aria-hidden="true">&times;</span>
                 </button>
+                <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #${count}</span>
                 <div class="row">
-                    <div class="col">
-                        <label class="small font-weight-bold">Entradas:</label>
-                        <input type="text" class="form-control form-control-sm input-val">
+                    <div class="col-md-6 mb-2 mb-md-0">
+                        <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
+                        <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter..."></textarea>
                     </div>
-                    <div class="col">
-                        <label class="small font-weight-bold">Saída Esperada:</label>
-                        <input type="text" class="form-control form-control-sm output-val">
+                    <div class="col-md-6">
+                        <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
+                        <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada..."></textarea>
                     </div>
                 </div>
             `;
@@ -429,13 +778,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (modalBtnSalvarEx) {
         modalBtnSalvarEx.onclick = async () => {
+            const editId = document.getElementById('modal-exercicio-id')?.value;
             const title = document.getElementById('modal-titulo')?.value.trim();
             const description = document.getElementById('modal-desc')?.value.trim();
             const isPrivate = document.getElementById('modal-exercicio-privado')?.checked || false;
             const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
-            const timeLimit = (chkDefinirTempoEl && chkDefinirTempoEl.checked) 
-                ? (parseInt(document.getElementById('modal-tempo-limite')?.value, 10) || 1000) 
-                : 1000;
+            
+            let timeLimit = null;
+            if (chkDefinirTempoEl && chkDefinirTempoEl.checked) {
+                const val = parseInt(document.getElementById('modal-tempo-limite')?.value, 10);
+                if (isNaN(val) || val < 100) {
+                    alert("Informe um tempo limite válido (mínimo de 100 ms).");
+                    return;
+                }
+                if (val > maxExecutionTimeLimitMs) {
+                    const horas = (maxExecutionTimeLimitMs / 3600000).toFixed(1).replace('.0', '');
+                    alert(`O tempo limite configurado ultrapassa o teto máximo permitido pelo sistema (${maxExecutionTimeLimitMs.toLocaleString()} ms - ${horas}h). Ajuste para um valor menor ou igual.`);
+                    return;
+                }
+                timeLimit = val;
+            }
 
             if (!title || !description) {
                 alert("Preencha o título e a descrição do exercício.");
@@ -444,27 +806,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const tests = [];
             document.querySelectorAll('#modal-container-testes .teste-item').forEach(item => {
-                const input = item.querySelector('.input-val').value.trim();
-                const output = item.querySelector('.output-val').value.trim();
-                if (output !== '') tests.push({ input, output });
+                const input = item.querySelector('.input-val').value;
+                const output = item.querySelector('.output-val').value;
+                if (output.trim() !== '') tests.push({ input, output });
             });
 
             modalBtnSalvarEx.disabled = true;
             modalBtnSalvarEx.innerText = "Salvando...";
 
+            const url = editId ? `/judge/exercicio/${editId}` : `/judge/exercicio`;
+            const method = editId ? 'PUT' : 'POST';
+
             try {
-                const res = await fetch(`/judge/exercicio` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
-                    method: 'POST',
+                const res = await fetch(url + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, description, tests, isPrivate, timeLimit })
                 });
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    alert("Exercício cadastrado com sucesso!");
                     $('#modalNovoExercicio').modal('hide');
                     limparModalNovoExercicio();
-                    carregarEstadoInicial();
+                    await carregarEstadoInicial();
+
+                    if (!editId && data.exercicio && data.exercicio._id) {
+                        const labelTitulo = document.getElementById('modalSucessoTituloExercicio');
+                        if (labelTitulo) labelTitulo.innerText = `"${data.exercicio.title}" salvo com sucesso!`;
+                        
+                        const btnModalTestar = document.getElementById('btnModalSucessoTestarEx');
+                        if (btnModalTestar) {
+                            btnModalTestar.onclick = () => {
+                                $('#modalSucessoExercicio').modal('hide');
+                                abrirVisualizadorAluno(`exerciseId=${data.exercicio._id}`);
+                            };
+                        }
+                        $('#modalSucessoExercicio').modal('show');
+                    } else {
+                        alert("Exercício atualizado com sucesso!");
+                    }
                 } else {
                     alert(data.error || "Não autorizado");
                 }
@@ -484,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnSalvarNovaLista) {
         btnSalvarNovaLista.onclick = async () => {
             const title = nomeNovaLista?.value.trim();
-            const selecionados = Array.from(document.querySelectorAll('.chk-exercicio:checked')).map(c => c.value);
+            const selecionados = Array.from(document.querySelectorAll('#container-exercicios-disponiveis .chk-exercicio:checked')).map(c => c.value);
             const isPrivate = document.getElementById('chk-lista-privada')?.checked || false;
 
             if (!title) {
@@ -509,7 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     nomeNovaLista.value = '';
                     const chkListaPrivada = document.getElementById('chk-lista-privada');
                     if (chkListaPrivada) chkListaPrivada.checked = false;
-                    document.querySelectorAll('.chk-exercicio').forEach(c => c.checked = false);
+                    document.querySelectorAll('#container-exercicios-disponiveis .chk-exercicio').forEach(c => c.checked = false);
                     atualizarContador();
                     await carregarEstadoInicial();
                     $('#tab-listas-link').tab('show');
@@ -531,7 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const activityIdMeta = document.querySelector('meta[name="activity-id"]');
             const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
             if (!rad) {
-                alert("Selecione uma lista primeiro.");
+                alert("Selecione uma lista de atividades primeiro.");
                 return;
             }
 
@@ -540,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             async function executarVinculo(forcar = false) {
                 btnVincularLista.disabled = true;
-                btnVincularLista.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Vinculando...';
+                btnVincularLista.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Submetendo...';
                 try {
                     const res = await fetch(`/judge/atividade/vincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                         method: 'POST',
@@ -556,16 +936,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     if (res.ok && data.success) {
-                        alert("Atividade vinculada com sucesso!");
+                        alert("Lista de atividades submetida com sucesso!");
                         await carregarEstadoInicial();
                     } else {
-                        alert("Erro ao vincular: " + (data.error || "Não autorizado"));
+                        alert(data.error || "Não autorizado");
                     }
                 } catch (err) {
                     alert("Erro de conexão ao vincular atividade.");
                 } finally {
                     btnVincularLista.disabled = false;
-                    btnVincularLista.innerHTML = '<i class="fas fa-link mr-2"></i> Vincular Lista Selecionada à Atividade';
+                    btnVincularLista.innerHTML = '<i class="fas fa-check-circle mr-2"></i> Submeter Lista de Atividades';
                 }
             }
             await executarVinculo(false);
@@ -578,11 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itensLista = containerListas.querySelectorAll('.list-group-item');
             itensLista.forEach(item => {
                 const texto = item.textContent.toLowerCase();
-                if (texto.includes(termo)) {
-                    item.style.setProperty('display', 'flex', 'important');
-                } else {
-                    item.style.setProperty('display', 'none', 'important');
-                }
+                item.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
             });
         });
     }
@@ -591,14 +967,9 @@ document.addEventListener('DOMContentLoaded', () => {
         inputBuscaExercicio.addEventListener('input', () => {
             const termo = inputBuscaExercicio.value.trim().toLowerCase();
             const itensExercicios = containerExercicios.querySelectorAll('.custom-checkbox');
-
             itensExercicios.forEach(containerItem => {
                 const texto = containerItem.textContent.toLowerCase();
-                if (texto.includes(termo)) {
-                    containerItem.style.display = '';
-                } else {
-                    containerItem.style.display = 'none';
-                }
+                containerItem.style.display = texto.includes(termo) ? '' : 'none';
             });
         });
     }
@@ -609,11 +980,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itens = containerBancoUniversal.querySelectorAll('.list-group-item');
             itens.forEach(item => {
                 const texto = item.textContent.toLowerCase();
-                if (texto.includes(termo)) {
-                    item.style.setProperty('display', 'flex', 'important');
-                } else {
-                    item.style.setProperty('display', 'none', 'important');
-                }
+                item.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
             });
         });
     }
@@ -624,11 +991,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itens = containerBancoEx.querySelectorAll('.border-bottom');
             itens.forEach(item => {
                 const texto = item.textContent.toLowerCase();
-                if (texto.includes(termo)) {
-                    item.style.setProperty('display', 'flex', 'important');
-                } else {
-                    item.style.setProperty('display', 'none', 'important');
-                }
+                item.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
             });
         });
     }
@@ -639,7 +1002,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!activityId) return;
 
         if (tbodyRanking) {
-            tbodyRanking.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando dados da turma...</td></tr>';
+            tbodyRanking.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando dados da turma...</td></tr>';
         }
 
         try {
@@ -647,76 +1010,54 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (!data.success) {
-                if (tbodyRanking) tbodyRanking.innerHTML = `<tr><td colspan="7" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
+                if (tbodyRanking) tbodyRanking.innerHTML = `<tr><td colspan="3" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
                 return;
             }
 
             dadosTurmaCarregados = data.ranking || [];
             metricasGlobaisExercicios = data.metricasExercicios || [];
+            rankingPorExercicioCarregado = data.rankingPorExercicio || {};
+
+            if (circleTaxaAcerto) {
+                circleTaxaAcerto.innerText = `${data.taxaGeralAcertos || 0}%`;
+            }
+            if (circleTempoMedio) {
+                circleTempoMedio.innerText = data.tempoMedioMs > 0 ? `${data.tempoMedioMs} ms` : '-';
+            }
 
             if (containerTaxas) {
                 containerTaxas.innerHTML = '';
                 data.metricasExercicios.forEach(m => {
-                    const col = document.createElement('div');
-                    col.className = 'col-md-4 col-sm-6 mb-2';
-                    col.innerHTML = `
-                        <div class="border rounded p-2 bg-white shadow-sm">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <strong class="text-truncate mr-2" style="max-width: 150px;" title="${m.title}">${m.title}</strong>
-                                <span class="badge ${m.taxaAcerto >= 70 ? 'badge-success' : (m.taxaAcerto >= 40 ? 'badge-warning' : 'badge-danger')}">
-                                    ${m.taxaAcerto}%
-                                </span>
-                            </div>
-                            <div class="progress" style="height: 6px;">
-                                <div class="progress-bar ${m.taxaAcerto >= 70 ? 'bg-success' : (m.taxaAcerto >= 40 ? 'bg-warning' : 'bg-danger')}" 
-                                     role="progressbar" style="width: ${m.taxaAcerto}%"></div>
-                            </div>
-                            <div class="small text-muted mt-1">
-                                ${m.alunosQueResolveram} acertaram / ${m.totalEnvios} envios
-                            </div>
-                        </div>
+                    const row = document.createElement('div');
+                    row.className = 'border-bottom py-1 small d-flex justify-content-between align-items-center';
+                    row.innerHTML = `
+                        <span class="text-truncate mr-2 font-weight-bold" style="max-width: 180px;" title="${m.title}">${m.title}</span>
+                        <span>
+                            <span class="badge ${m.taxaAcerto >= 70 ? 'badge-success' : (m.taxaAcerto >= 40 ? 'badge-warning' : 'badge-danger')}">${m.taxaAcerto}%</span>
+                            <span class="text-muted ml-1">(${m.alunosQueResolveram}/${m.totalEnvios})</span>
+                        </span>
                     `;
-                    containerTaxas.appendChild(col);
+                    containerTaxas.appendChild(row);
                 });
             }
-
-            if (labelTotalAlunos) labelTotalAlunos.innerText = `${dadosTurmaCarregados.length} alunos participando`;
 
             if (tbodyRanking) {
                 tbodyRanking.innerHTML = '';
                 if (dadosTurmaCarregados.length === 0) {
-                    tbodyRanking.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Nenhum aluno realizou submissões nesta atividade ainda.</td></tr>';
+                    tbodyRanking.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">Nenhum aluno realizou submissões nesta atividade ainda.</td></tr>';
                 } else {
-                    dadosTurmaCarregados.forEach((aluno, idx) => {
+                    dadosTurmaCarregados.forEach((aluno) => {
                         const tr = document.createElement('tr');
-                        const dataUltimoEnvio = aluno.ultimaAtividade 
-                            ? new Date(aluno.ultimaAtividade).toLocaleDateString() + ' ' + new Date(aluno.ultimaAtividade).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            : '-';
-
-                        const medalha = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `${idx + 1}º`));
-
                         tr.innerHTML = `
-                            <td class="font-weight-bold text-center">${medalha}</td>
                             <td>
                                 <strong>${aluno.userName}</strong>
-                            </td>
-                            <td class="text-center">
-                                <span class="badge ${aluno.totalResolvidos === data.totalExercicios ? 'badge-success' : 'badge-primary'} p-2">
-                                    ${aluno.totalResolvidos} / ${data.totalExercicios}
-                                </span>
                             </td>
                             <td class="text-center font-weight-bold text-secondary">
                                 ${aluno.tempoTotalMs > 0 ? `${aluno.tempoTotalMs} ms` : (aluno.totalResolvidos > 0 ? '< 1 ms' : '-')}
                             </td>
-                            <td class="text-center text-muted">
-                                ${aluno.totalTentativas} tentativas
-                            </td>
-                            <td class="text-center text-muted small">
-                                ${dataUltimoEnvio}
-                            </td>
                             <td class="text-right pr-4">
-                                <button class="btn btn-sm btn-outline-primary btn-abrir-dossie" data-userid="${aluno.userId}">
-                                    <i class="fas fa-folder-open mr-1"></i> Ver Submissões
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${aluno.userId}" title="Inspecionar código do aluno">
+                                    <i class="fas fa-eye mr-1"></i> Ver
                                 </button>
                             </td>
                         `;
@@ -728,17 +1069,66 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
             }
+
+            if (selectProfExRanking) {
+                selectProfExRanking.innerHTML = '';
+                metricasGlobaisExercicios.forEach((m, idx) => {
+                    const opt = document.createElement('option');
+                    opt.value = m.exerciseId;
+                    opt.innerText = `Exercício ${idx + 1}: ${m.title}`;
+                    selectProfExRanking.appendChild(opt);
+                });
+
+                selectProfExRanking.onchange = renderizarRankingPorExercicio;
+                renderizarRankingPorExercicio();
+            }
+
         } catch (e) {
             console.error("Erro ao carregar dados da turma:", e);
         }
     }
 
-    if (window.$ && tabTurmaLink) {
-        $(tabTurmaLink).on('shown.bs.tab', carregarMetricasTurma);
+    function renderizarRankingPorExercicio() {
+        if (!selectProfExRanking || !tbodyProfRankingEx) return;
+        const exId = selectProfExRanking.value;
+        const dadosEx = rankingPorExercicioCarregado[exId];
+
+        tbodyProfRankingEx.innerHTML = '';
+
+        if (!dadosEx || !dadosEx.ranking || dadosEx.ranking.length === 0) {
+            if (cardProfLiderEx) cardProfLiderEx.style.display = 'none';
+            tbodyProfRankingEx.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum aluno acertou este exercício ainda.</td></tr>';
+            return;
+        }
+
+        if (dadosEx.lider && cardProfLiderEx && profLiderNome && profLiderTempo) {
+            cardProfLiderEx.style.display = 'flex';
+            profLiderNome.innerText = dadosEx.lider.userName;
+            profLiderTempo.innerText = dadosEx.lider.executionTime;
+        } else if (cardProfLiderEx) {
+            cardProfLiderEx.style.display = 'none';
+        }
+
+        dadosEx.ranking.forEach((aluno, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
+                <td><strong>${aluno.userName}</strong></td>
+                <td class="text-center font-weight-bold text-secondary">${aluno.executionTime} ms</td>
+                <td class="text-right pr-3">
+                    <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${aluno.userId}">
+                        <i class="fas fa-eye mr-1"></i> Ver
+                    </button>
+                </td>
+            `;
+            tbodyProfRankingEx.appendChild(tr);
+        });
+
+        tbodyProfRankingEx.querySelectorAll('.btn-abrir-dossie').forEach(btn => {
+            btn.onclick = () => abrirDossieAluno(btn.dataset.userid);
+        });
     }
-    if (tabTurmaLink) {
-        tabTurmaLink.addEventListener('click', carregarMetricasTurma);
-    }
+
     if (btnAtualizarTurma) {
         btnAtualizarTurma.onclick = carregarMetricasTurma;
     }
@@ -891,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><strong>${sub.executionTime} ms</strong></td>
                     <td class="text-muted small">${dataFormat}</td>
                     <td class="text-right">
-                        <button class="btn btn-xs btn-outline-primary py-0 px-2 btn-carregar-codigo" 
+                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 btn-carregar-codigo font-weight-bold" 
                                 data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}">
                             <i class="fas fa-eye mr-1"></i> Inspecionar
                         </button>
@@ -914,7 +1304,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><span class="badge badge-danger">${sub.status}</span></td>
                     <td class="text-muted small">${dataFormat}</td>
                     <td class="text-right">
-                        <button class="btn btn-xs btn-outline-danger py-0 px-2 btn-carregar-codigo" 
+                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 btn-carregar-codigo font-weight-bold" 
                                 data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}">
                             <i class="fas fa-eye mr-1"></i> Inspecionar
                         </button>
@@ -935,7 +1325,7 @@ document.addEventListener('DOMContentLoaded', () => {
             submissaoAtivaParaCompilar = { exerciseId: exId };
 
             try {
-                const res = await fetch(`/judge/professor/submissao-codigo?codePath=${encodeURIComponent(codePath)}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+                const res = await fetch(`/judge/professor/submissao-codigo?codePath=${encodeURIComponent(codePath)}` + (ltiToken ? `?ltik=${ltiToken}` : ''));
                 const d = await res.json();
                 editor.value = d.code || "// Sem código gravado.";
                 btnCompilar.disabled = false;
@@ -946,6 +1336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function limparModalNovoExercicio() {
+        const inputId = document.getElementById('modal-exercicio-id');
         const inputTitulo = document.getElementById('modal-titulo');
         const inputDesc = document.getElementById('modal-desc');
         const inputTempo = document.getElementById('modal-tempo-limite');
@@ -954,6 +1345,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
         const boxCampoTempoEl = document.getElementById('box-campo-tempo-limite');
 
+        if (inputId) inputId.value = '';
         if (inputTitulo) inputTitulo.value = '';
         if (inputDesc) inputDesc.value = '';
         if (inputTempo) inputTempo.value = '1000';
@@ -964,19 +1356,54 @@ document.addEventListener('DOMContentLoaded', () => {
         if (containerTestes) {
             containerTestes.innerHTML = `
                 <div class="teste-item border rounded p-2 mb-2 bg-light position-relative">
+                    <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #1</span>
                     <div class="row">
-                        <div class="col">
-                            <label class="small font-weight-bold">Entradas:</label>
-                            <input type="text" class="form-control form-control-sm input-val">
+                        <div class="col-md-6 mb-2 mb-md-0">
+                            <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
+                            <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter..."></textarea>
                         </div>
-                        <div class="col">
-                            <label class="small font-weight-bold">Saída Esperada:</label>
-                            <input type="text" class="form-control form-control-sm output-val">
+                        <div class="col-md-6">
+                            <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
+                            <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada..."></textarea>
                         </div>
                     </div>
                 </div>
             `;
         }
+    }
+
+    if (btnDesvincularAtividade) {
+        btnDesvincularAtividade.onclick = async () => {
+            const activityIdMeta = document.querySelector('meta[name="activity-id"]');
+            const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
+
+            const confirmou = confirm("Deseja realmente remover a submissão desta lista e desvinculá-la desta atividade?");
+            if (!confirmou) return;
+
+            btnDesvincularAtividade.disabled = true;
+            btnDesvincularAtividade.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Removendo...';
+
+            try {
+                const res = await fetch(`/judge/atividade/desvincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activityId })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    alert("Submissão da lista removida com sucesso!");
+                    await carregarEstadoInicial();
+                } else {
+                    alert(data.error || "Erro ao remover submissão da lista.");
+                }
+            } catch (err) {
+                alert("Erro de conexão ao desvincular atividade.");
+            } finally {
+                btnDesvincularAtividade.disabled = false;
+                btnDesvincularAtividade.innerHTML = '<i class="fas fa-unlink mr-1"></i> Remover Submissão';
+            }
+        };
     }
 
     carregarEstadoInicial();
