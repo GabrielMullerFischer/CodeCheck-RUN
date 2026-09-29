@@ -6,6 +6,7 @@ const SubmissionSchema = new mongoose.Schema({
     activityId: { type: String, required: true },
     exerciseId: { type: String, required: true },
     codePath: { type: String, required: true },
+    logPath: { type: String, default: null },
     status: { 
         type: String, 
         enum: ['Accepted', 'Wrong Answer', 'Compilation Error', 'Runtime Error', 'Time Limit', 'Pending'],

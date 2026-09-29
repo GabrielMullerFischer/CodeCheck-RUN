@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const minioService = require('../services/minioService');
 const judgeService = require('../services/judgeService');
 const ActivityConfig = require('../models/ActivityConfig');
@@ -43,11 +44,11 @@ function gerarDicaDidatica(status, details, got) {
     }
     return null;
 }
+
 // Consulta o status do cronômetro do aluno na atividade
 router.get('/atividade/timer-status', async (req, res) => {
     const { activityId, mode } = req.query;
     const userId = req.session?.userId || req.query.userId || 'preview_user';
-
     const isProfessor = req.session?.isProfessor === true || userId === 'preview_user' || userId === 'professor_test' || mode === 'preview';
 
     if (isProfessor || !activityId || activityId === 'preview') {
@@ -170,7 +171,7 @@ router.post('/submit', async (req, res) => {
                 }
             }
 
-            // Validação de limite de tentativas apenas para alunos reais em atividades avaliativas
+            // Validação de limite de tentativas
             if (configAtividade && configAtividade.isEvaluative) {
                 const totalTentativas = await Submission.countDocuments({
                     userId,
@@ -214,36 +215,40 @@ router.post('/submit', async (req, res) => {
             });
         }
 
-        // Busca o código do melhor tempo para imunizar da remoção
-        const melhorEnvio = await Submission.findOne({
-            userId,
-            activityId: activityId || 'preview',
-            exerciseId: idExercicioFinal,
-            isAccepted: true
-        }).sort({ executionTime: 1 }).select('codePath').lean();
-
-        const melhorCodePath = melhorEnvio ? melhorEnvio.codePath : null;
-
-        // Salva a submissão no MinIO protegendo o menor tempo
+        // Salva o arquivo de código no MinIO
         const caminhoMinio = await minioService.arquivarSubmissao(
             userId, 
             activityId || 'preview', 
             idExercicioFinal, 
             isAccepted, 
-            code,
-            melhorCodePath
+            code
         );
 
-        // Grava no MongoDB
+        // Salva o log bruto estruturado em formato JSON no MinIO
+        const caminhoLog = caminhoMinio.replace(/\.c$/, '.json');
+        const logPayload = JSON.stringify({
+            status: resultado.status,
+            details: resultado.details || '',
+            input: resultado.input || '',
+            got: resultado.got || '',
+            expected: resultado.expected || '',
+            executionTime: isAccepted ? tempoGastoMs : null,
+            didacticHint: dicaDidatica
+        });
+        await minioService.salvarArquivo(caminhoLog, logPayload);
+
+        // Grava no MongoDB com o caminho do código e do log
         await Submission.create({
             userId,
             userName,
             activityId: activityId || 'preview',
             exerciseId: idExercicioFinal,
             codePath: caminhoMinio,
+            logPath: caminhoLog,
             status: resultado.status,
             isAccepted,
-            executionTime: isAccepted ? tempoGastoMs : null
+            executionTime: isAccepted ? tempoGastoMs : null,
+            compilationDetails: resultado.details || ''
         });
 
         res.json({
@@ -257,7 +262,7 @@ router.post('/submit', async (req, res) => {
     }
 });
 
-// Execução livre com entrada customizada do aluno (sem gravar histórico)
+// Execução livre com entrada customizada do aluno
 router.post('/test-custom', async (req, res) => {
     const { code, input, exerciseId, activityId } = req.body;
     const userId = req.session?.userId || req.body.userId || 'preview_user';
@@ -321,8 +326,8 @@ router.get('/aluno/submissoes', async (req, res) => {
             exerciseId
         })
         .sort({ createdAt: -1 })
-        .limit(MAX_SUBMISSION_HISTORY)
-        .select('_id status isAccepted executionTime createdAt codePath')
+        .limit(10)
+        .select('_id status isAccepted executionTime createdAt codePath logPath')
         .lean();
 
         const submissoes = ultimasSubmissoes.reverse();
@@ -333,7 +338,7 @@ router.get('/aluno/submissoes', async (req, res) => {
     }
 });
 
-// Carregamento sob demanda do código de uma submissão passada
+// Carregamento sob demanda do código e do log bruto
 router.get('/aluno/submissao-codigo', async (req, res) => {
     const { submissionId } = req.query;
     const userId = req.session?.userId || req.query.userId || 'preview_user';
@@ -348,9 +353,28 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
         }
 
         const codigo = await minioService.lerArquivoPorPath(sub.codePath);
-        res.json({ success: true, code: codigo });
+        
+        let logResultado = null;
+        const caminhoLog = sub.logPath || sub.codePath.replace(/\.c$/, '.json');
+        try {
+            const rawLog = await minioService.lerArquivoPorPath(caminhoLog);
+            logResultado = JSON.parse(rawLog);
+        } catch {
+            logResultado = {
+                status: sub.status,
+                executionTime: sub.executionTime,
+                details: sub.compilationDetails || '',
+                didacticHint: null
+            };
+        }
+
+        res.json({ 
+            success: true, 
+            code: codigo, 
+            resultado: logResultado 
+        });
     } catch (e) {
-        res.status(404).json({ error: "Erro ao carregar código do MinIO." });
+        res.status(404).json({ error: "Erro ao carregar arquivos da submissão do MinIO." });
     }
 });
 
@@ -406,7 +430,6 @@ router.get('/ranking', async (req, res) => {
             }
         });
 
-        // Estatísticas do exercício ativo na tela
         let rankingExercicio = [];
         let minhaPosicaoEx = null;
         let meuTempoEx = null;
@@ -433,7 +456,6 @@ router.get('/ranking', async (req, res) => {
             }
         }
 
-        // Classificação Geral da Lista Completa
         const alunosGeral = {};
         submissoes.forEach(sub => {
             if (!alunosGeral[sub.userId]) {
@@ -470,7 +492,6 @@ router.get('/ranking', async (req, res) => {
 
         const posGeralIdx = rankingGeral.findIndex(r => r.userId === userId);
 
-        // Classificação por Exercício
         const rankingPorExercicio = {};
         exercicios.forEach(ex => {
             const exId = String(ex._id);

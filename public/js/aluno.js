@@ -186,6 +186,85 @@ document.addEventListener('DOMContentLoaded', async () => {
             .replace(/'/g, "&#039;");
     }
 
+    // Renderiza a caixa de resultado na tela (usado na compilação e ao restaurar o log do MinIO)
+    function renderizarFeedbackJuiz(data) {
+        if (!resultDiv) return;
+        if (!data || !data.status) {
+            resultDiv.innerHTML = '';
+            removerDestaqueErro();
+            return;
+        }
+
+        let cardDica = '';
+        if (data.didacticHint) {
+            cardDica = `
+                <div class="alert alert-warning py-2 mb-2">
+                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica do Compilador:</strong> ${escapeHtml(data.didacticHint)}
+                </div>
+            `;
+        }
+
+        if (data.status === 'Accepted') {
+            removerDestaqueErro();
+            resultDiv.innerHTML = `
+                <div class="alert alert-success py-2">
+                    <i class="fas fa-check-circle mr-2"></i><strong>Correto!</strong> Tempo de execução: ${data.executionTime !== null ? data.executionTime + ' ms' : '-'}
+                </div>
+            `;
+        } else if (data.status === 'Compilation Error') {
+            const numLinha = extrairLinhaErroGCC(data.details);
+            let badgeLinha = '';
+
+            if (numLinha) {
+                badgeLinha = `<div class="mb-2"><span class="badge badge-danger p-2 font-weight-bold" style="font-size: 0.88rem;"><i class="fas fa-exclamation-circle mr-1"></i> Erro encontrado na linha ${numLinha}</span></div>`;
+                destacarLinhaNoEditor(numLinha);
+            } else {
+                removerDestaqueErro();
+            }
+
+            resultDiv.innerHTML = `
+                <div class="alert alert-warning py-2">
+                    ${cardDica}
+                    ${badgeLinha}
+                    <strong>Erro de compilação:</strong><br>
+                    <pre class="bg-dark text-white p-2 mt-2 rounded small pre-io">${escapeHtml(data.details)}</pre>
+                </div>
+            `;
+        } else if (data.status === 'Wrong Answer') {
+            removerDestaqueErro();
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger py-2">
+                    ${cardDica}
+                    <strong>Resposta Incorreta</strong><br>
+                    <div class="small mt-2">
+                        <div class="mb-1"><strong>Entrada:</strong></div>
+                        <pre class="p-2 border rounded text-dark pre-io">${escapeHtml(data.input) || '(sem entrada)'}</pre>
+                        <div class="mb-1 mt-2"><strong>Sua saída:</strong></div>
+                        <pre class="p-2 border rounded text-danger pre-io">${escapeHtml(data.got) || '(vazio)'}</pre>
+                        <div class="mb-1 mt-2"><strong>Saída Esperada:</strong></div>
+                        <pre class="p-2 border rounded text-success pre-io">${escapeHtml(data.expected)}</pre>
+                    </div>
+                </div>
+            `;
+        } else if (data.status === 'Time Limit') {
+            removerDestaqueErro();
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger py-2">
+                    ${cardDica}
+                    <strong>Tempo limite excedido.</strong> Verifique se há loops infinitos.
+                </div>
+            `;
+        } else {
+            removerDestaqueErro();
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger py-2">
+                    ${cardDica}
+                    <strong>${escapeHtml(data.status)}:</strong> ${escapeHtml(data.details || data.message || 'Erro durante a execução.')}
+                </div>
+            `;
+        }
+    }
+
     function montarNavegacaoMoodle() {
         if (!navContainer) return;
         navContainer.innerHTML = '';
@@ -368,7 +447,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!activityId || activityId === 'preview' || urlParams.get('mode') === 'preview') return;
 
         try {
-            const res = await fetch(`/judge/atividade/timer-status?activityId=${activityId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const modeQuery = urlParams.get('mode') ? `&mode=${urlParams.get('mode')}` : '';
+            const res = await fetch(`/judge/atividade/timer-status?activityId=${activityId}${modeQuery}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
             const data = await res.json();
 
             if (!data.success || !data.hasTimeLimit) return;
@@ -408,7 +488,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (res.ok && data.success) {
                     $('#modalConfirmarInicioTempo').modal('hide');
 
-                    timerBloqueado = false; // Libera a trava
+                    timerBloqueado = false;
                     document.getElementById('conteudo-principal-aluno')?.classList.remove('conteudo-bloqueado-esfumacado');
                     
                     editorCM.setOption('readOnly', false);
@@ -693,18 +773,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    async function buscarCarregarCodigoSubmissao(subId) {
-        setCodigoNoEditor("// Carregando submissão anterior...");
+    // Busca o código e o log bruto do MinIO
+    async function buscarCarregarCodigoSubmissao(subId, apenasLog = false) {
+        if (!apenasLog) {
+            setCodigoNoEditor("// Carregando submissão anterior...");
+        }
         try {
-            const res = await fetch(`/judge/aluno/submissao-codigo?submissionId=${subId}` + (ltiToken ? `?ltik=${ltiToken}` : ''));
+            const res = await fetch(`/judge/aluno/submissao-codigo?submissionId=${subId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
             const data = await res.json();
             if (res.ok && data.success) {
-                setCodigoNoEditor(data.code || '');
-            } else {
+                if (!apenasLog) {
+                    setCodigoNoEditor(data.code || '');
+                }
+                renderizarFeedbackJuiz(data.resultado);
+            } else if (!apenasLog) {
                 setCodigoNoEditor('// Erro ao carregar código desta submissão.');
             }
         } catch {
-            setCodigoNoEditor('// Erro de conexão ao carregar código.');
+            if (!apenasLog) {
+                setCodigoNoEditor('// Erro de conexão ao carregar código.');
+            }
         }
     }
 
@@ -739,6 +827,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 atualizarBotoesHistorico();
                 setCodigoNoEditor(rascunhosSessao[exAtual._id] || '');
                 posicionarCursorAposAspas();
+
+                // Ao voltar para o Rascunho Atual, recupera o log da última submissão oficial feita
+                if (listaSubmissoesMeta.length > 0) {
+                    const ultima = listaSubmissoesMeta[listaSubmissoesMeta.length - 1];
+                    await buscarCarregarCodigoSubmissao(ultima._id, true);
+                } else {
+                    resultDiv.innerHTML = '';
+                    removerDestaqueErro();
+                }
             }
         };
     }
@@ -790,14 +887,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
-        if (resultDiv) resultDiv.innerHTML = '';
+        resultDiv.innerHTML = '';
         if (resultTesteCustom) resultTesteCustom.innerHTML = '';
-
         removerDestaqueErro();
 
         await carregarRascunho(ex._id);
         await carregarHistoricoSubmissoesExercicio(ex._id);
         await atualizarRankingEStatus();
+
+        // Se houver histórico para esta questão, restaura automaticamente o feedback da última submissão
+        if (listaSubmissoesMeta && listaSubmissoesMeta.length > 0) {
+            const ultimaSubmissao = listaSubmissoesMeta[listaSubmissoesMeta.length - 1];
+            await buscarCarregarCodigoSubmissao(ultimaSubmissao._id, true);
+        }
 
         if (btnAnterior) btnAnterior.disabled = (indiceAtual === 0);
         if (btnProximo) btnProximo.disabled = (indiceAtual === listaExercicios.length - 1);
@@ -925,61 +1027,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const data = await res.json();
 
                 if (res.ok) {
-                    let cardDica = '';
-                    if (data.didacticHint) {
-                        cardDica = `
-                            <div class="alert alert-warning py-2 mb-2">
-                                <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica do Compilador:</strong> ${data.didacticHint}
-                            </div>
-                        `;
-                    }
-
-                    if (data.status === 'Accepted') {
-                        resultDiv.innerHTML = `<div class="alert alert-success py-2"><i class="fas fa-check-circle mr-2"></i><strong>Correto!</strong> Tempo de execução: ${data.executionTime} ms</div>`;
-                    } else if (data.status === 'Compilation Error') {
-                        const numLinha = extrairLinhaErroGCC(data.details);
-                        let badgeLinha = '';
-
-                        if (numLinha) {
-                            badgeLinha = `<div class="mb-2"><span class="badge badge-danger p-2 font-weight-bold" style="font-size: 0.88rem;"><i class="fas fa-exclamation-circle mr-1"></i> Erro encontrado na linha ${numLinha}</span></div>`;
-                            destacarLinhaNoEditor(numLinha);
-                        }
-
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-warning py-2">
-                                ${cardDica}
-                                ${badgeLinha}
-                                <strong>Erro de compilação:</strong><br>
-                                <pre class="bg-dark text-white p-2 mt-2 rounded small pre-io">${escapeHtml(data.details)}</pre>
-                            </div>`;
-                    } else if (data.status === 'Wrong Answer') {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-danger py-2">
-                                ${cardDica}
-                                <strong>Resposta Incorreta</strong><br>
-                                <div class="small mt-2">
-                                    <div class="mb-1"><strong>Entrada:</strong></div>
-                                    <pre class="p-2 border rounded text-dark pre-io">${escapeHtml(data.input) || '(sem entrada)'}</pre>
-                                    <div class="mb-1 mt-2"><strong>Sua saída:</strong></div>
-                                    <pre class="p-2 border rounded text-danger pre-io">${escapeHtml(data.got) || '(vazio)'}</pre>
-                                    <div class="mb-1 mt-2"><strong>Saída Esperada:</strong></div>
-                                    <pre class="p-2 border rounded text-success pre-io">${escapeHtml(data.expected)}</pre>
-                                </div>
-                            </div>`;
-                    } else if (data.status === 'Time Limit') {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-danger py-2">
-                                ${cardDica}
-                                <strong>Tempo limite excedido.</strong> Verifique loops infinitos.
-                            </div>`;
-                    } else {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-danger py-2">
-                                ${cardDica}
-                                <strong>${data.status}:</strong> ${escapeHtml(data.details || data.message || 'Erro durante a execução.')}
-                            </div>`;
-                    }
-
+                    renderizarFeedbackJuiz(data);
                     await carregarHistoricoSubmissoesExercicio(exercicioAtual._id);
                     await atualizarRankingEStatus();
                 } else {

@@ -115,6 +115,65 @@
         .btn-action-round:hover {
             transform: translateY(-1px);
         }
+        #toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1070;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .toast-custom {
+            pointer-events: auto;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 12px 18px;
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 0.92rem;
+            font-weight: 600;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            animation: slideInToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .toast-custom.toast-success {
+            background: rgba(40, 167, 69, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+        .toast-custom.toast-danger {
+            background: rgba(220, 53, 69, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+        .toast-custom.toast-warning {
+            background: rgba(255, 193, 7, 0.95);
+            color: #212529;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+        }
+        @keyframes slideInToast {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.96);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        @keyframes fadeOutToast {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(15px) scale(0.96);
+            }
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -200,7 +259,7 @@
 
                                         <div class="tab-content">
                                             <div class="tab-pane fade show active" id="tab-prof-ranking-geral" role="tabpanel">
-                                                <div class="table-responsive">
+                                                <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
                                                     <table class="table table-hover align-middle mb-0" style="font-size: 0.92rem;">
                                                         <thead class="thead-light">
                                                             <tr>
@@ -230,7 +289,7 @@
                                                     </div>
                                                 </div>
 
-                                                <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
+                                                <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
                                                     <table class="table table-sm table-hover mb-0" style="font-size: 0.88rem;">
                                                         <thead class="thead-light">
                                                             <tr>
@@ -322,7 +381,7 @@
                                                         <label for="input-max-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
                                                             Tentativas:
                                                         </label>
-                                                        <input type="number" id="input-max-tentativas" class="form-control form-control-sm" min="1" max="10" value="3" style="width: 70px;">
+                                                        <input type="number" id="input-max-tentativas" class="form-control form-control-sm text-center font-weight-bold" min="1" max="10" value="3" onwheel="this.blur()" style="width: 70px;">
                                                     </div>
                                                 </div>
                                             </div>
@@ -339,15 +398,7 @@
                                                         <label for="input-tempo-atividade" class="small text-muted mb-0 mr-2 font-weight-bold">
                                                             Duração (min):
                                                         </label>
-                                                        <input type="number" 
-                                                            id="input-tempo-atividade" 
-                                                            class="form-control form-control-sm text-center font-weight-bold" 
-                                                            min="5" 
-                                                            max="720" 
-                                                            step="5" 
-                                                            value="60" 
-                                                            onwheel="this.blur()" 
-                                                            style="width: 85px;">
+                                                        <input type="number" id="input-tempo-atividade" class="form-control form-control-sm text-center font-weight-bold" min="5" max="720" step="5" value="60" onwheel="this.blur()" style="width: 85px;">
                                                     </div>
                                                 </div>
                                             </div>
@@ -472,6 +523,7 @@
             <iframe id="iframe-aluno" src="about:blank" style="width: 100%; height: 850px; border: none; border-radius: 8px;" class="shadow-sm"></iframe>
         </div>
 
+        <!-- Modal Novo / Editar Exercício -->
         <div class="modal fade" id="modalNovoExercicio" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-lg" role="document">
                 <div class="modal-content">
@@ -518,7 +570,7 @@
                             <h6 class="font-weight-bold mb-0"><i class="fas fa-vial mr-1"></i> Casos de Teste</h6>
                         </div>
                         <div class="alert alert-info py-2 px-3 small border-0 mb-3">
-                            <i class="fas fa-info-circle mr-1"></i>  A separação de valores é feita por quebra de linha.
+                            <i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha.
                         </div>
 
                         <div id="modal-container-testes">
@@ -548,9 +600,10 @@
             </div>
         </div>
 
+        <!-- Modal Sucesso Exercício -->
         <div class="modal fade" id="modalSucessoExercicio" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered" role="document">
-                <div class="modal-content border-0 shadow">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px;">
                     <div class="modal-header bg-success text-white py-2">
                         <h6 class="modal-title font-weight-bold mb-0">
                             <i class="fas fa-check-circle mr-1"></i> Exercício Cadastrado!
@@ -578,6 +631,7 @@
             </div>
         </div>
 
+        <!-- Modal Editar Lista -->
         <div class="modal fade" id="modalEditarLista" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-lg" role="document">
                 <div class="modal-content">
@@ -613,9 +667,10 @@
             </div>
         </div>
 
+        <!-- Modal Editar Regras da Atividade Ativa -->
         <div class="modal fade" id="modalEditarAtividade" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered" role="document">
-                <div class="modal-content shadow border-0">
+                <div class="modal-content shadow border-0" style="border-radius: 12px;">
                     <div class="modal-header bg-primary text-white py-2">
                         <h6 class="modal-title font-weight-bold">
                             <i class="fas fa-sliders-h mr-2"></i> Regras da Atividade Ativa
@@ -640,7 +695,7 @@
                                 <label for="modal-ativ-input-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
                                     Tentativas:
                                 </label>
-                                <input type="number" id="modal-ativ-input-tentativas" class="form-control form-control-sm" min="1" max="10" value="3" style="width: 75px;">
+                                <input type="number" id="modal-ativ-input-tentativas" class="form-control form-control-sm text-center font-weight-bold" min="1" max="10" value="3" onwheel="this.blur()" style="width: 75px;">
                             </div>
                         </div>
 
@@ -655,15 +710,7 @@
                                 <label for="modal-ativ-input-tempo" class="small text-muted mb-0 mr-2 font-weight-bold">
                                     Duração total (em minutos):
                                 </label>
-                                <input type="number" 
-                                    id="modal-ativ-input-tempo" 
-                                    class="form-control form-control-sm text-center font-weight-bold" 
-                                    min="5" 
-                                    max="720" 
-                                    step="5" 
-                                    value="60" 
-                                    onwheel="this.blur()" 
-                                    style="width: 85px;">
+                                <input type="number" id="modal-ativ-input-tempo" class="form-control form-control-sm text-center font-weight-bold" min="5" max="720" step="5" value="60" onwheel="this.blur()" style="width: 85px;">
                             </div>
                         </div>
                     </div>
@@ -677,9 +724,10 @@
             </div>
         </div>
 
+
         <div class="modal fade" id="modalConfirmExcluirExercicio" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered" role="document">
-                <div class="modal-content shadow border-0">
+                <div class="modal-content shadow border-0" style="border-radius: 12px;">
                     <div class="modal-header bg-danger text-white py-2">
                         <h6 class="modal-title font-weight-bold">
                             <i class="fas fa-exclamation-triangle mr-1"></i> Opções de Exclusão do Exercício
@@ -715,7 +763,7 @@
 
         <div class="modal fade" id="modalHistoricoAluno" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
-                <div class="modal-content">
+                <div class="modal-content" style="border-radius: 12px;">
                     <div class="modal-header bg-light py-2">
                         <h5 class="modal-title font-weight-bold text-dark" id="modalAlunoTitulo">
                             <i class="fas fa-user-graduate mr-2 text-primary"></i> Submissões do Aluno
@@ -809,8 +857,7 @@
         </div>
 
         <div class="modal fade" id="modalVerExerciciosLista" tabindex="-1" role="dialog" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-                <div class="modal-content">
+            <div class="modal-dialog modal-lg modal-dialog-centered" role="document">                <div class="modal-content" style="border-radius: 12px;">
                     <div class="modal-header bg-light py-2">
                         <h5 class="modal-title font-weight-bold text-dark" id="modalVerListaTitulo">
                             <i class="fas fa-list-alt text-primary mr-2"></i> Exercícios da Lista
@@ -841,7 +888,7 @@
 
         <div class="modal fade" id="modalVerExercicioIndividual" tabindex="-1" role="dialog" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-                <div class="modal-content">
+                <div class="modal-content" style="border-radius: 12px;">
                     <div class="modal-header bg-light py-2">
                         <h5 class="modal-title font-weight-bold text-dark" id="modalVerExTitulo">
                             <i class="fas fa-file-code text-primary mr-2"></i> Exercício
@@ -876,8 +923,30 @@
                 </div>
             </div>
         </div>
+
+        <div class="modal fade" id="modalConfirmacaoGenerica" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static" data-keyboard="false">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content shadow border-0 text-center p-4" style="border-radius: 14px;">
+                    <div class="modal-body p-0">
+                        <div id="modalConfirmIcone" class="mb-3" style="font-size: 3.2rem;"></div>
+                        <h5 class="font-weight-bold text-dark mb-2" id="modalConfirmTitulo">Tem certeza?</h5>
+                        <p class="text-secondary small mb-4" id="modalConfirmMensagem" style="white-space: pre-line;">Mensagem de confirmação...</p>
+                        <div class="d-flex justify-content-center" style="gap: 12px;">
+                            <button type="button" id="btnModalConfirmCancelar" class="btn btn-light px-4 font-weight-bold border" data-dismiss="modal">
+                                Cancelar
+                            </button>
+                            <button type="button" id="btnModalConfirmAcao" class="btn btn-danger px-4 font-weight-bold shadow-sm">
+                                Confirmar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
+    <div id="toast-container"></div>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/professor.js"></script>

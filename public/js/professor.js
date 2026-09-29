@@ -74,6 +74,74 @@ document.addEventListener('DOMContentLoaded', () => {
     let idExercicioParaExcluir = null;
     let maxExecutionTimeLimitMs = 7200000;
 
+    document.addEventListener('wheel', (e) => {
+        if (document.activeElement.type === 'number') {
+            document.activeElement.blur();
+        }
+    });
+
+    function mostrarToast(mensagem, tipo = 'success', duracao = 3500) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const icones = {
+            success: 'fa-check-circle',
+            danger: 'fa-times-circle',
+            warning: 'fa-exclamation-triangle'
+        };
+
+        const toast = document.createElement('div');
+        toast.className = `toast-custom toast-${tipo}`;
+        toast.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="fas ${icones[tipo] || 'fa-info-circle'} mr-2" style="font-size: 1.15rem;"></i>
+                <span>${mensagem}</span>
+            </div>
+            <button type="button" style="background: none; border: none; color: inherit; opacity: 0.65; font-size: 1.3rem; cursor: pointer; line-height: 1; padding-left: 14px;">&times;</button>
+        `;
+
+        const fechar = () => {
+            toast.style.animation = 'fadeOutToast 0.25s ease forwards';
+            setTimeout(() => toast.remove(), 250);
+        };
+
+        toast.querySelector('button').onclick = fechar;
+        container.appendChild(toast);
+        setTimeout(fechar, duracao);
+    }
+
+    function confirmarAcao({
+        titulo = 'Você tem certeza?',
+        mensagem = 'Esta ação não poderá ser desfeita.',
+        textoConfirmar = 'Confirmar',
+        corConfirmar = 'btn-danger',
+        icone = 'fa-exclamation-triangle text-danger'
+    } = {}) {
+        return new Promise((resolve) => {
+            const modalEl = $('#modalConfirmacaoGenerica');
+            document.getElementById('modalConfirmTitulo').innerText = titulo;
+            document.getElementById('modalConfirmMensagem').innerText = mensagem;
+            document.getElementById('modalConfirmIcone').innerHTML = `<i class="fas ${icone}"></i>`;
+
+            const btnAcao = document.getElementById('btnModalConfirmAcao');
+            btnAcao.className = `btn ${corConfirmar} px-4 font-weight-bold shadow-sm`;
+            btnAcao.innerText = textoConfirmar;
+
+            let confirmou = false;
+
+            btnAcao.onclick = () => {
+                confirmou = true;
+                modalEl.modal('hide');
+            };
+
+            modalEl.off('hidden.bs.modal').on('hidden.bs.modal', () => {
+                resolve(confirmou);
+            });
+
+            modalEl.modal('show');
+        });
+    }
+
     if (chkLimiteTentativas && boxTentativas) {
         chkLimiteTentativas.addEventListener('change', () => {
             boxTentativas.style.display = chkLimiteTentativas.checked ? 'flex' : 'none';
@@ -360,15 +428,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     const impExData = await impExRes.json();
                     if (impExRes.ok && impExData.success) {
-                        alert("Exercício copiado com sucesso para seus exercícios!");
+                        mostrarToast("Exercício copiado com sucesso para seus exercícios!", "success");
                         await carregarEstadoInicial();
                     } else {
-                        alert(impExData.error || "Erro ao copiar exercício.");
+                        mostrarToast(impExData.error || "Erro ao copiar exercício.", "danger");
                         btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
                     }
                 } catch (err) {
-                    alert("Erro de conexão ao copiar exercício.");
+                    mostrarToast("Erro de conexão ao copiar exercício.", "danger");
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
                 }
@@ -488,17 +556,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     const impData = await impRes.json();
 
                     if (impRes.ok && impData.success) {
-                        alert(`Lista importada com sucesso para "Minhas Listas"!`);
+                        mostrarToast("Lista importada com sucesso para suas listas!", "success");
                         await carregarEstadoInicial();
                         const pillMinhas = document.getElementById('pill-minhas-listas');
                         if (window.$ && pillMinhas) $(pillMinhas).tab('show');
                     } else {
-                        alert(impData.error || "Erro ao importar lista.");
+                        mostrarToast(impData.error || "Erro ao importar lista.", "danger");
                         btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
                     }
                 } catch (err) {
-                    alert("Erro de conexão ao importar.");
+                    mostrarToast("Erro de conexão ao importar.", "danger");
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
                 }
@@ -587,11 +655,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const exercises = Array.from(document.querySelectorAll('.chk-edit-lista-ex:checked')).map(c => c.value);
 
             if (!title) {
-                alert("Informe um nome para a lista.");
+                mostrarToast("Informe um nome para a lista.", "warning");
                 return;
             }
             if (exercises.length === 0) {
-                alert("Selecione pelo menos um exercício.");
+                mostrarToast("Selecione pelo menos um exercício.", "warning");
                 return;
             }
 
@@ -606,14 +674,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    alert("Lista atualizada com sucesso!");
                     $('#modalEditarLista').modal('hide');
+                    mostrarToast("Lista atualizada com sucesso!", "success");
                     await carregarEstadoInicial();
                 } else {
-                    alert(data.error || "Erro ao atualizar lista.");
+                    mostrarToast(data.error || "Erro ao atualizar lista.", "danger");
                 }
             } catch (e) {
-                alert("Erro de conexão ao salvar lista.");
+                mostrarToast("Erro de conexão ao salvar lista.", "danger");
             } finally {
                 modalBtnSalvarEdicaoLista.disabled = false;
                 modalBtnSalvarEdicaoLista.innerText = "Salvar Alterações";
@@ -622,20 +690,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function excluirLista(listId) {
-        if (!confirm("Deseja realmente excluir esta lista de atividades?")) return;
+        const confirmou = await confirmarAcao({
+            titulo: 'Excluir Lista',
+            mensagem: 'Deseja realmente excluir esta lista de atividades? Os exercícios vinculados serão preservados.',
+            textoConfirmar: 'Excluir Lista',
+            corConfirmar: 'btn-danger',
+            icone: 'fa-trash-alt text-danger'
+        });
+
+        if (!confirmou) return;
+
         try {
             const res = await fetch(`/judge/lista/${listId}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                 method: 'DELETE'
             });
             const data = await res.json();
             if (res.ok && data.success) {
-                alert("Lista excluída com sucesso!");
+                mostrarToast("Lista excluída com sucesso!", "success");
                 await carregarEstadoInicial();
             } else {
-                alert(data.error || "Erro ao excluir lista.");
+                mostrarToast(data.error || "Erro ao excluir lista.", "danger");
             }
         } catch (e) {
-            alert("Erro de conexão ao excluir lista.");
+            mostrarToast("Erro de conexão ao excluir lista.", "danger");
         }
     }
 
@@ -707,13 +784,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (res.ok && data.success) {
                 $('#modalConfirmExcluirExercicio').modal('hide');
-                alert(removeFromAllLists ? "Exercício excluído completamente de todas as listas e do banco!" : "Exercício removido do seu banco pessoal. As listas existentes foram preservadas!");
+                mostrarToast(removeFromAllLists ? "Exercício excluído completamente de todas as listas e do banco!" : "Exercício removido do seu banco pessoal.", "success");
                 await carregarEstadoInicial();
             } else {
-                alert(data.error || "Erro ao excluir exercício.");
+                mostrarToast(data.error || "Erro ao excluir exercício.", "danger");
             }
         } catch (e) {
-            alert("Erro de conexão ao excluir exercício.");
+            mostrarToast("Erro de conexão ao excluir exercício.", "danger");
         } finally {
             idExercicioParaExcluir = null;
         }
@@ -732,7 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnEditarAtividadeAtiva) {
         btnEditarAtividadeAtiva.onclick = () => {
             if (!idListaAtivaVinculada) {
-                alert("Nenhuma atividade vinculada no momento.");
+                mostrarToast("Nenhuma atividade vinculada no momento.", "warning");
                 return;
             }
 
@@ -777,14 +854,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    alert("Regras da atividade salvas com sucesso!");
                     $('#modalEditarAtividade').modal('hide');
+                    mostrarToast("Regras da atividade salvas com sucesso!", "success");
                     await carregarEstadoInicial();
                 } else {
-                    alert(data.error || "Erro ao salvar regras.");
+                    mostrarToast(data.error || "Erro ao salvar regras.", "danger");
                 }
             } catch (err) {
-                alert("Erro de conexão ao salvar regras.");
+                mostrarToast("Erro de conexão ao salvar regras.", "danger");
             } finally {
                 btnSalvarConfigAtividadeModal.disabled = false;
                 btnSalvarConfigAtividadeModal.innerText = "Salvar Regras da Atividade";
@@ -795,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnPreview) {
         btnPreview.onclick = () => {
             if (!idListaAtivaVinculada) {
-                alert("Nenhuma atividade vinculada no momento.");
+                mostrarToast("Nenhuma atividade vinculada no momento.", "warning");
                 return;
             }
             abrirVisualizadorAluno(`listId=${idListaAtivaVinculada}`);
@@ -858,19 +935,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chkDefinirTempoEl && chkDefinirTempoEl.checked) {
                 const val = parseInt(document.getElementById('modal-tempo-limite')?.value, 10);
                 if (isNaN(val) || val < 100) {
-                    alert("Informe um tempo limite válido (mínimo de 100 ms).");
+                    mostrarToast("Informe um tempo limite válido (mínimo de 100 ms).", "warning");
                     return;
                 }
                 if (val > maxExecutionTimeLimitMs) {
                     const horas = (maxExecutionTimeLimitMs / 3600000).toFixed(1).replace('.0', '');
-                    alert(`O tempo limite configurado ultrapassa o teto máximo permitido pelo sistema (${maxExecutionTimeLimitMs.toLocaleString()} ms - ${horas}h). Ajuste para um valor menor ou igual.`);
+                    mostrarToast(`O tempo limite ultrapassa o teto máximo permitido (${maxExecutionTimeLimitMs.toLocaleString()} ms - ${horas}h).`, "danger");
                     return;
                 }
                 timeLimit = val;
             }
 
             if (!title || !description) {
-                alert("Preencha o título e a descrição do exercício.");
+                mostrarToast("Preencha o título e a descrição do exercício.", "warning");
                 return;
             }
 
@@ -913,13 +990,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         $('#modalSucessoExercicio').modal('show');
                     } else {
-                        alert("Exercício atualizado com sucesso!");
+                        mostrarToast("Exercício atualizado com sucesso!", "success");
                     }
                 } else {
-                    alert(data.error || "Não autorizado");
+                    mostrarToast(data.error || "Não autorizado", "danger");
                 }
             } catch (err) {
-                alert("Erro de conexão ao salvar exercício.");
+                mostrarToast("Erro de conexão ao salvar exercício.", "danger");
             } finally {
                 modalBtnSalvarEx.disabled = false;
                 modalBtnSalvarEx.innerText = "Salvar Exercício";
@@ -938,11 +1015,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const isPrivate = document.getElementById('chk-lista-privada')?.checked || false;
 
             if (!title) {
-                alert("Informe um nome para a nova lista.");
+                mostrarToast("Informe um nome para a nova lista.", "warning");
                 return;
             }
             if (selecionados.length === 0) {
-                alert("Selecione pelo menos um exercício para compor a lista.");
+                mostrarToast("Selecione pelo menos um exercício para compor a lista.", "warning");
                 return;
             }
             btnSalvarNovaLista.disabled = true;
@@ -955,7 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    alert("Lista criada com sucesso!");
+                    mostrarToast("Lista criada com sucesso!", "success");
                     nomeNovaLista.value = '';
                     const chkListaPrivada = document.getElementById('chk-lista-privada');
                     if (chkListaPrivada) chkListaPrivada.checked = false;
@@ -964,10 +1041,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     await carregarEstadoInicial();
                     $('#tab-listas-link').tab('show');
                 } else {
-                    alert(data.error || "Não autorizado");
+                    mostrarToast(data.error || "Não autorizado", "danger");
                 }
             } catch (err) {
-                alert("Erro de conexão ao criar lista.");
+                mostrarToast("Erro de conexão ao criar lista.", "danger");
             } finally {
                 btnSalvarNovaLista.disabled = false;
                 btnSalvarNovaLista.innerText = "Salvar Nova Lista";
@@ -981,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const activityIdMeta = document.querySelector('meta[name="activity-id"]');
             const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
             if (!rad) {
-                alert("Selecione uma lista de atividades primeiro.");
+                mostrarToast("Selecione uma lista de atividades primeiro.", "warning");
                 return;
             }
 
@@ -1009,20 +1086,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     const data = await res.json();
                     if (data.requiresConfirmation) {
-                        const confirmou = confirm(data.message);
+                        const confirmou = await confirmarAcao({
+                            titulo: 'Substituição de Lista Ativa',
+                            mensagem: data.message,
+                            textoConfirmar: 'Sim, Trocar Lista',
+                            corConfirmar: 'btn-warning text-dark',
+                            icone: 'fa-exclamation-triangle text-warning'
+                        });
+
                         if (confirmou) {
                             await executarVinculo(true);
                         }
                         return;
                     }
                     if (res.ok && data.success) {
-                        alert("Lista de atividades submetida com sucesso!");
+                        mostrarToast("Lista de atividades submetida com sucesso!", "success");
                         await carregarEstadoInicial();
                     } else {
-                        alert(data.error || "Não autorizado");
+                        mostrarToast(data.error || "Não autorizado", "danger");
                     }
                 } catch (err) {
-                    alert("Erro de conexão ao vincular atividade.");
+                    mostrarToast("Erro de conexão ao vincular atividade.", "danger");
                 } finally {
                     btnVincularLista.disabled = false;
                     btnVincularLista.innerHTML = '<i class="fas fa-check-circle mr-2"></i> Submeter Lista de Atividades';
@@ -1049,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itensExercicios = containerExercicios.querySelectorAll('.border-bottom');
             itensExercicios.forEach(containerItem => {
                 const texto = containerItem.textContent.toLowerCase();
-                containerItem.style.display = texto.includes(termo) ? 'flex' : 'none';
+                containerItem.style.display = texto.includes(termo) ? '' : 'none';
             });
         });
     }
@@ -1457,7 +1541,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const activityIdMeta = document.querySelector('meta[name="activity-id"]');
             const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
 
-            const confirmou = confirm("Deseja realmente remover a submissão desta lista e desvinculá-la desta atividade?");
+            const confirmou = await confirmarAcao({
+                titulo: 'Remover Submissão da Lista',
+                mensagem: 'Deseja realmente desvincular esta lista desta atividade? Os alunos não terão mais acesso à atividade atual.',
+                textoConfirmar: 'Remover Submissão',
+                corConfirmar: 'btn-danger',
+                icone: 'fa-unlink text-danger'
+            });
+
             if (!confirmou) return;
 
             btnDesvincularAtividade.disabled = true;
@@ -1472,13 +1563,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    alert("Submissão da lista removida com sucesso!");
+                    mostrarToast("Submissão da lista removida com sucesso!", "success");
                     await carregarEstadoInicial();
                 } else {
-                    alert(data.error || "Erro ao remover submissão da lista.");
+                    mostrarToast(data.error || "Erro ao remover submissão da lista.", "danger");
                 }
             } catch (err) {
-                alert("Erro de conexão ao desvincular atividade.");
+                mostrarToast("Erro de conexão ao desvincular atividade.", "danger");
             } finally {
                 btnDesvincularAtividade.disabled = false;
                 btnDesvincularAtividade.innerHTML = '<i class="fas fa-unlink mr-1"></i> Remover Submissão';

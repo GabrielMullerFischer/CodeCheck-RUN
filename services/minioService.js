@@ -1,6 +1,5 @@
 const Minio = require('minio');
 
-
 const minioClient = new Minio.Client({
     endPoint: process.env.MINIO_ENDPOINT || 'localhost',
     port: parseInt(process.env.MINIO_PORT) || 9000,
@@ -48,6 +47,15 @@ async function lerRascunho(userId, activityId, exerciseId) {
     });
 }
 
+// Salva arquivos genéricos de texto/JSON (usado para o log bruto)
+async function salvarArquivo(caminho, conteudo) {
+    const buffer = Buffer.from(conteudo || '', 'utf-8');
+    await minioClient.putObject(BUCKET_NAME, caminho, buffer, buffer.length, {
+        'Content-Type': 'application/json; charset=utf-8'
+    });
+    return caminho;
+}
+
 // Histórico de submissões (até 10 acertos e 10 erros separados)
 async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code) {
     const pastaTipo = isAccepted ? 'acertos' : 'erros';
@@ -67,6 +75,8 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
         const excedentes = objetos.slice(0, objetos.length - (MAX_SUBMISSION_HISTORY - 1));
         for (const ex of excedentes) {
             await minioClient.removeObject(BUCKET_NAME, ex.name).catch(() => {});
+            const logName = ex.name.replace(/\.c$/, '.json');
+            await minioClient.removeObject(BUCKET_NAME, logName).catch(() => {});
         }
     }
 
@@ -103,6 +113,7 @@ module.exports = {
     BUCKET_NAME,
     salvarRascunho,
     lerRascunho,
+    salvarArquivo,
     arquivarSubmissao,
     lerArquivoPorPath,
     removerArquivo,

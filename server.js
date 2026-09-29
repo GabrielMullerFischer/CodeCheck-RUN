@@ -5,10 +5,10 @@ const path = require('path');
 const session = require('express-session');
 const { connectDB } = require('./config/database');
 const ltiController = require('./controllers/ltiController');
-const judgeController = require('./controllers/judgeController');
 const { initMinio } = require('./services/minioService');
 const ColetorLixo = require('./services/coletorLixo');
 const professorRoutes = require('./routes/professorRoutes');
+const alunoRoutes = require('./routes/alunoRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -47,7 +47,7 @@ async function start() {
         app.use(express.urlencoded({ extended: true }));
         app.use(express.static(path.join(__dirname, 'public')));
         app.use('/judge', professorRoutes);
-        app.use('/judge', judgeController);
+        app.use('/judge', alunoRoutes);
 
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
