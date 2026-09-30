@@ -10,26 +10,6 @@ const ActivityAttempt = require('../models/ActivityAttempt');
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
 
-async function gerarTituloUnicoExercicio(baseTitle, authorId) {
-    let title = baseTitle;
-    let count = 1;
-    while (await Exercise.findOne({ title, authorId })) {
-        title = `${baseTitle} (${count})`;
-        count++;
-    }
-    return title;
-}
-
-async function gerarTituloUnicoLista(baseTitle, authorId) {
-    let title = baseTitle;
-    let count = 1;
-    while (await ExerciseList.findOne({ title, authorId })) {
-        title = `${baseTitle} (${count})`;
-        count++;
-    }
-    return title;
-}
-
 router.post('/exercicio', async (req, res) => {
     try {
         const { title, description, tests, isPrivate, timeLimit } = req.body;
@@ -61,9 +41,9 @@ router.post('/exercicio', async (req, res) => {
             description, 
             tests, 
             authorId, 
-            authorName,
-            isPublic: !isPrivate,
-            timeLimit: timeLimitVal
+            authorName, 
+            isPublic: !isPrivate, 
+            timeLimit: timeLimitVal 
         });
         res.json({ success: true, exercicio });
     } catch (e) {
@@ -79,6 +59,10 @@ router.put('/exercicio/:id', async (req, res) => {
 
         const ex = await Exercise.findById(id);
         if (!ex) return res.status(404).json({ success: false, error: "Exercício não encontrado." });
+
+        if (ex.authorId === 'codecheck_oficial') {
+            return res.status(403).json({ success: false, error: "Itens oficiais do CodeCheck-RUN não podem ser editados. Clique em 'Importar' para criar sua própria cópia." });
+        }
 
         if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
             return res.status(403).json({ success: false, error: "Sem permissão para alterar este exercício." });
@@ -120,6 +104,10 @@ router.delete('/exercicio/:id', async (req, res) => {
         const ex = await Exercise.findById(id);
         if (!ex) return res.status(404).json({ success: false, error: "Exercício não encontrado." });
 
+        if (ex.authorId === 'codecheck_oficial') {
+            return res.status(403).json({ success: false, error: "Itens oficiais do CodeCheck-RUN não podem ser excluídos." });
+        }
+
         if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
             return res.status(403).json({ success: false, error: "Sem permissão para excluir este exercício." });
         }
@@ -154,8 +142,8 @@ router.post('/lista', async (req, res) => {
             title: tituloFormatado, 
             exercises, 
             authorId, 
-            authorName,
-            isPublic: !isPrivate
+            authorName, 
+            isPublic: !isPrivate 
         });
         res.json({ success: true, lista });
     } catch (e) {
@@ -171,6 +159,10 @@ router.put('/lista/:id', async (req, res) => {
 
         const lista = await ExerciseList.findById(id);
         if (!lista) return res.status(404).json({ success: false, error: "Lista não encontrada." });
+
+        if (lista.authorId === 'codecheck_oficial') {
+            return res.status(403).json({ success: false, error: "Listas oficiais do CodeCheck-RUN não podem ser alteradas. Clique em 'Importar' para criar sua própria cópia." });
+        }
 
         if (String(lista.authorId) !== meuId && meuId !== 'preview_user') {
             return res.status(403).json({ success: false, error: "Sem permissão para alterar esta lista." });
@@ -196,6 +188,10 @@ router.delete('/lista/:id', async (req, res) => {
         const lista = await ExerciseList.findById(id);
         if (!lista) return res.status(404).json({ success: false, error: "Lista não encontrada." });
 
+        if (lista.authorId === 'codecheck_oficial') {
+            return res.status(403).json({ success: false, error: "Listas oficiais do CodeCheck-RUN não podem ser excluídas." });
+        }
+
         if (String(lista.authorId) !== meuId && meuId !== 'preview_user') {
             return res.status(403).json({ success: false, error: "Sem permissão para excluir esta lista." });
         }
@@ -214,7 +210,6 @@ router.post('/atividade/vincular', async (req, res) => {
         const { activityId, listId, isEvaluative, maxAttempts, hasTimeLimit, timeLimitMinutes, force } = req.body;
 
         const vinculoAtual = await ActivityConfig.findOne({ activityId });
-
         const houveTrocaDeLista = vinculoAtual && vinculoAtual.listId && String(vinculoAtual.listId) !== String(listId);
 
         if (houveTrocaDeLista && !force) {
@@ -234,10 +229,10 @@ router.post('/atividade/vincular', async (req, res) => {
             { activityId },
             { 
                 listId, 
-                isEvaluative: isEvalBool,
-                maxAttempts: maxAttInt,
-                hasTimeLimit: hasTimeLimitBool,
-                timeLimitMinutes: timeLimitMinInt,
+                isEvaluative: isEvalBool, 
+                maxAttempts: maxAttInt, 
+                hasTimeLimit: hasTimeLimitBool, 
+                timeLimitMinutes: timeLimitMinInt, 
                 updatedAt: new Date() 
             },
             { upsert: true }
@@ -348,11 +343,23 @@ router.get('/professor/dados', async (req, res) => {
 
         const todasListas = await ExerciseList.find().populate('exercises').sort({ _id: -1 }).lean();
         const minhasListas = todasListas.filter(l => String(l.authorId) === meuId);
-        const bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
+        
+        let bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
+        bancoUniversalListas.sort((a, b) => {
+            if (a.authorId === 'codecheck_oficial' && b.authorId !== 'codecheck_oficial') return -1;
+            if (b.authorId === 'codecheck_oficial' && a.authorId !== 'codecheck_oficial') return 1;
+            return 0;
+        });
 
         const todosExercicios = await Exercise.find({ isArchived: { $ne: true } }).sort({ _id: -1 }).lean();
         const meusExercicios = todosExercicios.filter(e => String(e.authorId) === meuId);
-        const bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
+
+        let bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
+        bancoUniversalExercicios.sort((a, b) => {
+            if (a.authorId === 'codecheck_oficial' && b.authorId !== 'codecheck_oficial') return -1;
+            if (b.authorId === 'codecheck_oficial' && a.authorId !== 'codecheck_oficial') return 1;
+            return 0;
+        });
 
         const vinculo = activityId ? await ActivityConfig.findOne({ activityId }).populate({
             path: 'listId',
@@ -506,10 +513,11 @@ router.get('/professor/turma-metricas', async (req, res) => {
     }
 });
 
+// Importação individual com nome limpo e checagem de colisão
 router.post('/professor/exercicio/importar', async (req, res) => {
     try {
-        const { exerciseId } = req.body;
-        const meuId = req.session?.userId || 'preview_user';
+        const { exerciseId, customTitle } = req.body;
+        const meuId = String(req.session?.userId || 'preview_user');
         const meuNome = req.session?.userName || 'Professor';
 
         const exOriginal = await Exercise.findById(exerciseId);
@@ -517,15 +525,36 @@ router.post('/professor/exercicio/importar', async (req, res) => {
             return res.status(404).json({ success: false, error: "Exercício não encontrado." });
         }
 
-        const novoTitulo = await gerarTituloUnicoExercicio(exOriginal.title, meuId);
+        const tituloDesejado = (customTitle || exOriginal.title).trim();
+
+        const exJaExiste = await Exercise.findOne({
+            title: tituloDesejado,
+            authorId: meuId,
+            isArchived: { $ne: true }
+        });
+
+        if (exJaExiste && !customTitle) {
+            return res.json({
+                success: false,
+                requiresNewTitle: true,
+                currentTitle: exOriginal.title
+            });
+        }
+
+        if (exJaExiste && customTitle) {
+            return res.status(400).json({
+                success: false,
+                error: `Você já possui um exercício chamado "${tituloDesejado}". Escolha outro nome.`
+            });
+        }
 
         const novoExercicio = await Exercise.create({
-            title: novoTitulo,
+            title: tituloDesejado,
             description: exOriginal.description,
             tests: exOriginal.tests,
             authorId: meuId,
             authorName: meuNome,
-            isPublic: exOriginal.isPublic !== false,
+            isPublic: false,
             timeLimit: exOriginal.timeLimit || null
         });
 
@@ -535,25 +564,88 @@ router.post('/professor/exercicio/importar', async (req, res) => {
     }
 });
 
+// Importação de lista com clonagem profunda e verificação de conflitos na lista e nos exercícios
 router.post('/professor/lista/importar', async (req, res) => {
     try {
-        const { listId } = req.body;
-        const meuId = req.session?.userId || 'preview_user';
+        const { listId, customTitle, exerciseTitles } = req.body;
+        const meuId = String(req.session?.userId || 'preview_user');
         const meuNome = req.session?.userName || 'Professor';
 
-        const listaOriginal = await ExerciseList.findById(listId);
+        const listaOriginal = await ExerciseList.findById(listId).populate('exercises');
         if (!listaOriginal) {
             return res.status(404).json({ success: false, error: "Lista não encontrada." });
         }
 
-        const novoTitulo = await gerarTituloUnicoLista(listaOriginal.title, meuId);
+        const tituloListaDesejado = (customTitle || listaOriginal.title).trim();
+
+        const listaJaExiste = await ExerciseList.findOne({ title: tituloListaDesejado, authorId: meuId });
+        const listConflict = !!(listaJaExiste && !customTitle);
+
+        if (listaJaExiste && customTitle) {
+            return res.status(400).json({
+                success: false,
+                error: `Você já possui uma lista chamada "${tituloListaDesejado}". Escolha outro título.`
+            });
+        }
+
+        const mapaTitulosEx = exerciseTitles || {};
+        const exerciciosComConflito = [];
+
+        for (const exOriginal of listaOriginal.exercises) {
+            if (!exOriginal) continue;
+            const tituloFinalEx = (mapaTitulosEx[exOriginal._id] || exOriginal.title).trim();
+
+            const exExiste = await Exercise.findOne({
+                title: tituloFinalEx,
+                authorId: meuId,
+                isArchived: { $ne: true }
+            });
+
+            if (exExiste && !mapaTitulosEx[exOriginal._id]) {
+                exerciciosComConflito.push({
+                    id: String(exOriginal._id),
+                    title: exOriginal.title
+                });
+            }
+        }
+
+        // Se houver conflito de lista OU de algum exercício, pausa e solicita os novos nomes
+        if (listConflict || exerciciosComConflito.length > 0) {
+            return res.json({
+                success: false,
+                requiresConflictResolution: true,
+                listConflict,
+                currentListTitle: listaOriginal.title,
+                conflictingExercises: exerciciosComConflito,
+                customTitle: customTitle || null
+            });
+        }
+
+        // 3. Sem conflitos: cria os exercícios clonados com nomes limpos
+        const novosIdsExercicios = [];
+        for (const exOriginal of listaOriginal.exercises) {
+            if (!exOriginal) continue;
+            const tituloFinalEx = (mapaTitulosEx[exOriginal._id] || exOriginal.title).trim();
+
+            const novoExercicio = await Exercise.create({
+                title: tituloFinalEx,
+                description: exOriginal.description,
+                tests: exOriginal.tests,
+                authorId: meuId,
+                authorName: meuNome,
+                isPublic: false,
+                timeLimit: exOriginal.timeLimit || null
+            });
+
+            novosIdsExercicios.push(novoExercicio._id);
+        }
 
         const novaLista = await ExerciseList.create({
-            title: novoTitulo,
+            title: tituloListaDesejado,
             authorId: meuId,
             authorName: meuNome,
-            exercises: listaOriginal.exercises,
-            isPublic: listaOriginal.isPublic !== false
+            exercises: novosIdsExercicios,
+            isPublic: false
         });
 
         res.json({ success: true, lista: novaLista });

@@ -7,6 +7,7 @@ const { connectDB } = require('./config/database');
 const ltiController = require('./controllers/ltiController');
 const { initMinio } = require('./services/minioService');
 const ColetorLixo = require('./services/coletorLixo');
+const seederService = require('./services/seederService');
 const professorRoutes = require('./routes/professorRoutes');
 const alunoRoutes = require('./routes/alunoRoutes');
 
@@ -25,6 +26,8 @@ async function start() {
 
         await initMinio();
         console.log("🚀 Sistema de arquivos MinIO pronto.");
+
+        await seederService.popularBanco();
 
         gari.iniciar();
 

@@ -1,0 +1,132 @@
+{
+  "exercicios": [
+    {
+      "title": "Soma de Dois Inteiros",
+      "description": "Escreva um programa em C que leia dois números inteiros da entrada padrão e imprima a soma deles seguida de uma quebra de linha.",
+      "timeLimit": 1000,
+      "tests": [
+        { "input": "2\n3\n", "output": "5\n" },
+        { "input": "-5\n10\n", "output": "5\n" },
+        { "input": "0\n0\n", "output": "0\n" },
+        { "input": "100\n250\n", "output": "350\n" },
+        { "input": "-12\n-8\n", "output": "-20\n" },
+        { "input": "999\n1\n", "output": "1000\n" },
+        { "input": "42\n-42\n", "output": "0\n" },
+        { "input": "15\n30\n", "output": "45\n" },
+        { "input": "-100\n50\n", "output": "-50\n" },
+        { "input": "7\n8\n", "output": "15\n" }
+      ]
+    },
+    {
+      "title": "Média Ponderada Simples",
+      "description": "Leia três notas de um aluno (valores reais). Calcule a média ponderada sabendo que a primeira tem peso 2, a segunda peso 3 e a terceira peso 5. Imprima a média com uma casa decimal.",
+      "timeLimit": 1000,
+      "tests": [
+        { "input": "5.0\n6.0\n7.0\n", "output": "6.3\n" },
+        { "input": "10.0\n10.0\n10.0\n", "output": "10.0\n" },
+        { "input": "0.0\n0.0\n0.0\n", "output": "0.0\n" },
+        { "input": "8.0\n7.0\n9.0\n", "output": "8.2\n" },
+        { "input": "6.5\n7.5\n8.5\n", "output": "7.8\n" },
+        { "input": "2.0\n3.0\n5.0\n", "output": "3.8\n" },
+        { "input": "9.0\n8.0\n7.0\n", "output": "7.7\n" },
+        { "input": "4.0\n5.0\n6.0\n", "output": "5.3\n" },
+        { "input": "7.0\n7.0\n7.0\n", "output": "7.0\n" },
+        { "input": "1.0\n9.0\n10.0\n", "output": "7.9\n" }
+      ]
+    },
+    {
+      "title": "Conversão de Temperatura (Celsius para Fahrenheit)",
+      "description": "Leia um valor inteiro correspondente a uma temperatura na escala Celsius. Calcule e imprima a temperatura equivalente em Fahrenheit como um número inteiro: F = (C * 9 / 5) + 32.",
+      "timeLimit": 1000,
+      "tests": [
+        { "input": "0\n", "output": "32\n" },
+        { "input": "100\n", "output": "212\n" },
+        { "input": "-40\n", "output": "-40\n" },
+        { "input": "25\n", "output": "77\n" },
+        { "input": "37\n", "output": "98\n" },
+        { "input": "-10\n", "output": "14\n" },
+        { "input": "15\n", "output": "59\n" },
+        { "input": "50\n", "output": "122\n" },
+        { "input": "200\n", "output": "392\n" },
+        { "input": "-5\n", "output": "23\n" }
+      ]
+    },
+    {
+      "title": "Par ou Ímpar",
+      "description": "Escreva um programa que leia um número inteiro e imprima 'PAR' se o número for par ou 'IMPAR' se for ímpar, em letras maiúsculas.",
+      "timeLimit": 1000,
+      "tests": [
+        { "input": "4\n", "output": "PAR\n" },
+        { "input": "7\n", "output": "IMPAR\n" },
+        { "input": "0\n", "output": "PAR\n" },
+        { "input": "-2\n", "output": "PAR\n" },
+        { "input": "-9\n", "output": "IMPAR\n" },
+        { "input": "1024\n", "output": "PAR\n" },
+        { "input": "9999\n", "output": "IMPAR\n" },
+        { "input": "1\n", "output": "IMPAR\n" },
+        { "input": "2\n", "output": "PAR\n" },
+        { "input": "-100\n", "output": "PAR\n" }
+      ]
+    },
+    {
+      "title": "Maior de Três Números",
+      "description": "Leia três valores inteiros da entrada e determine qual é o maior entre eles. Imprima apenas o maior valor.",
+      "timeLimit": 1000,
+      "tests": [
+        { "input": "10\n20\n30\n", "output": "30\n" },
+        { "input": "50\n10\n20\n", "output": "50\n" },
+        { "input": "5\n80\n12\n", "output": "80\n" },
+        { "input": "-5\n-1\n-10\n", "output": "-1\n" },
+        { "input": "0\n0\n0\n", "output": "0\n" },
+        { "input": "100\n100\n50\n", "output": "100\n" },
+        { "input": "7\n9\n9\n", "output": "9\n" },
+        { "input": "15\n2\n15\n", "output": "15\n" },
+        { "input": "-100\n0\n100\n", "output": "100\n" },
+        { "input": "42\n41\n40\n", "output": "42\n" }
+      ]
+    },
+    {
+      "title": "Fatorial de um Número",
+      "description": "Leia um valor inteiro N (0 <= N <= 12). Calcule e imprima o fatorial de N (N!).",
+      "timeLimit": 1000,
+      "tests": [
+        { "input": "0\n", "output": "1\n" },
+        { "input": "1\n", "output": "1\n" },
+        { "input": "2\n", "output": "2\n" },
+        { "input": "3\n", "output": "6\n" },
+        { "input": "4\n", "output": "24\n" },
+        { "input": "5\n", "output": "120\n" },
+        { "input": "6\n", "output": "720\n" },
+        { "input": "7\n", "output": "5040\n" },
+        { "input": "8\n", "output": "40320\n" },
+        { "input": "10\n", "output": "3628800\n" }
+      ]
+    }
+  ],
+  "listas": [
+    {
+      "title": "Estrutura Sequencial e Operações Básicas",
+      "isPublic": true,
+      "exercises": [
+        "Soma de Dois Inteiros",
+        "Média Ponderada Simples",
+        "Conversão de Temperatura (Celsius para Fahrenheit)"
+      ]
+    },
+    {
+      "title": "Estruturas Condicionais (if / else)",
+      "isPublic": true,
+      "exercises": [
+        "Par ou Ímpar",
+        "Maior de Três Números"
+      ]
+    },
+    {
+      "title": "Laços de Repetição (for / while)",
+      "isPublic": true,
+      "exercises": [
+        "Fatorial de um Número"
+      ]
+    }
+  ]
+}

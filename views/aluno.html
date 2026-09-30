@@ -84,7 +84,6 @@
             animation: piscarLinhaSuave 0.5s ease-in-out 3;
             animation-fill-mode: forwards;
         }
-
         .pre-io {
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 0.88rem;
@@ -219,9 +218,9 @@
             <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-body p-4">
-                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
-                            <h4 class="text-primary font-weight-bold mb-0" id="nome-questao">{{NOME_QUESTAO}}</h4>
-                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold" style="display: none; font-size: 0.85rem;">
+                        <div class="d-flex justify-content-between align-items-start mb-2" style="gap: 16px;">
+                            <h4 class="text-primary font-weight-bold mb-0" id="nome-questao" style="flex: 1 1 auto; word-break: break-word; min-width: 0;">{{NOME_QUESTAO}}</h4>
+                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold shadow-sm" style="display: none; font-size: 0.85rem; flex-shrink: 0; white-space: nowrap;">
                                 <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">-</span>
                             </span>
                         </div>
