@@ -401,11 +401,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${isPub 
                         ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>' 
                         : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
-                    <button type="button" class="btn btn-outline-secondary btn-sm mr-2 font-weight-bold btn-ver-meu-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
-                        <i class="fas fa-eye mr-1"></i> Ver
+                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-meu-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
+                        <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-info btn-sm mr-2 font-weight-bold btn-testar-ex shadow-sm" data-exid="${ex._id}" title="Testar este exercício no Modo Aluno">
-                        <i class="fas fa-play mr-1"></i> Testar
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-ex shadow-sm" data-exid="${ex._id}" title="Testar no Modo Aluno">
+                        <i class="fas fa-play"></i>
                     </button>
                     <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-ex shadow-sm" data-exid="${ex._id}" title="Editar este exercício">
                         <i class="fas fa-pencil-alt"></i>
@@ -462,14 +462,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${isPub 
                         ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>' 
                         : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-2 mr-1 btn-ver-ex font-weight-bold" data-exid="${ex._id}">
-                        <i class="fas fa-eye mr-1"></i> Ver
+                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
+                        <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-info btn-sm mr-2 font-weight-bold btn-testar-ex-comunidade shadow-sm" data-exid="${ex._id}" title="Testar no Modo Aluno">
-                        <i class="fas fa-play mr-1"></i> Testar
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-ex-comunidade shadow-sm" data-exid="${ex._id}" title="Testar no Modo Aluno">
+                        <i class="fas fa-play"></i>
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-success font-weight-bold btn-importar-ex py-1 px-2" data-exid="${ex._id}">
-                        <i class="fas fa-file-import mr-1"></i> Importar
+                    <button type="button" class="btn btn-outline-success btn-action-round btn-importar-ex shadow-sm" data-exid="${ex._id}" title="Importar para Meus Exercícios">
+                        <i class="fas fa-file-import"></i>
                     </button>
                 </div>
             `;
@@ -567,13 +567,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${isPub 
                         ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>' 
                         : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
-                    <button type="button" class="btn btn-outline-info btn-sm mr-2 font-weight-bold btn-testar-minha-lista shadow-sm" data-listid="${lista._id}" title="Testar esta lista no Modo Aluno">
-                        <i class="fas fa-play mr-1"></i> Testar
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-minha-lista shadow-sm" data-listid="${lista._id}" title="Testar lista no Modo Aluno">
+                        <i class="fas fa-play"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-action-round mr-2 btn-editar-minha-lista shadow-sm" data-listid="${lista._id}" title="Editar esta lista de atividades">
+                    <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-minha-lista shadow-sm" data-listid="${lista._id}" title="Editar esta lista">
                         <i class="fas fa-pencil-alt"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-minha-lista shadow-sm" data-listid="${lista._id}" title="Excluir esta lista de atividades">
+                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-minha-lista shadow-sm" data-listid="${lista._id}" title="Excluir esta lista">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -704,11 +704,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${isPub 
                         ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>' 
                         : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-3 mr-2 btn-ver-lista font-weight-bold shadow-sm" data-listid="${lista._id}">
-                        <i class="fas fa-eye mr-1"></i> Ver Exercícios
+                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-lista shadow-sm" data-listid="${lista._id}" title="Ver exercícios da lista">
+                        <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-success btn-sm py-1 px-3 font-weight-bold btn-importar-lista shadow-sm" data-listid="${lista._id}">
-                        <i class="fas fa-file-import mr-1"></i> Importar
+                    <button type="button" class="btn btn-outline-success btn-action-round btn-importar-lista shadow-sm" data-listid="${lista._id}" title="Importar para Minhas Listas">
+                        <i class="fas fa-file-import"></i>
                     </button>
                 </div>
             `;
@@ -799,8 +799,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${ex.timeLimit ? `<span class="badge badge-light border ml-1 font-weight-normal">${ex.timeLimit} ms</span>` : ''}
                     </label>
                 </div>
-                <button type="button" class="btn btn-outline-info btn-sm py-0 px-2 btn-ver-ex-modal font-weight-bold" data-exid="${ex._id}" title="Ver detalhes deste exercício">
-                    <i class="fas fa-eye mr-1"></i> Ver
+                <button type="button" class="btn btn-outline-secondary btn-action-round btn-ver-ex-modal shadow-sm" data-exid="${ex._id}" title="Ver enunciado do exercício" style="width: 32px; height: 32px; font-size: 0.95rem;">
+                    <i class="fas fa-eye"></i>
                 </button>
             `;
             containerExs.appendChild(div);
