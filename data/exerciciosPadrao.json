@@ -2,130 +2,710 @@
   "exercicios": [
     {
       "title": "Soma de Dois Inteiros",
-      "description": "Escreva um programa em C que leia dois números inteiros da entrada padrão e imprima a soma deles seguida de uma quebra de linha.",
-      "timeLimit": 1000,
+      "description": "Leia dois valores inteiros da entrada padrão e imprima a soma deles seguida de uma quebra de linha.",
+      "timeLimit": 5000,
       "tests": [
         { "input": "2\n3\n", "output": "5\n" },
         { "input": "-5\n10\n", "output": "5\n" },
         { "input": "0\n0\n", "output": "0\n" },
         { "input": "100\n250\n", "output": "350\n" },
-        { "input": "-12\n-8\n", "output": "-20\n" },
-        { "input": "999\n1\n", "output": "1000\n" },
-        { "input": "42\n-42\n", "output": "0\n" },
-        { "input": "15\n30\n", "output": "45\n" },
-        { "input": "-100\n50\n", "output": "-50\n" },
-        { "input": "7\n8\n", "output": "15\n" }
+        { "input": "-12\n-8\n", "output": "-20\n" }
+      ]
+    },
+    {
+      "title": "Diferença Simples",
+      "description": "Leia quatro valores inteiros A, B, C e D. Calcule e mostre a diferença do produto de A e B pelo produto de C e D segundo a fórmula: DIFERENCA = (A * B - C * D).",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n6\n7\n8\n", "output": "DIFERENCA = -26\n" },
+        { "input": "0\n0\n0\n0\n", "output": "DIFERENCA = 0\n" },
+        { "input": "5\n6\n-7\n8\n", "output": "DIFERENCA = 86\n" },
+        { "input": "10\n10\n5\n5\n", "output": "DIFERENCA = 75\n" },
+        { "input": "-2\n3\n4\n-1\n", "output": "DIFERENCA = -2\n" }
       ]
     },
     {
       "title": "Média Ponderada Simples",
-      "description": "Leia três notas de um aluno (valores reais). Calcule a média ponderada sabendo que a primeira tem peso 2, a segunda peso 3 e a terceira peso 5. Imprima a média com uma casa decimal.",
-      "timeLimit": 1000,
+      "description": "Leia três notas de um aluno (valores reais). Calcule a média ponderada sabendo que a primeira tem peso 2, a segunda peso 3 e a terceira peso 5. Imprima a média com uma casa decimal no formato 'MEDIA = X.X'.",
+      "timeLimit": 5000,
       "tests": [
-        { "input": "5.0\n6.0\n7.0\n", "output": "6.3\n" },
-        { "input": "10.0\n10.0\n10.0\n", "output": "10.0\n" },
-        { "input": "0.0\n0.0\n0.0\n", "output": "0.0\n" },
-        { "input": "8.0\n7.0\n9.0\n", "output": "8.2\n" },
-        { "input": "6.5\n7.5\n8.5\n", "output": "7.8\n" },
-        { "input": "2.0\n3.0\n5.0\n", "output": "3.8\n" },
-        { "input": "9.0\n8.0\n7.0\n", "output": "7.7\n" },
-        { "input": "4.0\n5.0\n6.0\n", "output": "5.3\n" },
-        { "input": "7.0\n7.0\n7.0\n", "output": "7.0\n" },
-        { "input": "1.0\n9.0\n10.0\n", "output": "7.9\n" }
+        { "input": "5.0\n6.0\n7.0\n", "output": "MEDIA = 6.3\n" },
+        { "input": "10.0\n10.0\n10.0\n", "output": "MEDIA = 10.0\n" },
+        { "input": "0.0\n0.0\n0.0\n", "output": "MEDIA = 0.0\n" },
+        { "input": "8.0\n7.0\n9.0\n", "output": "MEDIA = 8.2\n" },
+        { "input": "6.5\n7.5\n8.5\n", "output": "MEDIA = 7.8\n" }
       ]
     },
     {
-      "title": "Conversão de Temperatura (Celsius para Fahrenheit)",
-      "description": "Leia um valor inteiro correspondente a uma temperatura na escala Celsius. Calcule e imprima a temperatura equivalente em Fahrenheit como um número inteiro: F = (C * 9 / 5) + 32.",
-      "timeLimit": 1000,
+      "title": "Conversão de Temperatura",
+      "description": "Leia um valor inteiro em Celsius e imprima a temperatura equivalente inteira em Fahrenheit calculada pela fórmula: F = (C * 9 / 5) + 32.",
+      "timeLimit": 5000,
       "tests": [
         { "input": "0\n", "output": "32\n" },
         { "input": "100\n", "output": "212\n" },
         { "input": "-40\n", "output": "-40\n" },
         { "input": "25\n", "output": "77\n" },
-        { "input": "37\n", "output": "98\n" },
-        { "input": "-10\n", "output": "14\n" },
-        { "input": "15\n", "output": "59\n" },
-        { "input": "50\n", "output": "122\n" },
-        { "input": "200\n", "output": "392\n" },
-        { "input": "-5\n", "output": "23\n" }
+        { "input": "-10\n", "output": "14\n" }
+      ]
+    },
+    {
+      "title": "Consumo Médio de Combustível",
+      "description": "Calcule o consumo médio de um automóvel sendo fornecidos a distância total percorrida em km (inteiro) e o total de combustível gasto em litros (ponto flutuante). Apresente o valor com 3 casas decimais seguido de ' km/l'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "500\n35.0\n", "output": "14.286 km/l\n" },
+        { "input": "2254\n124.4\n", "output": "18.119 km/l\n" },
+        { "input": "100\n10.0\n", "output": "10.000 km/l\n" },
+        { "input": "4554\n464.6\n", "output": "9.802 km/l\n" },
+        { "input": "60\n5.0\n", "output": "12.000 km/l\n" }
+      ]
+    },
+    {
+      "title": "Conversão de Tempo em Segundos",
+      "description": "Leia um valor inteiro correspondente à duração em segundos e imprima-o formatado no padrão horas:minutos:segundos (H:M:S).",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "556\n", "output": "0:9:16\n" },
+        { "input": "1\n", "output": "0:0:1\n" },
+        { "input": "3600\n", "output": "1:0:0\n" },
+        { "input": "86399\n", "output": "23:59:59\n" },
+        { "input": "140153\n", "output": "38:55:53\n" }
+      ]
+    },
+    {
+      "title": "Decomposição em Notas",
+      "description": "Leia um valor inteiro. Calcule e imprima a quantidade mínima de notas de 100, 50, 20, 10, 5, 2 e 1 necessárias para totalizar esse valor. Formato de cada linha: 'X nota(s) de R$ Y,00'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "576\n", "output": "5 nota(s) de R$ 100,00\n1 nota(s) de R$ 50,00\n1 nota(s) de R$ 20,00\n0 nota(s) de R$ 10,00\n1 nota(s) de R$ 5,00\n0 nota(s) de R$ 2,00\n1 nota(s) de R$ 1,00\n" },
+        { "input": "11257\n", "output": "112 nota(s) de R$ 100,00\n1 nota(s) de R$ 50,00\n0 nota(s) de R$ 20,00\n0 nota(s) de R$ 10,00\n1 nota(s) de R$ 5,00\n1 nota(s) de R$ 2,00\n0 nota(s) de R$ 1,00\n" },
+        { "input": "0\n", "output": "0 nota(s) de R$ 100,00\n0 nota(s) de R$ 50,00\n0 nota(s) de R$ 20,00\n0 nota(s) de R$ 10,00\n0 nota(s) de R$ 5,00\n0 nota(s) de R$ 2,00\n0 nota(s) de R$ 1,00\n" },
+        { "input": "89\n", "output": "0 nota(s) de R$ 100,00\n1 nota(s) de R$ 50,00\n1 nota(s) de R$ 20,00\n1 nota(s) de R$ 10,00\n1 nota(s) de R$ 5,00\n2 nota(s) de R$ 2,00\n0 nota(s) de R$ 1,00\n" },
+        { "input": "7\n", "output": "0 nota(s) de R$ 100,00\n0 nota(s) de R$ 50,00\n0 nota(s) de R$ 20,00\n0 nota(s) de R$ 10,00\n1 nota(s) de R$ 5,00\n1 nota(s) de R$ 2,00\n0 nota(s) de R$ 1,00\n" }
+      ]
+    },
+    {
+      "title": "Salário com Bônus",
+      "description": "Faça um programa que leia o nome de um vendedor (uma palavra), o seu salário fixo (real) e o total em vendas efetuadas por ele no mês (real). Sabendo que ele ganha 15% de comissão sobre suas vendas, imprima 'TOTAL = R$ X.XX'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "JOAO\n500.00\n1230.30\n", "output": "TOTAL = R$ 684.54\n" },
+        { "input": "PEDRO\n700.00\n0.00\n", "output": "TOTAL = R$ 700.00\n" },
+        { "input": "MANUEL\n1700.00\n1230.50\n", "output": "TOTAL = R$ 1884.58\n" },
+        { "input": "MARIA\n2500.50\n5000.00\n", "output": "TOTAL = R$ 3250.50\n" },
+        { "input": "ANA\n1000.00\n100.00\n", "output": "TOTAL = R$ 1015.00\n" }
+      ]
+    },
+    {
+      "title": "Distância Entre Dois Pontos",
+      "description": "Leia os quatro valores correspondentes aos eixos x e y de dois pontos quaisquer no plano: x1, y1, x2, y2. Calcule a distância entre eles e imprima com 4 casas decimais.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "1.0 7.0\n5.0 9.0\n", "output": "4.4721\n" },
+        { "input": "-2.5 0.4\n12.1 7.3\n", "output": "16.1484\n" },
+        { "input": "0.0 0.0\n0.0 0.0\n", "output": "0.0000\n" },
+        { "input": "2.5 -0.4\n-12.2 7.0\n", "output": "16.4575\n" },
+        { "input": "3.0 4.0\n0.0 0.0\n", "output": "5.0000\n" }
       ]
     },
     {
       "title": "Par ou Ímpar",
-      "description": "Escreva um programa que leia um número inteiro e imprima 'PAR' se o número for par ou 'IMPAR' se for ímpar, em letras maiúsculas.",
-      "timeLimit": 1000,
+      "description": "Escreva um programa que leia um número inteiro e imprima 'PAR' se o número for par ou 'IMPAR' se for ímpar.",
+      "timeLimit": 5000,
       "tests": [
         { "input": "4\n", "output": "PAR\n" },
         { "input": "7\n", "output": "IMPAR\n" },
         { "input": "0\n", "output": "PAR\n" },
         { "input": "-2\n", "output": "PAR\n" },
-        { "input": "-9\n", "output": "IMPAR\n" },
-        { "input": "1024\n", "output": "PAR\n" },
-        { "input": "9999\n", "output": "IMPAR\n" },
-        { "input": "1\n", "output": "IMPAR\n" },
-        { "input": "2\n", "output": "PAR\n" },
-        { "input": "-100\n", "output": "PAR\n" }
+        { "input": "-9\n", "output": "IMPAR\n" }
       ]
     },
     {
       "title": "Maior de Três Números",
-      "description": "Leia três valores inteiros da entrada e determine qual é o maior entre eles. Imprima apenas o maior valor.",
-      "timeLimit": 1000,
+      "description": "Leia três valores inteiros da entrada e imprima o maior entre eles seguido de uma quebra de linha.",
+      "timeLimit": 5000,
       "tests": [
         { "input": "10\n20\n30\n", "output": "30\n" },
         { "input": "50\n10\n20\n", "output": "50\n" },
-        { "input": "5\n80\n12\n", "output": "80\n" },
         { "input": "-5\n-1\n-10\n", "output": "-1\n" },
         { "input": "0\n0\n0\n", "output": "0\n" },
-        { "input": "100\n100\n50\n", "output": "100\n" },
-        { "input": "7\n9\n9\n", "output": "9\n" },
-        { "input": "15\n2\n15\n", "output": "15\n" },
-        { "input": "-100\n0\n100\n", "output": "100\n" },
-        { "input": "42\n41\n40\n", "output": "42\n" }
+        { "input": "15\n2\n15\n", "output": "15\n" }
+      ]
+    },
+    {
+      "title": "Múltiplos ou Não Múltiplos",
+      "description": "Leia dois valores inteiros A e B. Se um for múltiplo do outro, imprima 'Sao Multiplos'. Caso contrário, imprima 'Nao sao Multiplos'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "6 24\n", "output": "Sao Multiplos\n" },
+        { "input": "6 25\n", "output": "Nao sao Multiplos\n" },
+        { "input": "24 6\n", "output": "Sao Multiplos\n" },
+        { "input": "7 14\n", "output": "Sao Multiplos\n" },
+        { "input": "3 5\n", "output": "Nao sao Multiplos\n" }
+      ]
+    },
+    {
+      "title": "Tipos de Triângulos",
+      "description": "Leia 3 valores reais (A, B e C) que representam os lados de um triângulo. Ordene de modo que A represente o maior dos 3 lados. Se A >= B + C, imprima 'NAO FORMA TRIANGULO'. Se A^2 == B^2 + C^2, imprima 'TRIANGULO RETANGULO'. Se A^2 > B^2 + C^2, imprima 'TRIANGULO OBTUSANGULO'. Se A^2 < B^2 + C^2, imprima 'TRIANGULO ACUTANGULO'. Se os três lados forem iguais, imprima na linha seguinte 'TRIANGULO EQUILATERO'. Se apenas dois forem iguais, imprima 'TRIANGULO ISOSCELES'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "7.0 5.0 7.0\n", "output": "TRIANGULO ACUTANGULO\nTRIANGULO ISOSCELES\n" },
+        { "input": "6.0 6.0 10.0\n", "output": "TRIANGULO OBTUSANGULO\nTRIANGULO ISOSCELES\n" },
+        { "input": "6.0 6.0 6.0\n", "output": "TRIANGULO ACUTANGULO\nTRIANGULO EQUILATERO\n" },
+        { "input": "5.0 7.0 2.0\n", "output": "NAO FORMA TRIANGULO\n" },
+        { "input": "6.0 8.0 10.0\n", "output": "TRIANGULO RETANGULO\n" }
+      ]
+    },
+    {
+      "title": "Coordenadas de um Ponto",
+      "description": "Leia 2 valores com uma casa decimal (x e y), representando as coordenadas de um ponto. Diga se o ponto está na 'Origem', sobre o 'Eixo X', 'Eixo Y' ou em qual quadrante ('Q1', 'Q2', 'Q3', 'Q4') ele se encontra.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "4.5 -2.2\n", "output": "Q4\n" },
+        { "input": "0.1 0.1\n", "output": "Q1\n" },
+        { "input": "0.0 0.0\n", "output": "Origem\n" },
+        { "input": "0.0 5.0\n", "output": "Eixo Y\n" },
+        { "input": "-3.0 -4.0\n", "output": "Q3\n" }
+      ]
+    },
+    {
+      "title": "Aumento Salarial Percentual",
+      "description": "Leia o salário de um funcionário (real). Calcule o reajuste: 0 até 400.00 (+15%), 400.01 até 800.00 (+12%), 800.01 até 1200.00 (+10%), 1200.01 até 2000.00 (+7%), acima de 2000.00 (+4%). Imprima o 'Novo salario: X.XX', 'Reajuste ganho: Y.YY' e 'Em percentual: Z %'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "400.00\n", "output": "Novo salario: 460.00\nReajuste ganho: 60.00\nEm percentual: 15 %\n" },
+        { "input": "800.01\n", "output": "Novo salario: 880.01\nReajuste ganho: 80.00\nEm percentual: 10 %\n" },
+        { "input": "2000.00\n", "output": "Novo salario: 2140.00\nReajuste ganho: 140.00\nEm percentual: 7 %\n" },
+        { "input": "2000.01\n", "output": "Novo salario: 2080.01\nReajuste ganho: 80.00\nEm percentual: 4 %\n" },
+        { "input": "500.00\n", "output": "Novo salario: 560.00\nReajuste ganho: 60.00\nEm percentual: 12 %\n" }
+      ]
+    },
+    {
+      "title": "Validação de Horários de Atividades (EventManager)",
+      "description": "No sistema EventManager, um participante não pode se inscrever em atividades com horários conflitantes. Leia a hora de início e de término da Atividade A (dois inteiros de 0 a 23) e da Atividade B (dois inteiros). Imprima 'CONFLITO' se os intervalos de horário se sobrepõem ou 'COMPATIVEL' se não houver sobreposição (considere que se uma termina exatamente quando a outra começa, são compatíveis).",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "14 16\n15 17\n", "output": "CONFLITO\n" },
+        { "input": "10 12\n12 14\n", "output": "COMPATIVEL\n" },
+        { "input": "14 18\n8 12\n", "output": "COMPATIVEL\n" },
+        { "input": "9 13\n10 11\n", "output": "CONFLITO\n" },
+        { "input": "8 10\n11 12\n", "output": "COMPATIVEL\n" }
+      ]
+    },
+    {
+      "title": "Verificação de Lotação e Inscrição (EventManager)",
+      "description": "No EventManager, as atividades possuem limite máximo de vagas e inscrições em ordem de chegada. Leia a capacidade máxima da atividade (inteiro) e a quantidade de inscritos atuais (inteiro). Se houver vaga, imprima 'INSCRICAO CONFIRMADA'. Se as vagas estiverem esgotadas, imprima 'VAGAS ESGOTADAS'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "50\n49\n", "output": "INSCRICAO CONFIRMADA\n" },
+        { "input": "100\n100\n", "output": "VAGAS ESGOTADAS\n" },
+        { "input": "30\n31\n", "output": "VAGAS ESGOTADAS\n" },
+        { "input": "10\n0\n", "output": "INSCRICAO CONFIRMADA\n" },
+        { "input": "25\n24\n", "output": "INSCRICAO CONFIRMADA\n" }
+      ]
+    },
+    {
+      "title": "Validação de Moderador (EventManager)",
+      "description": "No EventManager, somente Administradores podem aprovar eventos antes de ficarem visíveis. Leia um caractere representando o tipo de usuário ('A' para Administrador, 'O' para Organizador, 'P' para Participante) e o status do evento ('P' para Pendente, 'A' para Aprovado). Se o usuário for Administrador, imprima 'PERMISSAO CONCEDIDA'. Caso contrário, imprima 'ACESSO NEGADO'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "A P\n", "output": "PERMISSAO CONCEDIDA\n" },
+        { "input": "O P\n", "output": "ACESSO NEGADO\n" },
+        { "input": "P P\n", "output": "ACESSO NEGADO\n" },
+        { "input": "A A\n", "output": "PERMISSAO CONCEDIDA\n" },
+        { "input": "X P\n", "output": "ACESSO NEGADO\n" }
+      ]
+    },
+    {
+      "title": "Números Pares até 100",
+      "description": "Faça um programa que imprima todos os números pares entre 1 e 100, inclusive, um por linha.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "\n", "output": "2\n4\n6\n8\n10\n12\n14\n16\n18\n20\n22\n24\n26\n28\n30\n32\n34\n36\n38\n40\n42\n44\n46\n48\n50\n52\n54\n56\n58\n60\n62\n64\n66\n68\n70\n72\n74\n76\n78\n80\n82\n84\n86\n88\n90\n92\n94\n96\n98\n100\n" }
       ]
     },
     {
       "title": "Fatorial de um Número",
       "description": "Leia um valor inteiro N (0 <= N <= 12). Calcule e imprima o fatorial de N (N!).",
-      "timeLimit": 1000,
+      "timeLimit": 5000,
       "tests": [
         { "input": "0\n", "output": "1\n" },
         { "input": "1\n", "output": "1\n" },
-        { "input": "2\n", "output": "2\n" },
-        { "input": "3\n", "output": "6\n" },
         { "input": "4\n", "output": "24\n" },
         { "input": "5\n", "output": "120\n" },
-        { "input": "6\n", "output": "720\n" },
-        { "input": "7\n", "output": "5040\n" },
-        { "input": "8\n", "output": "40320\n" },
-        { "input": "10\n", "output": "3628800\n" }
+        { "input": "6\n", "output": "720\n" }
+      ]
+    },
+    {
+      "title": "Tabuada Simples",
+      "description": "Leia 1 valor inteiro N (2 < N < 1000). A seguir, mostre a tabuada de N no formato: '1 x N = R' até '10 x N = R'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "140\n", "output": "1 x 140 = 140\n2 x 140 = 280\n3 x 140 = 420\n4 x 140 = 560\n5 x 140 = 700\n6 x 140 = 840\n7 x 140 = 980\n8 x 140 = 1120\n9 x 140 = 1260\n10 x 140 = 1400\n" },
+        { "input": "5\n", "output": "1 x 5 = 5\n2 x 5 = 10\n3 x 5 = 15\n4 x 5 = 20\n5 x 5 = 25\n6 x 5 = 30\n7 x 5 = 35\n8 x 5 = 40\n9 x 5 = 45\n10 x 5 = 50\n" },
+        { "input": "7\n", "output": "1 x 7 = 7\n2 x 7 = 14\n3 x 7 = 21\n4 x 7 = 28\n5 x 7 = 35\n6 x 7 = 42\n7 x 7 = 49\n8 x 7 = 56\n9 x 7 = 63\n10 x 7 = 70\n" },
+        { "input": "10\n", "output": "1 x 10 = 10\n2 x 10 = 20\n3 x 10 = 30\n4 x 10 = 40\n5 x 10 = 50\n6 x 10 = 60\n7 x 10 = 70\n8 x 10 = 80\n9 x 10 = 90\n10 x 10 = 100\n" },
+        { "input": "12\n", "output": "1 x 12 = 12\n2 x 12 = 24\n3 x 12 = 36\n4 x 12 = 48\n5 x 12 = 60\n6 x 12 = 72\n7 x 12 = 84\n8 x 12 = 96\n9 x 12 = 108\n10 x 12 = 120\n" }
+      ]
+    },
+    {
+      "title": "Sequência de Fibonacci",
+      "description": "A seguinte sequência de números 0 1 1 2 3 5 8... é a série de Fibonacci. Leia um inteiro N (0 < N < 46) e imprima os N primeiros números da série, separados por espaço, finalizando com quebra de linha.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n", "output": "0 1 1 2 3\n" },
+        { "input": "1\n", "output": "0\n" },
+        { "input": "2\n", "output": "0 1\n" },
+        { "input": "7\n", "output": "0 1 1 2 3 5 8\n" },
+        { "input": "8\n", "output": "0 1 1 2 3 5 8 13\n" }
+      ]
+    },
+    {
+      "title": "Verificação de Número Primo",
+      "description": "Na matemática, um Número Primo é aquele que pode ser dividido somente por 1 e por ele mesmo. Leia um número inteiro N e imprima 'PRIMO' se for primo ou 'NAO PRIMO' se não for (considere apenas inteiros maiores que 1).",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "7\n", "output": "PRIMO\n" },
+        { "input": "10\n", "output": "NAO PRIMO\n" },
+        { "input": "2\n", "output": "PRIMO\n" },
+        { "input": "1\n", "output": "NAO PRIMO\n" },
+        { "input": "13\n", "output": "PRIMO\n" }
+      ]
+    },
+    {
+      "title": "Soma de Dígitos",
+      "description": "Dado um número inteiro não negativo N, calcule a soma de todos os seus dígitos e imprima o resultado.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "1234\n", "output": "10\n" },
+        { "input": "5\n", "output": "5\n" },
+        { "input": "999\n", "output": "27\n" },
+        { "input": "10002\n", "output": "3\n" },
+        { "input": "0\n", "output": "0\n" }
+      ]
+    },
+    {
+      "title": "Inversão de Número Inteiro",
+      "description": "Leia um número inteiro positivo N e imprima seus dígitos na ordem inversa (exemplo: 1234 vira 4321). Remova zeros à esquerda no resultado final.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "1234\n", "output": "4321\n" },
+        { "input": "1200\n", "output": "21\n" },
+        { "input": "7\n", "output": "7\n" },
+        { "input": "1001\n", "output": "1001\n" },
+        { "input": "987654\n", "output": "456789\n" }
+      ]
+    },
+    {
+      "title": "MDC - Máximo Divisor Comum",
+      "description": "Leia dois números inteiros positivos A e B e determine o Máximo Divisor Comum entre eles usando o Algoritmo de Euclides.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "12 18\n", "output": "6\n" },
+        { "input": "10 5\n", "output": "5\n" },
+        { "input": "17 19\n", "output": "1\n" },
+        { "input": "100 25\n", "output": "25\n" },
+        { "input": "48 64\n", "output": "16\n" }
+      ]
+    },
+    {
+      "title": "Leitura e Impressão de Vetor",
+      "description": "Leia um número inteiro N (1 <= N <= 100) que indica a quantidade de elementos de um vetor. Em seguida, leia N valores inteiros e imprima todos eles em uma única linha separados por espaço.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n10 20 30 40 50\n", "output": "10 20 30 40 50\n" },
+        { "input": "3\n1 2 3\n", "output": "1 2 3\n" },
+        { "input": "1\n99\n", "output": "99\n" },
+        { "input": "4\n-1 -2 -3 -4\n", "output": "-1 -2 -3 -4\n" },
+        { "input": "2\n0 0\n", "output": "0 0\n" }
+      ]
+    },
+    {
+      "title": "Busca Linear em Vetor",
+      "description": "Leia um número N seguido de N elementos inteiros de um vetor. Por fim, leia um valor X. Imprima 'ENCONTRADO' se X estiver no vetor ou 'NAO ENCONTRADO' caso contrário.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n10 20 30 40 50\n30\n", "output": "ENCONTRADO\n" },
+        { "input": "4\n1 3 5 7\n2\n", "output": "NAO ENCONTRADO\n" },
+        { "input": "1\n100\n100\n", "output": "ENCONTRADO\n" },
+        { "input": "3\n-5 0 5\n-5\n", "output": "ENCONTRADO\n" },
+        { "input": "3\n-5 0 5\n6\n", "output": "NAO ENCONTRADO\n" }
+      ]
+    },
+    {
+      "title": "Menor e Posição em Vetor",
+      "description": "Leia um valor N. A seguir, leia N inteiros que formam o vetor X. A seguir, imprima 'Menor valor: Y' e na linha seguinte 'Posicao: Z' onde Z é o índice (base 0) da primeira ocorrência do menor elemento.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n2 5 -1 8 0\n", "output": "Menor valor: -1\nPosicao: 2\n" },
+        { "input": "3\n10 20 30\n", "output": "Menor valor: 10\nPosicao: 0\n" },
+        { "input": "4\n4 3 2 1\n", "output": "Menor valor: 1\nPosicao: 3\n" },
+        { "input": "1\n0\n", "output": "Menor valor: 0\nPosicao: 0\n" },
+        { "input": "4\n-10 -20 -5 -20\n", "output": "Menor valor: -20\nPosicao: 1\n" }
+      ]
+    },
+    {
+      "title": "Inversão de Vetor",
+      "description": "Leia um número N seguido de N inteiros. Imprima os elementos do vetor na ordem inversa da leitura, separados por espaço e terminando com quebra de linha.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "4\n1 2 3 4\n", "output": "4 3 2 1\n" },
+        { "input": "3\n9 0 5\n", "output": "5 0 9\n" },
+        { "input": "1\n10\n", "output": "10\n" },
+        { "input": "5\n-1 0 1 2 3\n", "output": "3 2 1 0 -1\n" },
+        { "input": "2\n100 200\n", "output": "200 100\n" }
+      ]
+    },
+    {
+      "title": "Soma dos Elementos de um Vetor",
+      "description": "Leia um número N e em seguida N números inteiros. Calcule e imprima a soma total dos elementos do vetor.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "4\n10 20 30 40\n", "output": "100\n" },
+        { "input": "3\n-5 5 0\n", "output": "0\n" },
+        { "input": "1\n42\n", "output": "42\n" },
+        { "input": "5\n1 1 1 1 1\n", "output": "5\n" },
+        { "input": "2\n-10 -20\n", "output": "-30\n" }
+      ]
+    },
+    {
+      "title": "Média e Acima da Média",
+      "description": "Leia N notas (valores reais) de uma turma. Calcule a média aritmética da turma e imprima quantos alunos ficaram com nota estritamente maior que a média.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "4\n5.0 7.0 8.0 4.0\n", "output": "2\n" },
+        { "input": "3\n10.0 10.0 10.0\n", "output": "0\n" },
+        { "input": "5\n2.0 4.0 6.0 8.0 10.0\n", "output": "2\n" },
+        { "input": "2\n7.5 8.5\n", "output": "1\n" },
+        { "input": "1\n9.0\n", "output": "0\n" }
+      ]
+    },
+    {
+      "title": "Remover Duplicatas Adjacentes",
+      "description": "Leia um vetor ordenado de N inteiros. Imprima os elementos do vetor sem valores consecutivos duplicados, separados por espaço.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "6\n1 1 2 2 3 4\n", "output": "1 2 3 4\n" },
+        { "input": "4\n5 5 5 5\n", "output": "5\n" },
+        { "input": "3\n1 2 3\n", "output": "1 2 3\n" },
+        { "input": "1\n9\n", "output": "9\n" },
+        { "input": "5\n0 1 1 2 2\n", "output": "0 1 2\n" }
+      ]
+    },
+    {
+      "title": "Total de Horas de Eventos (EventManager)",
+      "description": "No EventManager, organizadores registram as cargas horárias das atividades de um evento. Leia N (quantidade de atividades) e em seguida a carga horária em horas de cada uma (inteiros). Imprima a carga horária total somada do evento seguido de ' horas'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "3\n4 2 6\n", "output": "12 horas\n" },
+        { "input": "1\n8\n", "output": "8 horas\n" },
+        { "input": "4\n1 1 1 1\n", "output": "4 horas\n" },
+        { "input": "2\n10 15\n", "output": "25 horas\n" },
+        { "input": "5\n2 3 2 4 1\n", "output": "12 horas\n" }
+      ]
+    },
+    {
+      "title": "Tamanho de uma String",
+      "description": "Leia uma palavra sem espaços e determine a quantidade de caracteres que ela possui, imprimindo esse número.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "computador\n", "output": "10\n" },
+        { "input": "c\n", "output": "1\n" },
+        { "input": "algoritmos\n", "output": "10\n" },
+        { "input": "eventmanager\n", "output": "12\n" },
+        { "input": "teste\n", "output": "5\n" }
+      ]
+    },
+    {
+      "title": "Inversão de String",
+      "description": "Leia uma palavra (string sem espaços) e imprima a palavra invertida.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "roma\n", "output": "amor\n" },
+        { "input": "code\n", "output": "edoc\n" },
+        { "input": "a\n", "output": "a\n" },
+        { "input": "radar\n", "output": "radar\n" },
+        { "input": "brasil\n", "output": "lisarb\n" }
+      ]
+    },
+    {
+      "title": "Contagem de Vogais",
+      "description": "Leia uma string em letras minúsculas (sem espaços) e conte quantas vogais ('a', 'e', 'i', 'o', 'u') existem nela, imprimindo o número.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "linguagem\n", "output": "4\n" },
+        { "input": "ritmo\n", "output": "2\n" },
+        { "input": "xyz\n", "output": "0\n" },
+        { "input": "aeiou\n", "output": "5\n" },
+        { "input": "desenvolvimento\n", "output": "6\n" }
+      ]
+    },
+    {
+      "title": "Palíndromo",
+      "description": "Leia uma palavra e verifique se ela é um palíndromo (lida igualmente de frente para trás). Imprima 'SIM' ou 'NAO'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "radar\n", "output": "SIM\n" },
+        { "input": "arara\n", "output": "SIM\n" },
+        { "input": "computador\n", "output": "NAO\n" },
+        { "input": "osso\n", "output": "SIM\n" },
+        { "input": "casa\n", "output": "NAO\n" }
+      ]
+    },
+    {
+      "title": "Validação de E-mail Básico (EventManager)",
+      "description": "No cadastro do EventManager, participantes fornecem nome e e-mail. Para validação básica, leia uma string representando o e-mail e verifique se ela contém tanto o caractere '@' quanto '.' depois dele. Imprima 'VALIDO' ou 'INVALIDO'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "aluno@univ.br\n", "output": "VALIDO\n" },
+        { "input": "alunouniv.br\n", "output": "INVALIDO\n" },
+        { "input": "aluno@univ\n", "output": "INVALIDO\n" },
+        { "input": "teste.com@br\n", "output": "INVALIDO\n" },
+        { "input": "user@site.com\n", "output": "VALIDO\n" }
+      ]
+    },
+    {
+      "title": "Soma de Matriz 3x3",
+      "description": "Leia os 9 elementos inteiros de uma matriz 3x3 (linha por linha). Calcule e imprima a soma de todos os seus elementos.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "1 2 3\n4 5 6\n7 8 9\n", "output": "45\n" },
+        { "input": "0 0 0\n0 0 0\n0 0 0\n", "output": "0\n" },
+        { "input": "1 1 1\n1 1 1\n1 1 1\n", "output": "9\n" },
+        { "input": "-1 -2 -3\n-4 -5 -6\n-7 -8 -9\n", "output": "-45\n" },
+        { "input": "10 0 0\n0 20 0\n0 0 30\n", "output": "60\n" }
+      ]
+    },
+    {
+      "title": "Diagonal Principal de uma Matriz",
+      "description": "Leia um valor inteiro N (ordem da matriz quadrada, 1 <= N <= 10). Em seguida, leia os elementos da matriz N x N e imprima os elementos da diagonal principal em uma única linha separados por espaço.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "3\n1 2 3\n4 5 6\n7 8 9\n", "output": "1 5 9\n" },
+        { "input": "2\n10 20\n30 40\n", "output": "10 40\n" },
+        { "input": "1\n99\n", "output": "99\n" },
+        { "input": "3\n-1 0 0\n0 -2 0\n0 0 -3\n", "output": "-1 -2 -3\n" },
+        { "input": "2\n1 0\n0 1\n", "output": "1 1\n" }
+      ]
+    },
+    {
+      "title": "Matriz Transposta",
+      "description": "Leia as dimensões L (linhas) e C (colunas) de uma matriz, seguidas dos seus elementos. Imprima a sua matriz transposta.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "2 3\n1 2 3\n4 5 6\n", "output": "1 4\n2 5\n3 6\n" },
+        { "input": "2 2\n1 0\n0 1\n", "output": "1 0\n0 1\n" },
+        { "input": "1 3\n7 8 9\n", "output": "7\n8\n9\n" },
+        { "input": "3 1\n4\n5\n6\n", "output": "4 5 6\n" },
+        { "input": "2 2\n1 2\n3 4\n", "output": "1 3\n2 4\n" }
+      ]
+    },
+    {
+      "title": "Ordenação por Bubble Sort",
+      "description": "Leia um número N seguido de N elementos inteiros desordenados. Ordene o vetor em ordem crescente e imprima os valores ordenados separados por espaço.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n5 2 4 1 3\n", "output": "1 2 3 4 5\n" },
+        { "input": "3\n10 5 1\n", "output": "1 5 10\n" },
+        { "input": "4\n-1 -5 0 2\n", "output": "-5 -1 0 2\n" },
+        { "input": "1\n42\n", "output": "42\n" },
+        { "input": "4\n3 3 1 2\n", "output": "1 2 3 3\n" }
+      ]
+    },
+    {
+      "title": "Busca Binária",
+      "description": "Dado um vetor com N elementos ordenados crescentemente e um valor alvo X, use o algoritmo de Busca Binária para encontrar o índice de X (base 0). Se o elemento não existir no vetor, imprima -1.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n10 20 30 40 50\n30\n", "output": "2\n" },
+        { "input": "5\n10 20 30 40 50\n25\n", "output": "-1\n" },
+        { "input": "4\n1 3 5 7\n1\n", "output": "0\n" },
+        { "input": "4\n1 3 5 7\n7\n", "output": "3\n" },
+        { "input": "1\n100\n100\n", "output": "0\n" }
+      ]
+    },
+    {
+      "title": "Dois Números que Somam o Alvo (Two Sum)",
+      "description": "Inspirado no LeetCode: Dado um vetor de N números e um valor Alvo (Target), encontre os índices dos dois números cuja soma seja igual ao Alvo. Imprima os índices ordenados separados por espaço.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "4\n2 7 11 15\n9\n", "output": "0 1\n" },
+        { "input": "3\n3 2 4\n6\n", "output": "1 2\n" },
+        { "input": "2\n3 3\n6\n", "output": "0 1\n" },
+        { "input": "5\n1 5 2 8 4\n10\n", "output": "2 3\n" },
+        { "input": "4\n-1 -2 -3 -4\n-7\n", "output": "2 3\n" }
+      ]
+    },
+    {
+      "title": "Mesclar Dois Vetores Ordenados",
+      "description": "Leia dois vetores de inteiros já ordenados A (tamanho N) e B (tamanho M). Intercale e mescle os dois em um único vetor ordenado e imprima os valores resultantes.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "3\n1 3 5\n3\n2 4 6\n", "output": "1 2 3 4 5 6\n" },
+        { "input": "2\n1 2\n2\n3 4\n", "output": "1 2 3 4\n" },
+        { "input": "1\n5\n1\n1\n", "output": "1 5\n" },
+        { "input": "3\n0 10 20\n1\n5\n", "output": "0 5 10 20\n" },
+        { "input": "2\n2 2\n2\n2 2\n", "output": "2 2 2 2\n" }
+      ]
+    },
+    {
+      "title": "Potência Recursiva",
+      "description": "Crie uma função recursiva que calcule a base B elevada ao expoente inteiro não negativo E (B^E). Leia B e E e imprima o resultado.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "2 3\n", "output": "8\n" },
+        { "input": "5 0\n", "output": "1\n" },
+        { "input": "3 4\n", "output": "81\n" },
+        { "input": "10 2\n", "output": "100\n" },
+        { "input": "7 1\n", "output": "7\n" }
+      ]
+    },
+    {
+      "title": "Maior Elemento Recursivo",
+      "description": "Implemente uma função recursiva para encontrar o maior valor dentro de um vetor de N números inteiros.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "5\n10 40 20 50 30\n", "output": "50\n" },
+        { "input": "3\n-5 -2 -8\n", "output": "-2\n" },
+        { "input": "1\n99\n", "output": "99\n" },
+        { "input": "4\n1 1 1 1\n", "output": "1\n" },
+        { "input": "2\n100 0\n", "output": "100\n" }
+      ]
+    },
+    {
+      "title": "Registro de Participante (EventManager)",
+      "description": "Utilizando struct em C, leia os dados de um participante do EventManager: Nome (string sem espaço), Idade (inteiro) e CPF (string sem espaço). Em seguida, imprima formatado: 'PARTICIPANTE: Nome | Idade anos | CPF: CPF'.",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "Lucas 22 12345678900\n", "output": "PARTICIPANTE: Lucas | 22 anos | CPF: 12345678900\n" },
+        { "input": "Maria 30 98765432100\n", "output": "PARTICIPANTE: Maria | 30 anos | CPF: 98765432100\n" },
+        { "input": "Ana 19 11122233344\n", "output": "PARTICIPANTE: Ana | 19 anos | CPF: 11122233344\n" },
+        { "input": "Joao 45 55566677788\n", "output": "PARTICIPANTE: Joao | 45 anos | CPF: 55566677788\n" },
+        { "input": "Beatriz 27 00011122233\n", "output": "PARTICIPANTE: Beatriz | 27 anos | CPF: 00011122233\n" }
+      ]
+    },
+    {
+      "title": "Emissão de Certificado de Evento (EventManager)",
+      "description": "No EventManager, os certificados contêm o nome da pessoa, o título da atividade e a carga horária. Leia o nome do participante (uma palavra), o tipo da atividade ('Palestra', 'Oficina' ou 'MesaRedonda') e a carga horária em horas. Imprima o texto: 'Certificamos que [Nome] participou da atividade [Tipo] com carga horaria de [X]h.'",
+      "timeLimit": 5000,
+      "tests": [
+        { "input": "Carlos Palestra 4\n", "output": "Certificamos que Carlos participou da atividade Palestra com carga horaria de 4h.\n" },
+        { "input": "Fernanda Oficina 8\n", "output": "Certificamos que Fernanda participou da atividade Oficina com carga horaria de 8h.\n" },
+        { "input": "Paulo MesaRedonda 2\n", "output": "Certificamos que Paulo participou da atividade MesaRedonda com carga horaria de 2h.\n" },
+        { "input": "Juliana Palestra 1\n", "output": "Certificamos que Juliana participou da atividade Palestra com carga horaria de 1h.\n" },
+        { "input": "Marcos Oficina 12\n", "output": "Certificamos que Marcos participou da atividade Oficina com carga horaria de 12h.\n" }
       ]
     }
   ],
   "listas": [
     {
-      "title": "Estrutura Sequencial e Operações Básicas",
+      "title": "01 - Fundamentos e Expressões Aritméticas",
       "isPublic": true,
       "exercises": [
         "Soma de Dois Inteiros",
+        "Diferença Simples",
         "Média Ponderada Simples",
-        "Conversão de Temperatura (Celsius para Fahrenheit)"
+        "Conversão de Temperatura",
+        "Salário com Bônus"
       ]
     },
     {
-      "title": "Estruturas Condicionais (if / else)",
+      "title": "02 - Cálculos de Grandeza e Conversões",
+      "isPublic": true,
+      "exercises": [
+        "Consumo Médio de Combustível",
+        "Conversão de Tempo em Segundos",
+        "Decomposição em Notas",
+        "Distância Entre Dois Pontos"
+      ]
+    },
+    {
+      "title": "03 - Estruturas Condicionais Básicas",
       "isPublic": true,
       "exercises": [
         "Par ou Ímpar",
-        "Maior de Três Números"
+        "Maior de Três Números",
+        "Múltiplos ou Não Múltiplos",
+        "Coordenadas de um Ponto"
       ]
     },
     {
-      "title": "Laços de Repetição (for / while)",
+      "title": "04 - Regras de Negócio e Tomada de Decisão",
       "isPublic": true,
       "exercises": [
-        "Fatorial de um Número"
+        "Tipos de Triângulos",
+        "Aumento Salarial Percentual",
+        "Validação de Horários de Atividades (EventManager)",
+        "Verificação de Lotação e Inscrição (EventManager)",
+        "Validação de Moderador (EventManager)"
+      ]
+    },
+    {
+      "title": "05 - Laços de Repetição e Sequências",
+      "isPublic": true,
+      "exercises": [
+        "Números Pares até 100",
+        "Tabuada Simples",
+        "Fatorial de um Número",
+        "Sequência de Fibonacci"
+      ]
+    },
+    {
+      "title": "06 - Algoritmos com Números e Matemática",
+      "isPublic": true,
+      "exercises": [
+        "Verificação de Número Primo",
+        "Soma de Dígitos",
+        "Inversão de Número Inteiro",
+        "MDC - Máximo Divisor Comum"
+      ]
+    },
+    {
+      "title": "07 - Vetores (Arrays Unidimensionais)",
+      "isPublic": true,
+      "exercises": [
+        "Leitura e Impressão de Vetor",
+        "Soma dos Elementos de um Vetor",
+        "Menor e Posição em Vetor",
+        "Inversão de Vetor",
+        "Média e Acima da Média",
+        "Total de Horas de Eventos (EventManager)"
+      ]
+    },
+    {
+      "title": "08 - Cadeias de Caracteres (Strings)",
+      "isPublic": true,
+      "exercises": [
+        "Tamanho de uma String",
+        "Inversão de String",
+        "Contagem de Vogais",
+        "Palíndromo",
+        "Validação de E-mail Básico (EventManager)"
+      ]
+    },
+    {
+      "title": "09 - Matrizes Bidimensionais",
+      "isPublic": true,
+      "exercises": [
+        "Soma de Matriz 3x3",
+        "Diagonal Principal de uma Matriz",
+        "Matriz Transposta"
+      ]
+    },
+    {
+      "title": "10 - Algoritmos Avançados, Busca e Structs",
+      "isPublic": true,
+      "exercises": [
+        "Busca Linear em Vetor",
+        "Ordenação por Bubble Sort",
+        "Busca Binária",
+        "Dois Números que Somam o Alvo (Two Sum)",
+        "Remover Duplicatas Adjacentes",
+        "Mesclar Dois Vetores Ordenados",
+        "Potência Recursiva",
+        "Maior Elemento Recursivo",
+        "Registro de Participante (EventManager)",
+        "Emissão de Certificado de Evento (EventManager)"
       ]
     }
   ]

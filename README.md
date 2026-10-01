@@ -1,267 +1,250 @@
 # Guia de Instalação e Implantação — CodeCheck-RUN
 
-Este documento reúne todos os pré-requisitos, dependências de sistema, configurações de containers e comandos necessários para instalar, configurar e colocar em produção o ambiente do **CodeCheck-RUN** (Juiz de Programação em C com integração LTI 1.3 ao Moodle).
+Este documento reúne todos os pré-requisitos, configurações de infraestrutura, variáveis de ambiente e comandos necessários para instalar, configurar e colocar em produção o **CodeCheck-RUN** (Juiz de Programação em C com integração LTI 1.3 ao Moodle) utilizando orquestração nativa via **Kubernetes**.
+
+---
 
 ## 1. Visão Geral da Arquitetura
 
-O sistema é composto por:
+O sistema adota uma arquitetura desacoplada e orientada a contêineres:
 
-* **Aplicação Principal (Node.js 20 / Express):** Executa o servidor web, autenticação LTI 1.3 e lógica do juiz.
+* **Aplicação Principal (Node.js 20 / Express):** Executa o servidor HTTP, orquestra a sessão LTI 1.3 e gerencia o ciclo de vida das submissões comunicando-se diretamente com a API do Kubernetes.
+* **Sandbox de Execução (Kubernetes Pods Efêmeros):** Cada compilação e execução de código do aluno cria um Pod isolado baseado em `gcc:latest`, com flags de compilação matemática (`-lm`), limites rígidos de recursos (`requests`/`limits`) e sem acesso à rede externa.
+* **Banco de Dados (MongoDB / Atlas):** Armazena dados de usuários, listas de exercícios, tentativas, pontuações e métricas de desempenho.
+* **Armazenamento de Objetos (MinIO S3):** Mantém persistidos os rascunhos, histórico de códigos `.c` e logs de depuração das execuções.
 
-* **Banco de Dados (MongoDB):** Armazena dados de listas, exercícios, tentativas, submissões e métricas.
+---
 
-* **Armazenamento de Objetos (MinIO):** Guarda arquivos de código-fonte `.c`, rascunhos e históricos de submissões.
+## 2. Requisitos de Sistema
 
-* **Sandbox de Execução (Docker Engine + Imagem GCC):** Executa e compila o código dos alunos em containers isolados e sem acesso à rede.
-
-## 2. Requisitos de Sistema do Servidor
-
-* **Sistema Operacional:** Ubuntu 22.04 LTS / Debian 11+ (ou distribuição Linux equivalente).
-
-* **Hardware Recomendado (Turma de até 30 alunos simultâneos):**
-
-  * **CPU:** 4 vCPUs.
-
+* **Orquestrador:** Cluster Kubernetes operacional (k3s, MicroK8s, Minikube ou Kubernetes multi-node v1.24+).
+* **Hardware Mínimo Recomendado:**
+  * **CPU:** 4 vCPUs ou núcleos dedicados.
   * **Memória RAM:** 8 GB.
-
   * **Armazenamento:** 40 GB SSD.
-
-* **Portas de Rede Necessárias:**
-
-  * `3000/TCP`: Porta principal da aplicação (HTTP/HTTPS via proxy reverso).
-
-  * `3001/TCP`: Porta interna do mecanismo LTI (`PORT + 1`).
-
+* **Portas de Rede / Serviços:**
+  * `3000/TCP`: Interface Web principal da aplicação.
+  * `3001/TCP`: Endpoint de autenticação e redirecionamento LTI 1.3 (`PORT + 1`).
   * `9000/TCP`: API S3 do MinIO.
+  * `9001/TCP`: Painel Administrativo Web do MinIO.
 
-  * `9001/TCP`: Console Web do MinIO.
+---
 
-  * `27017/TCP`: MongoDB (caso instalado localmente).
+## 3. Instalação das Dependências do Sistema
 
-## 3. Instalação das Dependências Básicas
+Atualize os repositórios locais e instale os pacotes fundamentais:
 
-Atualize os pacotes do sistema e instale os utilitários fundamentais:
-
-```
+```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl wget git build-essential apt-transport-https ca-certificates gnupg lsb-release
-
+sudo apt install -y curl wget git apt-transport-https ca-certificates gnupg lsb-release
 ```
 
-## 4. Instalação e Configuração do Docker Engine
+Instale o cliente de linha de comando do Kubernetes (`kubectl`):
 
-O motor de correção depende diretamente do Docker para criar containers efêmeros e seguros para cada compilação de código em C.
-
-### 4.1. Instalar o Docker
-
-```
-# Adiciona a chave GPG oficial do Docker
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-# Configura o repositório
-echo \
-  "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# Instala o Docker e plugins
+```bash
+curl -fsSL [https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key](https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key) | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] [https://pkgs.k8s.io/core:/stable:/v1.30/deb/](https://pkgs.k8s.io/core:/stable:/v1.30/deb/) /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
 sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Adiciona o usuário atual ao grupo docker para executar sem sudo
-sudo usermod -aG docker $USER
-newgrp docker
-
+sudo apt install -y kubectl
 ```
 
-### 4.2. Baixar a imagem GCC (Sandbox dos Alunos)
+Baixe previamente a imagem base do compilador GCC utilizada nas sandboxes:
 
-Baixe a imagem oficial do compilador GCC que o `judgeService` usa para compilar e rodar os códigos:
-
-```
+```bash
 docker pull gcc:latest
-
 ```
 
-## 5. Instalação e Configuração do MinIO
+---
 
-O MinIO é utilizado para o armazenamento dos rascunhos e históricos de submissões.
+## 4. Configuração do MinIO (Armazenamento de Objetos)
 
-### 5.1. Criar o diretório de dados persistentes
+### 4.1. Criar diretório de dados persistentes
 
-```
+```bash
 sudo mkdir -p /data/minio
 sudo chown -R $USER:$USER /data/minio
-
 ```
 
-### 5.2. Subir o container do MinIO
+### 4.2. Inicializar o servidor MinIO
 
-Execute o MinIO com credenciais seguras:
+Suba o serviço MinIO vinculando o diretório de dados com as credenciais que serão inseridas no `.env`:
 
-```
+```bash
 docker run -d \
   --name minio-server \
   --restart unless-stopped \
   -p 9000:9000 \
   -p 9001:9001 \
-  -e "MINIO_ROOT_USER=minioadmin" \
-  -e "MINIO_ROOT_PASSWORD=SuaSenhaForteMinio123!" \
+  -e "MINIO_ROOT_USER=minio_admin" \
+  -e "MINIO_ROOT_PASSWORD=minio_senha_segura" \
   -v /data/minio:/data \
   minio/minio server /data --console-address ":9001"
-
 ```
 
-* **Acesso Web (Console):** `http://IP_DO_SERVIDOR:9001`
+* **Console Web:** `http://IP_DO_SERVIDOR:9001`
+* **Endpoint da API:** `http://IP_DO_SERVIDOR:9000`
 
-* **API Endpoint:** `http://IP_DO_SERVIDOR:9000`
+---
 
-## 6. Configuração do MongoDB
+## 5. Configuração da Aplicação
 
-Você pode utilizar uma instância gerenciada (MongoDB Atlas) ou subir um container local:
+### 5.1. Clonar o repositório
 
-```
-sudo mkdir -p /data/mongodb
-sudo chown -R $USER:$USER /data/mongodb
-
-docker run -d \
-  --name mongodb-codecheck \
-  --restart unless-stopped \
-  -p 27017:27017 \
-  -v /data/mongodb:/data/db \
-  mongo:7.0
-
-```
-
-## 7. Instalação e Configuração da Aplicação
-
-### 7.1. Clonar o repositório
-
-```
-git clone https://github.com/GabrielMullerFischer/CodeCheck-RUN.git
+```bash
+git clone [https://github.com/GabrielMullerFischer/CodeCheck-RUN.git](https://github.com/GabrielMullerFischer/CodeCheck-RUN.git)
 cd CodeCheck-RUN
-
 ```
 
-### 7.2. Configurar o arquivo `.env`
+### 5.2. Criar e preencher o `.env`
 
 Crie o arquivo de variáveis na raiz do projeto:
 
-```
+```bash
 nano .env
-
 ```
 
-Preencha os valores de acordo com sua infraestrutura:
+Preencha os valores conforme o modelo abaixo:
 
-```
-# Configurações do Servidor
+```env
+# Porta do Servidor
 PORT=3000
-NODE_ENV=production
-SESSION_SECRET=coloque_uma_chave_secreta_aleatoria_longa_aqui
 
-# Banco de Dados MongoDB
-MONGO_DB_URI=mongodb://localhost:27017/codecheck
-# OU MongoDB Atlas:
-# MONGO_DB_URI=mongodb+srv://usuario:senha@cluster.mongodb.net/codecheck?retryWrites=true&w=majority
-
-# Armazenamento MinIO
+# MiniO
 MINIO_ENDPOINT=localhost
 MINIO_PORT=9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=SuaSenhaForteMinio123!
+MINIO_ACCESS_KEY=minio_admin
+MINIO_SECRET_KEY=minio_senha_segura
 MINIO_NAME=arquivos-alunos
+
+# Autenticação e Sessão
+SESSION_SECRET="sua_chave_secreta_de_sessao_exemplo_123456"
+LTI_ENCRYPTION_KEY="sua_chave_de_criptografia_lti_exemplo_123456"
+
+# MongoDB
+MONGO_DB_URI=mongodb+srv://usuario_exemplo:senha_exemplo@cluster-exemplo.mongodb.net/codecheck?retryWrites=true&w=majority
+
+# Integração LTI / Moodle
+LTI_PLATFORM_URL='https://moodle.exemplo.edu.br'
+LTI_PLATFORM_NAME='MOODLE-EXEMPLO'
+LTI_CLIENT_ID='client_id_exemplo_123'
+LTI_AUTH_ENDPOINT='https://moodle.exemplo.edu.br/mod/lti/auth.php'
+LTI_TOKEN_ENDPOINT='https://moodle.exemplo.edu.br/mod/lti/token.php'
+LTI_KEYSET_ENDPOINT='https://moodle.exemplo.edu.br/mod/lti/certs.php'
+
+# Sandbox de Execução via Kubernetes
+K8S_NAMESPACE=default
+K8S_IMAGE=gcc:latest
+K8S_CPU_REQUEST=500m
+K8S_CPU_LIMIT=500m
+K8S_MEMORY_REQUEST=512Mi
+K8S_MEMORY_LIMIT=512Mi
+MAX_CONCURRENT_COMPILATIONS=4
 
 # Configurações do Juiz / Sandbox
 COMPILE_TIMEOUT=30000
-TIMEOUT_ALUNO=10000
-DEFAULT_EXECUTION_TIME_LIMIT_MS=1000
+DEFAULT_TIME_LIMIT_MS=5000
 MAX_EXECUTION_TIME_LIMIT_MS=7200000
 MAX_SUBMISSION_HISTORY=10
-DOCKER_CPU_LIMIT=0.25
-DOCKER_MEMORY_LIMIT=128m
-LIMPEZATMP=10
-
-# Integração LTI 1.3 (Moodle)
-LTI_ENCRYPTION_KEY=chave_de_criptografia_lti_super_secreta
-LTI_PLATFORM_URL=https://moodle.suainstituicao.edu.br
-LTI_PLATFORM_NAME=MoodleInst
-LTI_CLIENT_ID=seu_client_id_gerado_no_moodle
-LTI_AUTH_ENDPOINT=https://moodle.suainstituicao.edu.br/mod/lti/auth.php
-LTI_TOKEN_ENDPOINT=https://moodle.suainstituicao.edu.br/mod/lti/token.php
-LTI_KEYSET_ENDPOINT=https://moodle.suainstituicao.edu.br/mod/lti/certs.php
-
+LIMPEZATMP=30
 ```
 
-## 8. Execução da Aplicação via Docker
+### 5.3. Dicionário das Variáveis de Ambiente
 
-Como a aplicação cria containers sob demanda para compilar e testar os códigos em C, o container do CodeCheck-RUN precisa ter acesso ao socket do Docker do host (`/var/run/docker.sock`).
+| Variável | Valor Padrão / Exemplo | Descrição |
+| :--- | :--- | :--- |
+| `PORT` | `3000` | Porta TCP do servidor Express. |
+| `SESSION_SECRET` | `...` | Segredo para assinar cookies de sessão. |
+| `LTI_ENCRYPTION_KEY` | `...` | Chave simétrica para encriptação LTI. |
+| `MONGO_DB_URI` | `mongodb+srv://...` | URI de conexão do cluster MongoDB. |
+| `MINIO_ENDPOINT` | `localhost` | Endereço de rede do servidor MinIO. |
+| `MINIO_PORT` | `9000` | Porta da API S3 do MinIO. |
+| `MINIO_ACCESS_KEY` | `minio_admin` | Chave de acesso do MinIO. |
+| `MINIO_SECRET_KEY` | `minio_senha_segura` | Chave secreta de autenticação do MinIO. |
+| `MINIO_NAME` | `arquivos-alunos` | Nome do bucket para armazenar os códigos e logs. |
+| `LTI_PLATFORM_URL` | `https://moodle.exemplo.edu.br` | URL base do Moodle. |
+| `LTI_PLATFORM_NAME` | `MOODLE-EXEMPLO` | Identificador da ferramenta configurada no LMS. |
+| `LTI_CLIENT_ID` | `client_id_exemplo_123` | Client ID registrado no Moodle. |
+| `LTI_AUTH_ENDPOINT` | `.../auth.php` | Endpoint de autenticação OIDC do Moodle. |
+| `LTI_TOKEN_ENDPOINT` | `.../token.php` | Endpoint para troca de tokens de serviço LTI. |
+| `LTI_KEYSET_ENDPOINT`| `.../certs.php` | Endpoint JWKS para validação das chaves públicas. |
+| `K8S_NAMESPACE` | `default` | Namespace onde os Pods de execução são criados. |
+| `K8S_IMAGE` | `gcc:latest` | Imagem utilizada para compilar e executar o código C. |
+| `K8S_CPU_REQUEST` / `LIMIT` | `500m` | Fração de CPU reservada e limite por Pod. |
+| `K8S_MEMORY_REQUEST` / `LIMIT`| `512Mi` | Quantidade de RAM reservada e limite por Pod. |
+| `MAX_CONCURRENT_COMPILATIONS` | `4` | Máximo de compilações simultâneas na fila. |
+| `COMPILE_TIMEOUT` | `30000` | Tempo limite padrão do juiz em milissegundos (30s). |
+| `DEFAULT_TIME_LIMIT_MS` | `5000` | Sugestão padrão no modal do professor ao marcar tempo limite (5s). |
+| `MAX_EXECUTION_TIME_LIMIT_MS` | `7200000` | Teto absoluto aceito pelo sistema (2 horas). |
+| `MAX_SUBMISSION_HISTORY` | `10` | Quantidade de submissões mantidas por pasta no MinIO. |
+| `LIMPEZATMP` | `30` | Minutos para expiração de pastas temporárias. |
 
-1. **Construir a imagem da aplicação:**
+---
 
+## 6. Implantação no Cluster Kubernetes
+
+### 6.1. Criar o Secret com as Variáveis de Ambiente
+
+Crie o Secret no namespace de execução a partir do arquivo `.env`:
+
+```bash
+kubectl create secret generic codecheck-env --from-env-file=.env -n default
 ```
-docker build -t codecheck-app .
 
+*(Caso altere o `.env` no futuro, execute `kubectl delete secret codecheck-env -n default` e recrie-o).*
+
+### 6.2. Construir a Imagem da Aplicação
+
+Construa a imagem para produção:
+
+```bash
+docker build -t codecheck-app:latest .
 ```
 
-2. **Iniciar o container da aplicação:**
+*Nota: Se estiver operando em um cluster multi-node, envie a imagem para o seu container registry (`docker tag` e `docker push`) ou importe-a diretamente nos nós de trabalho.*
 
-```
-docker run -d \
-  --name codecheck-app \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -p 3001:3001 \
-  --env-file .env \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(pwd)/tmp:/app/tmp \
-  codecheck-app
+### 6.3. Aplicar os Recursos Kubernetes (RBAC, Deployment e Service)
 
+Aplique as definições de ServiceAccount, Role, RoleBinding, Deployment e Service presentes no manifesto:
+
+```bash
+kubectl apply -f k8s/codecheck.yaml
 ```
 
-## 9. Atualização Contínua (Deploy de Novos Commits)
+---
 
-Sempre que subir novidades no repositório GitHub, execute o seguinte comando no servidor:
+## 7. Atualização Contínua (Deploy de Novos Commits)
 
-```
-# 1. Entrar na pasta e puxar o código atualizado
-cd /caminho/para/CodeCheck-RUN
+Para atualizar o sistema após alterações no repositório:
+
+```bash
+# 1. Puxar alterações do repositório
 git pull origin main
 
-# 2. Reconstruir a imagem e reiniciar o container
-docker build -t codecheck-app .
-docker stop codecheck-app
-docker rm codecheck-app
+# 2. Reconstruir a imagem da aplicação
+docker build -t codecheck-app:latest .
 
-docker run -d \
-  --name codecheck-app \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -p 3001:3001 \
-  --env-file .env \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(pwd)/tmp:/app/tmp \
-  codecheck-app
-
+# 3. Reiniciar o Deployment para atualizar os Pods
+kubectl rollout restart deployment/codecheck-app -n default
 ```
 
-## 10. Verificação e Diagnóstico
+---
 
-* **Acompanhar logs da aplicação em tempo real:**
+## 8. Diagnóstico e Monitoramento
 
-  ```
-  docker logs -f codecheck-app
-  
-  ```
-
-* **Testar se o container do GCC responde:**
-
-  ```
-  docker run --rm gcc gcc --version
-  
+* **Acompanhar os logs da aplicação principal:**
+  ```bash
+  kubectl logs -f deployment/codecheck-app -n default
   ```
 
-* **Testar acesso ao MinIO:**
-  Acesse `http://IP_DO_SERVIDOR:9001` no navegador com seu usuário e senha definidos no `.env` e confirme se o bucket `arquivos-alunos` foi inicializado após a primeira subida da aplicação.
+* **Monitorar os Pods efêmeros dos alunos sendo criados e destruídos em tempo real:**
+  ```bash
+  kubectl get pods -n default -w
+  ```
+
+* **Inspecionar as portas e o Service ativo:**
+  ```bash
+  kubectl get svc codecheck-service -n default
+  ```
+
+* **Acessar o MinIO:**
+  Acesse `http://IP_DO_SERVIDOR:9001` com as credenciais minio_administrativas definidas no `.env` para verificar a criação automática do bucket configurado em `MINIO_NAME`.
