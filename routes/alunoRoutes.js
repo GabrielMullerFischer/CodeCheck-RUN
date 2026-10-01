@@ -10,7 +10,16 @@ const Submission = require('../models/Submission');
 const ActivityAttempt = require('../models/ActivityAttempt');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
-const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
+const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 30000;
+
+function isTestUser(userId, session, body) {
+    return (
+        userId === 'preview_user' ||
+        userId === 'professor_test' ||
+        session?.isProfessor === true ||
+        body?.mode === 'preview'
+    );
+}
 
 function gerarDicaDidatica(status, details, got) {
     const txt = `${details || ''} ${got || ''}`;
@@ -40,7 +49,7 @@ function gerarDicaDidatica(status, details, got) {
         return "Possível erro de lógica no 'if': Você usou '=' (atribuição) em vez de '==' (comparação de igualdade).";
     }
     if (status === 'Time Limit') {
-        return "Tempo limite excedido: Seu programa demorou mais que o permitido para responder. Verifique se não há laços infinitos (como 'while(1)') ou se a condição de parada do laço está correta.";
+        return "Tempo limite excedido: Seu programa demorou mais que o permitido para responder. Verifique se não há laços infinitos ou se a condição de parada do laço está correta.";
     }
     return null;
 }
@@ -147,10 +156,12 @@ router.post('/submit', async (req, res) => {
 
         const idExercicioFinal = exercicioAlvo._id;
 
-        let timeLimit = exercicioAlvo.timeLimit;
-        if (!timeLimit || isNaN(timeLimit)) {
-            timeLimit = DEFAULT_TIME_LIMIT_MS;
-        } else if (timeLimit > MAX_TIME_LIMIT_MS) {
+        let timeLimit = COMPILE_TIMEOUT_MS;
+        if (exercicioAlvo.timeLimit && Number(exercicioAlvo.timeLimit) > 0) {
+            timeLimit = Number(exercicioAlvo.timeLimit);
+        }
+
+        if (timeLimit > MAX_TIME_LIMIT_MS) {
             timeLimit = MAX_TIME_LIMIT_MS;
         }
 
@@ -187,10 +198,15 @@ router.post('/submit', async (req, res) => {
             }
         }
 
-        await minioService.salvarRascunho(userId, activityId || 'preview', idExercicioFinal, code);
+        const isModoTeste = isTestUser(userId, req.session, req.body);
+
+        // Só salva rascunho se NÃO for professor testando
+        if (!isModoTeste) {
+            await minioService.salvarRascunho(userId, activityId || 'preview', idExercicioFinal, code);
+        }
 
         if (draftOnly) {
-            return res.json({ success: true, draftSaved: true });
+            return res.json({ success: true, draftSaved: !isModoTeste });
         }
 
         const containerName = `judge_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
@@ -199,15 +215,14 @@ router.post('/submit', async (req, res) => {
             return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
         }
 
-        const inicioExec = Date.now();
         const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit);
-        const tempoGastoMs = Date.now() - inicioExec;
+        const tempoGastoMs = resultado.executionTime || 0;
 
         const isAccepted = resultado.status === 'Accepted';
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
 
         // Apenas o teste interno não grava histórico
-        if (userId === 'professor_test') {
+        if (isModoTeste) {
             return res.json({
                 ...resultado,
                 executionTime: tempoGastoMs,
@@ -280,10 +295,12 @@ router.post('/test-custom', async (req, res) => {
             }
         }
 
-        let timeLimit = DEFAULT_TIME_LIMIT_MS;
+        let timeLimit = COMPILE_TIMEOUT_MS;
         if (exerciseId) {
             const ex = await Exercise.findById(exerciseId).lean();
-            if (ex && ex.timeLimit) timeLimit = ex.timeLimit;
+            if (ex && ex.timeLimit && Number(ex.timeLimit) > 0) {
+                timeLimit = Number(ex.timeLimit);
+            }
         }
 
         const containerName = `test_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
@@ -293,9 +310,8 @@ router.post('/test-custom', async (req, res) => {
         }
 
         const testes = [{ input: input || '', output: '' }];
-        const inicioExec = Date.now();
         const resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
-        const tempoGastoMs = Date.now() - inicioExec;
+        const tempoGastoMs = resultado.executionTime || 0;
 
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
 

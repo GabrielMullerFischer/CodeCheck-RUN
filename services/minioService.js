@@ -29,6 +29,7 @@ async function initMinio() {
 
 // Rascunhos isolados por exercício
 async function salvarRascunho(userId, activityId, exerciseId, code) {
+    if (isTestUser(userId)) return null;
     const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
     const buffer = Buffer.from(code, 'utf-8');
     await minioClient.putObject(BUCKET_NAME, objectName, buffer);
@@ -107,6 +108,15 @@ async function removerArquivo(objectName) {
     }
 }
 
+function isTestUser(userId, session, body) {
+    return (
+        userId === 'preview_user' ||
+        userId === 'professor_test' ||
+        session?.isProfessor === true ||
+        body?.mode === 'preview'
+    );
+}
+
 module.exports = {
     initMinio,
     minioClient,
@@ -117,6 +127,7 @@ module.exports = {
     arquivarSubmissao,
     lerArquivoPorPath,
     removerArquivo,
+    isTestUser,
     salvarCodigo: async (userId, activityId, codigo) => {
         const nomeArquivo = `aluno_${userId}/atividade_${activityId}.c`;
         const buffer = Buffer.from(codigo, 'utf-8');

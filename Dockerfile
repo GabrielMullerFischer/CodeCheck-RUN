@@ -1,29 +1,24 @@
-# 1. Imagem base (Node.js v20 no Debian)
-FROM node:20-bullseye
+# 1. Imagem base mais leve (Node.js v20 Slim)
+FROM node:20-bullseye-slim
 
-# 2. Instala o GCC e ferramentas de compilação (O segredo do seu TCC)
-RUN apt-get update && apt-get install -y \
-    gcc \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# 3. Define a pasta onde o código vai morar dentro do container
+# 2. Define o diretório de trabalho da aplicação
 WORKDIR /app
 
-# 4. Copia os arquivos de dependências primeiro (otimiza o cache)
+# 3. Copia apenas os manifests de dependências primeiro (aproveita cache de build)
 COPY package*.json ./
 
-# 5. Instala as bibliotecas do seu package.json (minio, mongoose, ltijs...)
-RUN npm install
+# 4. Instala as dependências de produção
+RUN npm install --omit=dev
 
-# 6. Copia todo o resto do seu código para dentro do container
+# 5. Copia o código-fonte da aplicação
 COPY . .
 
-# 7. Permissão para criar arquivos temporários (compilação e execução dos códigos dos alunos)
-RUN mkdir -p /app/tmp && chmod 777 /app/tmp
+# 6. Cria a pasta tmp caso algum coletor ou rotina auxiliar precise
+RUN mkdir -p /app/tmp
 
-# 8. Expõe a porta que o seu server.js usa
+# 7. Expõe as portas da aplicação web (3000) e do mecanismo LTI (3001)
 EXPOSE 3000
+EXPOSE 3001
 
-# 9. O comando que "dá o play" no seu sistema
+# 8. Comando de inicialização
 CMD ["npm", "start"]

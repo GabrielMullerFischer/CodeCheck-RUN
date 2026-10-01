@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
             boxCampoTempo.style.display = chkDefinirTempo.checked ? 'block' : 'none';
             if (chkDefinirTempo.checked) {
                 const inputTempo = document.getElementById('modal-tempo-limite');
-                if (inputTempo && !inputTempo.value) inputTempo.value = '1000';
+                if (inputTempo && !inputTempo.value) inputTempo.value = '5000';
             }
         });
     }
@@ -385,7 +385,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        meusEx.forEach(ex => {
+        const listaOrdenada = [...meusEx].sort((a, b) => 
+            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+        );
+
+        listaOrdenada.forEach(ex => {
             const isPub = ex.isPublic !== false;
             const div = document.createElement('div');
             div.className = 'border-bottom p-2 d-flex justify-content-between align-items-center';
@@ -548,7 +552,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        minhasListas.forEach(lista => {
+        const listasOrdenadas = [...minhasListas].sort((a, b) => 
+            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+        );
+        listasOrdenadas.forEach(lista => {
             const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
             const isPub = lista.isPublic !== false;
             const div = document.createElement('div');
@@ -785,7 +792,9 @@ document.addEventListener('DOMContentLoaded', () => {
         containerExs.innerHTML = '';
 
         const idsNaLista = (lista.exercises || []).map(e => String(e._id || e));
-        const todosExs = window.todosMeusExerciciosCache || [];
+        const todosExs = [...(window.todosMeusExerciciosCache || [])].sort((a, b) => 
+            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+        );
 
         todosExs.forEach(ex => {
             const isChecked = idsNaLista.includes(String(ex._id));
@@ -1681,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (inputId) inputId.value = '';
         if (inputTitulo) inputTitulo.value = '';
         if (inputDesc) inputDesc.value = '';
-        if (inputTempo) inputTempo.value = '1000';
+        if (inputTempo) inputTempo.value = '5000';
         if (chkPrivado) chkPrivado.checked = false;
         if (chkDefinirTempoEl) chkDefinirTempoEl.checked = false;
         if (boxCampoTempoEl) boxCampoTempoEl.style.display = 'none';
