@@ -248,6 +248,9 @@ router.post('/submit', async (req, res) => {
             got: resultado.got || '',
             expected: resultado.expected || '',
             executionTime: isAccepted ? tempoGastoMs : null,
+            percentage: typeof resultado.percentage === 'number' ? resultado.percentage : 0,
+            passedCount: resultado.passedCount || 0,
+            totalCount: resultado.totalCount || 0,
             didacticHint: dicaDidatica
         });
         await minioService.salvarArquivo(caminhoLog, logPayload);
@@ -263,6 +266,7 @@ router.post('/submit', async (req, res) => {
             status: resultado.status,
             isAccepted,
             executionTime: isAccepted ? tempoGastoMs : null,
+            percentage: typeof resultado.percentage === 'number' ? resultado.percentage : 0,
             compilationDetails: resultado.details || ''
         });
 
@@ -315,9 +319,11 @@ router.post('/test-custom', async (req, res) => {
 
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
 
+        const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
+
         res.json({
             success: true,
-            status: resultado.status === 'Accepted' ? 'Success' : resultado.status,
+            status: isSuccess ? 'Success' : resultado.status,
             output: resultado.got || '',
             details: resultado.details || '',
             executionTime: tempoGastoMs,
@@ -343,7 +349,7 @@ router.get('/aluno/submissoes', async (req, res) => {
         })
         .sort({ createdAt: -1 })
         .limit(10)
-        .select('_id status isAccepted executionTime createdAt codePath logPath')
+        .select('_id status isAccepted executionTime percentage createdAt codePath logPath')
         .lean();
 
         const submissoes = ultimasSubmissoes.reverse();
@@ -379,6 +385,7 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
             logResultado = {
                 status: sub.status,
                 executionTime: sub.executionTime,
+                percentage: sub.percentage || 0,
                 details: sub.compilationDetails || '',
                 didacticHint: null
             };

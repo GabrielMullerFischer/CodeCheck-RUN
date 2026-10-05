@@ -204,11 +204,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         }
 
+        const pct = typeof data.percentage === 'number' ? data.percentage : (data.status === 'Accepted' ? 100 : 0);
+        const passed = typeof data.passedCount === 'number' ? data.passedCount : 0;
+        const total = typeof data.totalCount === 'number' ? data.totalCount : 0;
+
+        let tempoFormatado = '-';
+        if (typeof data.executionTime === 'number') {
+            if (data.executionTime === 0) {
+                tempoFormatado = '< 1 ms';
+            } else if (data.executionTime >= 1000) {
+                tempoFormatado = (data.executionTime / 1000).toFixed(2) + ' s';
+            } else {
+                tempoFormatado = data.executionTime + ' ms';
+            }
+        }
+
         if (data.status === 'Accepted') {
             removerDestaqueErro();
             resultDiv.innerHTML = `
-                <div class="alert alert-success py-2">
-                    <i class="fas fa-check-circle mr-2"></i><strong>Correto!</strong> Tempo de execução: ${data.executionTime !== null ? data.executionTime + ' ms' : '-'}
+                <div class="alert alert-success p-3 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap: 12px;">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-check-circle text-success mr-3" style="font-size: 1.9rem;"></i>
+                            <div>
+                                <h6 class="font-weight-bold text-success mb-1" style="font-size: 1.05rem;">
+                                    Solução Aceita!
+                                </h6>
+                                <span class="text-secondary small">
+                                    Todos os casos de teste foram validados com sucesso.
+                                </span>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
+                            <span class="badge badge-light border text-dark font-weight-bold px-3 py-2 shadow-sm" style="font-size: 0.88rem;">
+                                <i class="fas fa-stopwatch text-warning mr-1"></i> ${tempoFormatado}
+                            </span>
+                            <span class="badge badge-success font-weight-bold px-3 py-2 shadow-sm" style="font-size: 0.88rem;">
+                                <i class="fas fa-chart-pie mr-1"></i> ${pct}% de acerto (${passed}/${total} testes)
+                            </span>
+                        </div>
+                    </div>
                 </div>
             `;
         } else if (data.status === 'Compilation Error') {
@@ -226,7 +261,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="alert alert-warning py-2">
                     ${cardDica}
                     ${badgeLinha}
-                    <strong>Erro de compilação:</strong><br>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <strong>Erro de compilação:</strong>
+                        <span class="badge badge-danger font-weight-bold" style="font-size: 0.85rem;">0% de acerto</span>
+                    </div>
                     <pre class="bg-dark text-white p-2 mt-2 rounded small pre-io">${escapeHtml(data.details)}</pre>
                 </div>
             `;
@@ -235,7 +273,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
                     ${cardDica}
-                    <strong>Resposta Incorreta</strong><br>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Resposta Incorreta</strong>
+                        ${badgePorcentagem}
+                    </div>
                     <div class="small mt-2">
                         <div class="mb-1"><strong>Entrada:</strong></div>
                         <pre class="p-2 border rounded text-dark pre-io">${escapeHtml(data.input) || '(sem entrada)'}</pre>
@@ -251,7 +292,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
                     ${cardDica}
-                    <strong>Tempo limite excedido.</strong> Verifique se há loops infinitos.
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <strong>Tempo limite excedido.</strong>
+                        ${badgePorcentagem}
+                    </div>
+                    <div class="small text-muted mt-1">Verifique se há loops infinitos.</div>
                 </div>
             `;
         } else {
@@ -259,7 +304,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
                     ${cardDica}
-                    <strong>${escapeHtml(data.status)}:</strong> ${escapeHtml(data.details || data.message || 'Erro durante a execução.')}
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <strong>${escapeHtml(data.status)}:</strong>
+                        ${badgePorcentagem}
+                    </div>
+                    <div>${escapeHtml(data.details || data.message || 'Erro durante a execução.')}</div>
                 </div>
             `;
         }

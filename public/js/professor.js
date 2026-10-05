@@ -439,16 +439,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarBancoExercicios(bancoEx) {
-        window.exerciciosComunidadeCache = bancoEx;
+        const listaOrdenada = [...bancoEx].sort((a, b) => 
+            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+        );
+        window.exerciciosComunidadeCache = listaOrdenada;
         if (!containerBancoEx) return;
         containerBancoEx.innerHTML = '';
 
-        if (bancoEx.length === 0) {
+        if (listaOrdenada.length === 0) {
             containerBancoEx.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhum exercício compartilhado ainda.</p>';
             return;
         }
 
-        bancoEx.forEach(ex => {
+        listaOrdenada.forEach(ex => {
             const isOficial = ex.authorId === 'codecheck_oficial';
             const isPub = ex.isPublic !== false;
             const div = document.createElement('div');
@@ -684,16 +687,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarBancoListas(listasComunidade) {
-        window.listasComunidadeCache = listasComunidade;
+        const listasOrdenadas = [...listasComunidade].sort((a, b) => 
+            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+        );
+        window.listasComunidadeCache = listasOrdenadas;
         if (!containerBancoUniversal) return;
         containerBancoUniversal.innerHTML = '';
 
-        if (listasComunidade.length === 0) {
+        if (listasOrdenadas.length === 0) {
             containerBancoUniversal.innerHTML = '<p class="text-muted p-3 mb-0 text-center">Nenhuma lista compartilhada por outros professores ainda.</p>';
             return;
         }
 
-        listasComunidade.forEach(lista => {
+        listasOrdenadas.forEach(lista => {
             const isOficial = lista.authorId === 'codecheck_oficial';
             const isPub = lista.isPublic !== false;
             const div = document.createElement('div');

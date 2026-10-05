@@ -345,21 +345,13 @@ router.get('/professor/dados', async (req, res) => {
         const minhasListas = todasListas.filter(l => String(l.authorId) === meuId);
         
         let bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
-        bancoUniversalListas.sort((a, b) => {
-            if (a.authorId === 'codecheck_oficial' && b.authorId !== 'codecheck_oficial') return -1;
-            if (b.authorId === 'codecheck_oficial' && a.authorId !== 'codecheck_oficial') return 1;
-            return 0;
-        });
+        bancoUniversalListas.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
 
         const todosExercicios = await Exercise.find({ isArchived: { $ne: true } }).sort({ _id: -1 }).lean();
         const meusExercicios = todosExercicios.filter(e => String(e.authorId) === meuId);
 
         let bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
-        bancoUniversalExercicios.sort((a, b) => {
-            if (a.authorId === 'codecheck_oficial' && b.authorId !== 'codecheck_oficial') return -1;
-            if (b.authorId === 'codecheck_oficial' && a.authorId !== 'codecheck_oficial') return 1;
-            return 0;
-        });
+        bancoUniversalExercicios.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
 
         const vinculo = activityId ? await ActivityConfig.findOne({ activityId }).populate({
             path: 'listId',

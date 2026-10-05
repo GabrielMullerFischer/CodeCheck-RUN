@@ -14,6 +14,7 @@ const SubmissionSchema = new mongoose.Schema({
     },
     isAccepted: { type: Boolean, default: false },
     executionTime: { type: Number, default: null },
+    percentage: { type: Number, default: 0 },
     compilationDetails: { type: String },
     testResults: [{
         testIndex: Number,

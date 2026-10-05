@@ -127,7 +127,8 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
             }
         }
 
-        const tempoEsperaNodeMs = timeoutAlunoMs + 15000;
+        const totalTestes = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
+        const tempoEsperaNodeMs = (timeoutAlunoMs * totalTestes) + 20000;
         const outputBruto = await aguardarPodFinalizar(podName, targetNs, tempoEsperaNodeMs);
         return processarResultadoSandbox(outputBruto, tests);
     } catch (err) {
@@ -135,13 +136,19 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
             return {
                 status: 'Time Limit',
                 message: 'Tempo limite de execução excedido!',
-                executionTime: timeoutAlunoMs
+                executionTime: timeoutAlunoMs,
+                percentage: 0,
+                passedCount: 0,
+                totalCount: Array.isArray(tests) ? tests.length : 0
             };
         }
         return {
             status: 'Runtime Error',
             details: `Erro no orquestrador Kubernetes: ${err.message}`,
-            executionTime: 0
+            executionTime: 0,
+            percentage: 0,
+            passedCount: 0,
+            totalCount: Array.isArray(tests) ? tests.length : 0
         };
     } finally {
         try {
@@ -178,31 +185,28 @@ EXIT_CODE=$?
 END_MS=$(date +%s%3N)
 DUR=$((END_MS - START_MS))
 
-if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
-    echo "STATUS:TIME_LIMIT"
-    echo "INDEX:${i}"
-    echo "TIME:$DUR"
-    exit 0
-fi
-
-if [ $EXIT_CODE -ne 0 ]; then
-    echo "STATUS:RUNTIME_ERROR"
-    echo "INDEX:${i}"
-    echo "TIME:$DUR"
-    echo "ERR_B64:$(base64 -w 0 < err_${i}.txt)"
-    exit 0
-fi
-
 echo "---STEP---"
 echo "INDEX:${i}"
 echo "TIME:$DUR"
-echo "GOT_B64:$(base64 -w 0 < got_${i}.txt)"
-echo "EXP_B64:$(base64 -w 0 < exp_${i}.txt)"
+
+if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
+    echo "STATUS:TIME_LIMIT"
+elif [ $EXIT_CODE -ne 0 ]; then
+    echo "STATUS:RUNTIME_ERROR"
+    echo "ERR_B64:$(base64 -w 0 < err_${i}.txt 2>/dev/null || echo '')"
+else
+    echo "STATUS:OK"
+    echo "GOT_B64:$(base64 -w 0 < got_${i}.txt 2>/dev/null || echo '')"
+    echo "EXP_B64:$(base64 -w 0 < exp_${i}.txt 2>/dev/null || echo '')"
+fi
 `;
     });
 
     return `#!/usr/bin/env bash
 mkdir -p /sandbox && cd /sandbox
+
+ulimit -u 50
+ulimit -f 50000
 
 echo "${b64Code}" | base64 -d > main.c
 
@@ -255,61 +259,125 @@ async function aguardarPodFinalizar(podName, ns, timeoutMs) {
 }
 
 function processarResultadoSandbox(rawOutput, testsOriginais) {
+    const totalCount = Array.isArray(testsOriginais) ? testsOriginais.length : 0;
+
     if (!rawOutput) {
-        return { status: 'Runtime Error', details: 'Nenhum retorno gerado pelo Pod.', executionTime: 0 };
+        return { status: 'Runtime Error', details: 'Nenhum retorno gerado pelo Pod.', executionTime: 0, percentage: 0, passedCount: 0, totalCount };
     }
 
     if (rawOutput.includes('STATUS:COMPILATION_ERROR')) {
         const match = rawOutput.match(/ERR_B64:([A-Za-z0-9+/=]+)/);
         const details = match ? Buffer.from(match[1], 'base64').toString('utf-8') : 'Erro de compilação.';
-        return { status: 'Compilation Error', details, executionTime: 0 };
+        return { status: 'Compilation Error', details, executionTime: 0, percentage: 0, passedCount: 0, totalCount };
+    }
+
+    const steps = rawOutput.split('---STEP---').slice(1);
+    let maxTime = 0;
+    let passedCount = 0;
+    let primeiroErro = null;
+    let ultimoGot = '';
+
+    for (const step of steps) {
+        const idxMatch = step.match(/INDEX:(\d+)/);
+        const timeMatch = step.match(/TIME:(\d+)/);
+        const statusMatch = step.match(/STATUS:(\w+)/);
+
+        const idx = idxMatch ? parseInt(idxMatch[1], 10) : 0;
+        const dur = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+        if (dur > maxTime) maxTime = dur;
+
+        const stepStatus = statusMatch ? statusMatch[1] : '';
+
+        if (stepStatus === 'TIME_LIMIT') {
+            if (!primeiroErro) {
+                primeiroErro = {
+                    status: 'Time Limit',
+                    message: 'Tempo limite de execução excedido!',
+                    executionTime: dur,
+                    testIndex: idx
+                };
+            }
+        } else if (stepStatus === 'RUNTIME_ERROR') {
+            const errMatch = step.match(/ERR_B64:([A-Za-z0-9+/=]*)/);
+            const details = errMatch && errMatch[1] ? Buffer.from(errMatch[1], 'base64').toString('utf-8') : 'Runtime Error.';
+            if (!primeiroErro) {
+                primeiroErro = {
+                    status: 'Runtime Error',
+                    details,
+                    executionTime: dur,
+                    testIndex: idx
+                };
+            }
+        } else {
+            const gotMatch = step.match(/GOT_B64:([A-Za-z0-9+/=]*)/);
+            const expMatch = step.match(/EXP_B64:([A-Za-z0-9+/=]*)/);
+
+            const got = gotMatch && gotMatch[1] ? Buffer.from(gotMatch[1], 'base64').toString('utf-8') : '';
+            const exp = expMatch && expMatch[1] ? Buffer.from(expMatch[1], 'base64').toString('utf-8') : '';
+            ultimoGot = got;
+
+            if (normalize(got) === normalize(exp)) {
+                passedCount++;
+            } else {
+                if (!primeiroErro) {
+                    primeiroErro = {
+                        status: 'Wrong Answer',
+                        message: 'A saída não corresponde!',
+                        input: testsOriginais[idx]?.input || '',
+                        got: got,
+                        expected: testsOriginais[idx]?.output || '',
+                        executionTime: dur,
+                        testIndex: idx
+                    };
+                }
+            }
+        }
+    }
+
+    const percentage = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
+
+    if (passedCount === totalCount && totalCount > 0) {
+        return {
+            status: 'Accepted',
+            message: 'Correto!',
+            executionTime: maxTime,
+            percentage: 100,
+            passedCount,
+            totalCount,
+            got: ultimoGot
+        };
+    }
+
+    if (primeiroErro) {
+        return {
+            ...primeiroErro,
+            executionTime: maxTime,
+            percentage,
+            passedCount,
+            totalCount
+        };
     }
 
     if (rawOutput.includes('STATUS:TIME_LIMIT')) {
         const timeMatch = rawOutput.match(/TIME:(\d+)/);
-        const executionTime = timeMatch ? parseInt(timeMatch[1], 10) : 0;
-        return { status: 'Time Limit', message: 'Tempo limite de execução excedido!', executionTime };
+        const executionTime = timeMatch ? parseInt(timeMatch[1], 10) : maxTime;
+        return { status: 'Time Limit', message: 'Tempo limite de execução excedido!', executionTime, percentage: 0, passedCount: 0, totalCount };
     }
 
     if (rawOutput.includes('STATUS:RUNTIME_ERROR')) {
         const timeMatch = rawOutput.match(/TIME:(\d+)/);
         const errMatch = rawOutput.match(/ERR_B64:([A-Za-z0-9+/=]+)/);
         const details = errMatch ? Buffer.from(errMatch[1], 'base64').toString('utf-8') : 'Runtime Error.';
-        return { status: 'Runtime Error', details, executionTime: timeMatch ? parseInt(timeMatch[1], 10) : 0 };
-    }
-
-    const steps = rawOutput.split('---STEP---').slice(1);
-    let maxTime = 0;
-
-    for (const step of steps) {
-        const idxMatch = step.match(/INDEX:(\d+)/);
-        const timeMatch = step.match(/TIME:(\d+)/);
-        const gotMatch = step.match(/GOT_B64:([A-Za-z0-9+/=]*)/);
-        const expMatch = step.match(/EXP_B64:([A-Za-z0-9+/=]*)/);
-
-        const idx = idxMatch ? parseInt(idxMatch[1], 10) : 0;
-        const dur = timeMatch ? parseInt(timeMatch[1], 10) : 0;
-        if (dur > maxTime) maxTime = dur;
-
-        const got = gotMatch ? Buffer.from(gotMatch[1], 'base64').toString('utf-8') : '';
-        const exp = expMatch ? Buffer.from(expMatch[1], 'base64').toString('utf-8') : '';
-
-        if (normalize(got) !== normalize(exp)) {
-            return {
-                status: 'Wrong Answer',
-                message: 'A saída não corresponde!',
-                input: testsOriginais[idx]?.input || '',
-                got: got,
-                expected: testsOriginais[idx]?.output || '',
-                executionTime: maxTime
-            };
-        }
+        return { status: 'Runtime Error', details, executionTime: timeMatch ? parseInt(timeMatch[1], 10) : maxTime, percentage: 0, passedCount: 0, totalCount };
     }
 
     return {
-        status: 'Accepted',
-        message: 'Correto!',
-        executionTime: maxTime
+        status: 'Runtime Error',
+        details: 'Erro na execução dos testes.',
+        executionTime: maxTime,
+        percentage,
+        passedCount,
+        totalCount
     };
 }
 
