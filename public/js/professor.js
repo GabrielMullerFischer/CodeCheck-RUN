@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputBuscaBancoUniversal = document.getElementById('input-busca-banco-universal');
     const inputBuscaBancoEx = document.getElementById('input-busca-banco-ex');
     const btnAtualizarTurma = document.getElementById('btnAtualizarTurma');
-    const containerTaxas = document.getElementById('container-taxas-exercicios');
+    const tbodyAlunosProgresso = document.getElementById('tbody-alunos-progresso');
     const tbodyRanking = document.getElementById('tbody-ranking-turma');
     const containerBancoUniversal = document.getElementById('container-banco-universal');
     const containerBancoEx = document.getElementById('container-banco-exercicios-comunidade');
@@ -39,8 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnPreview = document.getElementById('btnPreview');
     const btnDesvincularAtividade = document.getElementById('btnDesvincularAtividade');
 
-    const circleTaxaAcerto = document.getElementById('circle-taxa-acerto');
-    const circleTempoMedio = document.getElementById('circle-tempo-medio');
     const selectProfExRanking = document.getElementById('select-prof-ex-ranking');
     const tbodyProfRankingEx = document.getElementById('tbody-prof-ranking-exercicio');
     const cardProfLiderEx = document.getElementById('card-prof-lider-ex');
@@ -76,6 +74,63 @@ document.addEventListener('DOMContentLoaded', () => {
     const msgConflitoEx = document.getElementById('msgConflitoExercicio');
     let exIdPendenteRenomear = null;
 
+    const textareaInspecao = document.getElementById('modalInspecionarEditor');
+    const selectTemaProf = document.getElementById('select-tema-editor-prof');
+    const btnCopiarCodigoAluno = document.getElementById('btnCopiarCodigoAluno');
+
+    const temaProfSalvo = localStorage.getItem('codecheck_prof_editor_theme') || 'dracula';
+    if (selectTemaProf) selectTemaProf.value = temaProfSalvo;
+
+    let editorInspecaoCM = null;
+    if (textareaInspecao && window.CodeMirror) {
+        editorInspecaoCM = CodeMirror.fromTextArea(textareaInspecao, {
+            mode: 'text/x-csrc',
+            theme: temaProfSalvo,
+            lineNumbers: true,
+            readOnly: false,
+            indentUnit: 4,
+            tabSize: 4
+        });
+    }
+
+    if (selectTemaProf && editorInspecaoCM) {
+        selectTemaProf.addEventListener('change', () => {
+            const novoTema = selectTemaProf.value;
+            editorInspecaoCM.setOption('theme', novoTema);
+            localStorage.setItem('codecheck_prof_editor_theme', novoTema);
+        });
+    }
+
+    if (btnCopiarCodigoAluno && editorInspecaoCM) {
+        btnCopiarCodigoAluno.onclick = async () => {
+            const codigo = editorInspecaoCM.getValue();
+            if (!codigo || codigo.startsWith('//')) return;
+
+            try {
+                await navigator.clipboard.writeText(codigo);
+                const textoOriginal = btnCopiarCodigoAluno.innerHTML;
+                btnCopiarCodigoAluno.innerHTML = '<i class="fas fa-check text-success mr-1"></i> Copiado!';
+                btnCopiarCodigoAluno.classList.remove('btn-outline-secondary');
+                btnCopiarCodigoAluno.classList.add('btn-outline-success');
+                mostrarToast("Código copiado para a área de transferência!", "success", 2000);
+
+                setTimeout(() => {
+                    btnCopiarCodigoAluno.innerHTML = textoOriginal;
+                    btnCopiarCodigoAluno.classList.remove('btn-outline-success');
+                    btnCopiarCodigoAluno.classList.add('btn-outline-secondary');
+                }, 2000);
+            } catch (err) {
+                mostrarToast("Não foi possível copiar o código automaticamente.", "warning");
+            }
+        };
+    }
+
+    $('#modalHistoricoAluno').on('shown.bs.modal', () => {
+        if (editorInspecaoCM) {
+            editorInspecaoCM.refresh();
+        }
+    });
+
     let idListaAtivaVinculada = null;
     let listaAtivaObjeto = null;
     let dadosTurmaCarregados = [];
@@ -85,8 +140,23 @@ document.addEventListener('DOMContentLoaded', () => {
     let listaExerciciosModal = [];
     let indiceExercicioModal = 0;
     let metricasGlobaisExercicios = [];
+    let totalExerciciosAtividade = 0;
     let idExercicioParaExcluir = null;
-    let maxExecutionTimeLimitMs = 7200000;
+    let maxExecutionTimeLimitMs = 120000;
+
+    function formatarTextoTempoMaximo(ms) {
+        if (!ms) return '';
+        if (ms >= 3600000) {
+            const h = (ms / 3600000).toFixed(1).replace('.0', '');
+            return `Máximo permitido: ${ms.toLocaleString()} ms - equivalente a ${h} ${h === '1' ? 'hora' : 'horas'}`;
+        } else if (ms >= 60000) {
+            const m = (ms / 60000).toFixed(1).replace('.0', '');
+            return `Máximo permitido: ${ms.toLocaleString()} ms - equivalente a ${m} ${m === '1' ? 'minuto' : 'minutos'}`;
+        } else {
+            const s = (ms / 1000).toFixed(1).replace('.0', '');
+            return `Máximo permitido: ${ms.toLocaleString()} ms - equivalente a ${s} segundos`;
+        }
+    }
 
     document.addEventListener('wheel', (e) => {
         if (document.activeElement.type === 'number') {
@@ -310,9 +380,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.maxExecutionTimeLimitMs) {
                 maxExecutionTimeLimitMs = data.maxExecutionTimeLimitMs;
-                const horas = (maxExecutionTimeLimitMs / 3600000).toFixed(1).replace('.0', '');
                 if (labelMaxTempo) {
-                    labelMaxTempo.innerText = `Máximo permitido: ${maxExecutionTimeLimitMs.toLocaleString()} ms - equivalente a ${horas} horas`;
+                    labelMaxTempo.innerText = formatarTextoTempoMaximo(maxExecutionTimeLimitMs);
+                }
+                const inputTempoEl = document.getElementById('modal-tempo-limite');
+                if (inputTempoEl) {
+                    inputTempoEl.max = maxExecutionTimeLimitMs;
                 }
             }
 
@@ -494,7 +567,11 @@ document.addEventListener('DOMContentLoaded', () => {
         containerBancoEx.querySelectorAll('.btn-importar-ex').forEach(btn => {
             btn.onclick = async () => {
                 const exerciseId = btn.dataset.exid;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                 await executarImportacaoExercicio(exerciseId, null);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-file-import"></i>';
             };
         });
     }
@@ -736,10 +813,10 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.onclick = async () => {
                 const listId = btn.dataset.listid;
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Importando...';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                 await executarImportacaoLista(listId, null, null);
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-file-import mr-1"></i> Importar';
+                btn.innerHTML = '<i class="fas fa-file-import"></i>';
             };
         });
     }
@@ -1123,8 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 if (val > maxExecutionTimeLimitMs) {
-                    const horas = (maxExecutionTimeLimitMs / 3600000).toFixed(1).replace('.0', '');
-                    mostrarToast(`O tempo limite ultrapassa o teto máximo permitido (${maxExecutionTimeLimitMs.toLocaleString()} ms - ${horas}h).`, "danger");
+                    mostrarToast(formatarTextoTempoMaximo(maxExecutionTimeLimitMs), "danger");
                     return;
                 }
                 timeLimit = val;
@@ -1339,7 +1415,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itens = containerBancoEx.querySelectorAll('.border-bottom');
             itens.forEach(item => {
                 const texto = item.textContent.toLowerCase();
-                item.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
+                containerItem.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
             });
         });
     }
@@ -1349,8 +1425,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
         if (!activityId) return;
 
-        if (tbodyRanking) {
-            tbodyRanking.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando dados da turma...</td></tr>';
+        if (tbodyAlunosProgresso) {
+            tbodyAlunosProgresso.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando dados da turma...</td></tr>';
         }
 
         try {
@@ -1358,62 +1434,70 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (!data.success) {
-                if (tbodyRanking) tbodyRanking.innerHTML = `<tr><td colspan="3" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
+                if (tbodyAlunosProgresso) tbodyAlunosProgresso.innerHTML = `<tr><td colspan="4" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
                 return;
             }
 
             dadosTurmaCarregados = data.ranking || [];
             metricasGlobaisExercicios = data.metricasExercicios || [];
             rankingPorExercicioCarregado = data.rankingPorExercicio || {};
+            totalExerciciosAtividade = data.totalExercicios || metricasGlobaisExercicios.length || 0;
 
-            if (circleTaxaAcerto) {
-                circleTaxaAcerto.innerText = `${data.taxaGeralAcertos || 0}%`;
-            }
-            if (circleTempoMedio) {
-                circleTempoMedio.innerText = data.tempoMedioMs > 0 ? `${data.tempoMedioMs} ms` : '-';
-            }
+            if (tbodyAlunosProgresso) {
+                tbodyAlunosProgresso.innerHTML = '';
+                if (dadosTurmaCarregados.length === 0) {
+                    tbodyAlunosProgresso.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum aluno realizou submissões nesta atividade ainda.</td></tr>';
+                } else {
+                    const alunosOrdemAlfabetica = [...dadosTurmaCarregados].sort((a, b) => 
+                        (a.userName || '').localeCompare(b.userName || '', undefined, { sensitivity: 'base' })
+                    );
 
-            if (containerTaxas) {
-                containerTaxas.innerHTML = '';
-                data.metricasExercicios.forEach(m => {
-                    const row = document.createElement('div');
-                    row.className = 'border-bottom py-1 small d-flex justify-content-between align-items-center';
-                    row.innerHTML = `
-                        <span class="text-truncate mr-2 font-weight-bold" style="max-width: 180px;" title="${m.title}">${m.title}</span>
-                        <span>
-                            <span class="badge ${m.taxaAcerto >= 70 ? 'badge-success' : (m.taxaAcerto >= 40 ? 'badge-warning' : 'badge-danger')}">${m.taxaAcerto}%</span>
-                            <span class="text-muted ml-1">(${m.alunosQueResolveram}/${m.totalEnvios})</span>
-                        </span>
-                    `;
-                    containerTaxas.appendChild(row);
-                });
+                    alunosOrdemAlfabetica.forEach((aluno) => {
+                        const tr = document.createElement('tr');
+                        const todosCorretos = aluno.totalResolvidos === totalExerciciosAtividade && totalExerciciosAtividade > 0;
+                        const badgeCor = todosCorretos ? 'badge-success' : (aluno.totalResolvidos > 0 ? 'badge-primary' : 'badge-secondary');
+
+                        tr.innerHTML = `
+                            <td>
+                                <strong>${aluno.userName}</strong>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge ${badgeCor} font-weight-bold px-2 py-1" style="font-size: 0.85rem;">
+                                    ${aluno.totalResolvidos} / ${totalExerciciosAtividade} corretos
+                                </span>
+                            </td>
+                            <td class="text-center text-muted font-weight-bold">
+                                ${aluno.totalTentativas} envios
+                            </td>
+                            <td class="text-right pr-4">
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${aluno.userId}" title="Inspecionar código do aluno">
+                                    <i class="fas fa-eye mr-1"></i> Ver Submissões
+                                </button>
+                            </td>
+                        `;
+                        tbodyAlunosProgresso.appendChild(tr);
+                    });
+
+                    tbodyAlunosProgresso.querySelectorAll('.btn-abrir-dossie').forEach(btn => {
+                        btn.onclick = () => abrirDossieAluno(btn.dataset.userid);
+                    });
+                }
             }
 
             if (tbodyRanking) {
                 tbodyRanking.innerHTML = '';
                 if (dadosTurmaCarregados.length === 0) {
-                    tbodyRanking.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">Nenhum aluno realizou submissões nesta atividade ainda.</td></tr>';
+                    tbodyRanking.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum acerto registrado.</td></tr>';
                 } else {
-                    dadosTurmaCarregados.forEach((aluno) => {
+                    dadosTurmaCarregados.forEach((aluno, idx) => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td>
-                                <strong>${aluno.userName}</strong>
-                            </td>
-                            <td class="text-center font-weight-bold text-secondary">
-                                ${aluno.tempoTotalMs > 0 ? `${aluno.tempoTotalMs} ms` : (aluno.totalResolvidos > 0 ? '< 1 ms' : '-')}
-                            </td>
-                            <td class="text-right pr-4">
-                                <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${aluno.userId}" title="Inspecionar código do aluno">
-                                    <i class="fas fa-eye mr-1"></i> Ver
-                                </button>
-                            </td>
+                            <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
+                            <td><strong>${aluno.userName}</strong></td>
+                            <td class="text-center font-weight-bold text-primary">${aluno.totalResolvidos}</td>
+                            <td class="text-right text-muted">${aluno.tempoTotalMs > 0 ? aluno.tempoTotalMs + ' ms' : '-'}</td>
                         `;
                         tbodyRanking.appendChild(tr);
-                    });
-
-                    tbodyRanking.querySelectorAll('.btn-abrir-dossie').forEach(btn => {
-                        btn.onclick = () => abrirDossieAluno(btn.dataset.userid);
                     });
                 }
             }
@@ -1445,7 +1529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!dadosEx || !dadosEx.ranking || dadosEx.ranking.length === 0) {
             if (cardProfLiderEx) cardProfLiderEx.style.display = 'none';
-            tbodyProfRankingEx.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum aluno acertou este exercício ainda.</td></tr>';
+            tbodyProfRankingEx.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Nenhum aluno acertou este exercício ainda.</td></tr>';
             return;
         }
 
@@ -1462,18 +1546,9 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
                 <td><strong>${aluno.userName}</strong></td>
-                <td class="text-center font-weight-bold text-secondary">${aluno.executionTime} ms</td>
-                <td class="text-right pr-3">
-                    <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${aluno.userId}">
-                        <i class="fas fa-eye mr-1"></i> Ver
-                    </button>
-                </td>
+                <td class="text-right font-weight-bold text-secondary">${aluno.executionTime} ms</td>
             `;
             tbodyProfRankingEx.appendChild(tr);
-        });
-
-        tbodyProfRankingEx.querySelectorAll('.btn-abrir-dossie').forEach(btn => {
-            btn.onclick = () => abrirDossieAluno(btn.dataset.userid);
         });
     }
 
@@ -1500,12 +1575,12 @@ document.addEventListener('DOMContentLoaded', () => {
             btnRecompilar.onclick = async () => {
                 if (!submissaoAtivaParaCompilar) return;
 
-                const code = document.getElementById('modalInspecionarEditor').value;
+                const code = editorInspecaoCM ? editorInspecaoCM.getValue() : document.getElementById('modalInspecionarEditor').value;
                 const divResultado = document.getElementById('modalInspecionarResultado');
                 const activityIdMeta = document.querySelector('meta[name="activity-id"]');
                 const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
 
-                divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Executando testes no Docker...</div>';
+                divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Compilando...</div>';
                 btnRecompilar.disabled = true;
 
                 try {
@@ -1597,18 +1672,33 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('count-acertos').innerText = acertosEx.length;
         document.getElementById('count-erros').innerText = errosEx.length;
 
-        const editor = document.getElementById('modalInspecionarEditor');
+        const boxPlacarAcertos = document.getElementById('box-placar-acertos');
+        const boxPlacarErros = document.getElementById('box-placar-erros');
+        if (boxPlacarAcertos) boxPlacarAcertos.innerText = acertosEx.length;
+        if (boxPlacarErros) boxPlacarErros.innerText = errosEx.length;
+
         const labelArquivo = document.getElementById('labelInspecaoArquivo');
         const divResultado = document.getElementById('modalInspecionarResultado');
         const btnCompilar = document.getElementById('btnRecompilarCodigoAluno');
-        editor.value = '// Selecione um envio acima para carregar o código...';
+        
+        if (editorInspecaoCM) {
+            editorInspecaoCM.setValue('// Selecione um envio acima para carregar o código...');
+        } else {
+            document.getElementById('modalInspecionarEditor').value = '// Selecione um envio acima para carregar o código...';
+        }
+        
         divResultado.innerHTML = '';
         btnCompilar.disabled = true;
+        if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
         submissaoAtivaParaCompilar = null;
 
-        let menorTempo = null;
+        let idMelhorSubmissao = null;
+
         if (acertosEx.length > 0) {
-            menorTempo = Math.min(...acertosEx.map(s => s.executionTime));
+            acertosEx.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            const menorTempo = Math.min(...acertosEx.map(s => s.executionTime));
+            const candidatasMelhor = acertosEx.filter(s => s.executionTime === menorTempo);
+            idMelhorSubmissao = candidatasMelhor[0]._id;
         }
 
         const tbodyAcertos = document.getElementById('tbody-modal-acertos');
@@ -1616,15 +1706,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (acertosEx.length === 0) {
             tbodyAcertos.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Nenhum acerto registrado para este exercício.</td></tr>';
         } else {
-            acertosEx.forEach(sub => {
+            acertosEx.forEach((sub) => {
                 const tr = document.createElement('tr');
-                const isMelhor = sub.executionTime === menorTempo;
+                const isMelhor = String(sub._id) === String(idMelhorSubmissao);
                 const dataFormat = new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                 tr.innerHTML = `
                     <td>
                         <span class="badge badge-success mr-1">Accepted</span>
-                        ${isMelhor ? '<span class="badge badge-warning text-dark font-weight-bold"><i class="fas fa-star mr-1"></i>Melhor Tempo (Imunizado)</span>' : ''}
+                        ${isMelhor ? '<span class="badge badge-warning text-dark font-weight-bold"><i class="fas fa-star mr-1"></i>Melhor Tempo</span>' : ''}
                     </td>
                     <td><strong>${sub.executionTime} ms</strong></td>
                     <td class="text-muted small">${dataFormat}</td>
@@ -1644,12 +1734,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (errosEx.length === 0) {
             tbodyErros.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Nenhum erro registrado para este exercício.</td></tr>';
         } else {
-            errosEx.forEach(sub => {
+            errosEx.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            errosEx.forEach((sub) => {
                 const tr = document.createElement('tr');
                 const dataFormat = new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                 tr.innerHTML = `
-                    <td><span class="badge badge-danger">${sub.status}</span></td>
+                    <td>
+                        <span class="badge badge-danger mr-1">${sub.status}</span>
+                    </td>
                     <td class="text-muted small">${dataFormat}</td>
                     <td class="text-right">
                         <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 btn-carregar-codigo font-weight-bold" 
@@ -1667,20 +1760,59 @@ document.addEventListener('DOMContentLoaded', () => {
             const exId = this.dataset.ex;
             const exTitle = this.dataset.title;
 
-            labelArquivo.innerHTML = `<i class="fas fa-code mr-1"></i> Inspecionando: <strong>${exTitle}</strong> (${codePath})`;
-            editor.value = "// Carregando código do MinIO...";
+            $('#modalHistoricoAluno tr').removeClass('table-active');
+            $(this).closest('tr').addClass('table-active');
+
+            labelArquivo.innerHTML = `<i class="fas fa-code mr-1"></i> Inspecionando: <strong>${exTitle}</strong>`;
+            if (editorInspecaoCM) {
+                editorInspecaoCM.setValue("// Carregando código do MinIO...");
+            } else {
+                document.getElementById('modalInspecionarEditor').value = "// Carregando código do MinIO...";
+            }
             divResultado.innerHTML = '';
             submissaoAtivaParaCompilar = { exerciseId: exId };
 
             try {
-                const res = await fetch(`/judge/professor/submissao-codigo?codePath=${encodeURIComponent(codePath)}` + (ltiToken ? `?ltik=${ltiToken}` : ''));
+                const res = await fetch(`/judge/professor/submissao-codigo` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ codePath })
+                });
                 const d = await res.json();
-                editor.value = d.code || "// Sem código gravado.";
-                btnCompilar.disabled = false;
+                if (res.ok && d.success && d.code) {
+                    if (editorInspecaoCM) {
+                        editorInspecaoCM.setValue(d.code);
+                        editorInspecaoCM.refresh();
+                    } else {
+                        document.getElementById('modalInspecionarEditor').value = d.code;
+                    }
+                    btnCompilar.disabled = false;
+                    if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = false;
+                } else {
+                    const msgErro = d.error ? `// ${d.error}` : "// Sem código gravado.";
+                    if (editorInspecaoCM) {
+                        editorInspecaoCM.setValue(msgErro);
+                    } else {
+                        document.getElementById('modalInspecionarEditor').value = msgErro;
+                    }
+                    btnCompilar.disabled = true;
+                    if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
+                }
             } catch (err) {
-                editor.value = "// Erro ao buscar arquivo no MinIO.";
+                if (editorInspecaoCM) {
+                    editorInspecaoCM.setValue("// Erro de conexão ao buscar arquivo no MinIO.");
+                } else {
+                    document.getElementById('modalInspecionarEditor').value = "// Erro de conexão ao buscar arquivo no MinIO.";
+                }
+                btnCompilar.disabled = true;
+                if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
             }
         });
+
+        const btnAutoInspect = $('#modalHistoricoAluno .tab-pane.active .btn-carregar-codigo').first();
+        if (btnAutoInspect.length > 0) {
+            btnAutoInspect.click();
+        }
     }
 
     function limparModalNovoExercicio() {
@@ -1765,6 +1897,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnDesvincularAtividade.innerHTML = '<i class="fas fa-unlink mr-1"></i> Remover Submissão';
             }
         };
+    }
+
+    if (window.$) {$('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            if (e.target.id === 'tab-gerenciar-link' && idListaAtivaVinculada) {
+                carregarMetricasTurma();
+            }
+        });
     }
 
     carregarEstadoInicial(true);

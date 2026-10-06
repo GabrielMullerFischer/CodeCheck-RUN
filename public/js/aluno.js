@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnConfirmarInicio = document.getElementById('btnConfirmarInicio');
     let intervaloTimer = null;
     let timerBloqueado = false;
+    let modalConfirmandoAtivo = false;
 
     const rascunhosSessao = {};
     let listaExercicios = [];
@@ -57,6 +58,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     let indiceSubmissaoAtiva = -1;
     let linhaErroAtiva = null;
     let bloquearEventoChange = false;
+
+    function pedirConfirmacaoAluno({
+        titulo = "Tem certeza?",
+        mensagem = "",
+        textoConfirmar = "Confirmar",
+        corConfirmar = "btn-primary",
+        somenteAviso = false
+    } = {}) {
+        return new Promise((resolve) => {
+            const modalEl = $('#modalConfirmacaoAluno');
+            const tituloElModal = document.getElementById('modalConfirmAlunoTitulo');
+            const msgElModal = document.getElementById('modalConfirmAlunoMsg');
+            const btnAcao = document.getElementById('btnModalConfirmAlunoAcao');
+            const btnCancelar = document.getElementById('btnModalConfirmAlunoCancelar');
+
+            if (tituloElModal) tituloElModal.innerText = titulo;
+            if (msgElModal) msgElModal.innerHTML = mensagem;
+            
+            if (btnAcao) {
+                btnAcao.className = `btn ${corConfirmar} px-4 font-weight-bold shadow-sm`;
+                btnAcao.innerText = textoConfirmar;
+            }
+
+            if (btnCancelar) {
+                btnCancelar.style.display = somenteAviso ? 'none' : 'inline-block';
+            }
+
+            let confirmou = false;
+
+            btnAcao.onclick = () => {
+                confirmou = true;
+                modalEl.modal('hide');
+            };
+
+            modalEl.off('hidden.bs.modal').on('hidden.bs.modal', () => {
+                modalConfirmandoAtivo = false;
+                if (btnCancelar) btnCancelar.style.display = 'inline-block';
+                resolve(confirmou);
+            });
+
+            modalConfirmandoAtivo = true;
+            modalEl.modal('show');
+        });
+    }
 
     const cKeywords = [
         'int', 'float', 'double', 'char', 'void', 'return', 'printf', 'scanf',
@@ -186,7 +231,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             .replace(/'/g, "&#039;");
     }
 
-    // Renderiza a caixa de resultado na tela (usado na compilação e ao restaurar o log do MinIO)
     function renderizarFeedbackJuiz(data) {
         if (!resultDiv) return;
         if (!data || !data.status) {
@@ -207,6 +251,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const pct = typeof data.percentage === 'number' ? data.percentage : (data.status === 'Accepted' ? 100 : 0);
         const passed = typeof data.passedCount === 'number' ? data.passedCount : 0;
         const total = typeof data.totalCount === 'number' ? data.totalCount : 0;
+
+        let badgePorcentagem = '';
+        if (total > 0) {
+            badgePorcentagem = `<span class="badge ${data.status === 'Accepted' ? 'badge-success' : 'badge-light border text-danger'} font-weight-bold" style="font-size: 0.85rem;"><i class="fas fa-chart-pie mr-1"></i>${pct}% de acerto (${passed}/${total} testes)</span>`;
+        }
 
         let tempoFormatado = '-';
         if (typeof data.executionTime === 'number') {
@@ -289,14 +338,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         } else if (data.status === 'Time Limit') {
             removerDestaqueErro();
+            const ehLaranja = !!data.isSlowMatch;
+            const alertClass = ehLaranja ? 'alert-warning' : 'alert-danger';
+            const titulo = ehLaranja ? 'Tempo limite excedido (Lógica correta)' : 'Tempo limite excedido.';
+            const subTexto = ehLaranja 
+                ? (data.message || 'A saída coincide com o esperado, porém o tempo limite do exercício foi atingido. Tente otimizar seu algoritmo!')
+                : 'Verifique se há laços infinitos ou se a condição de parada do laço está correta.';
+
             resultDiv.innerHTML = `
-                <div class="alert alert-danger py-2">
+                <div class="alert ${alertClass} py-2">
                     ${cardDica}
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <strong>Tempo limite excedido.</strong>
+                        <strong>${titulo}</strong>
                         ${badgePorcentagem}
                     </div>
-                    <div class="small text-muted mt-1">Verifique se há loops infinitos.</div>
+                    <div class="small mt-1 text-dark">${escapeHtml(subTexto)}</div>
                 </div>
             `;
         } else {
@@ -545,12 +601,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                     posicionarCursorAposAspas();
                     iniciarContagemRegressiva(data.expiresAt, data.serverTime);
                 } else {
-                    alert(data.error || "Erro ao iniciar contagem de tempo.");
+                    await pedirConfirmacaoAluno({
+                        titulo: "Aviso",
+                        mensagem: data.error || "Erro ao iniciar contagem de tempo.",
+                        textoConfirmar: "OK",
+                        corConfirmar: "btn-secondary",
+                        somenteAviso: true
+                    });
                     btnConfirmarInicio.disabled = false;
                     btnConfirmarInicio.innerText = "Iniciar Atividade";
                 }
             } catch (err) {
-                alert("Falha de conexão ao iniciar contagem de tempo.");
+                await pedirConfirmacaoAluno({
+                    titulo: "Falha de Conexão",
+                    mensagem: "Não foi possível conectar ao servidor para iniciar o tempo.",
+                    textoConfirmar: "OK",
+                    corConfirmar: "btn-secondary",
+                    somenteAviso: true
+                });
                 btnConfirmarInicio.disabled = false;
                 btnConfirmarInicio.innerText = "Iniciar Atividade";
             }
@@ -566,20 +634,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (intervaloTimer) clearInterval(intervaloTimer);
 
-        intervaloTimer = setInterval(() => {
+        intervaloTimer = setInterval(async () => {
             const agoraServidor = Date.now() + delta;
             const restanteMs = expiresAt - agoraServidor;
 
             if (restanteMs <= 0) {
                 clearInterval(intervaloTimer);
+                intervaloTimer = null;
+                timerBloqueado = true;
+
                 valCronometro.innerText = "00:00:00";
                 badgeCronometro.className = "badge badge-danger p-2 mr-3 font-weight-bold";
                 editorCM.setOption('readOnly', true);
+                
                 if (btnSubmit) {
                     btnSubmit.disabled = true;
                     btnSubmit.dataset.esgotado = "true";
                 }
-                alert("O tempo limite para realização desta atividade encerrou! As submissões foram finalizadas.");
+                atualizarEstadoBotaoCompilar();
+
+                if (!modalConfirmandoAtivo) {
+                    await pedirConfirmacaoAluno({
+                        titulo: "Atividade Encerrada",
+                        mensagem: "O tempo limite para realização desta atividade encerrou! As submissões foram finalizadas.",
+                        textoConfirmar: "Entendido",
+                        corConfirmar: "btn-danger",
+                        somenteAviso: true
+                    });
+                }
                 return;
             }
 
@@ -822,7 +904,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Busca o código e o log bruto do MinIO
     async function buscarCarregarCodigoSubmissao(subId, apenasLog = false) {
         if (!apenasLog) {
             setCodigoNoEditor("// Carregando submissão anterior...");
@@ -877,7 +958,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 setCodigoNoEditor(rascunhosSessao[exAtual._id] || '');
                 posicionarCursorAposAspas();
 
-                // Ao voltar para o Rascunho Atual, recupera o log da última submissão oficial feita
                 if (listaSubmissoesMeta.length > 0) {
                     const ultima = listaSubmissoesMeta[listaSubmissoesMeta.length - 1];
                     await buscarCarregarCodigoSubmissao(ultima._id, true);
@@ -944,7 +1024,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         await carregarHistoricoSubmissoesExercicio(ex._id);
         await atualizarRankingEStatus();
 
-        // Se houver histórico para esta questão, restaura automaticamente o feedback da última submissão
         if (listaSubmissoesMeta && listaSubmissoesMeta.length > 0) {
             const ultimaSubmissao = listaSubmissoesMeta[listaSubmissoesMeta.length - 1];
             await buscarCarregarCodigoSubmissao(ultimaSubmissao._id, true);
@@ -968,7 +1047,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const exercicioAtual = listaExercicios[indiceAtual];
 
             if (!code) {
-                alert("Digite algum código para testar.");
+                await pedirConfirmacaoAluno({
+                    titulo: "Código Vazio",
+                    mensagem: "Por favor, escreva algum código antes de testar.",
+                    textoConfirmar: "OK",
+                    corConfirmar: "btn-secondary",
+                    somenteAviso: true
+                });
                 return;
             }
 
@@ -1044,7 +1129,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnSubmit.onclick = async () => {
             if (timerBloqueado) return;
             if (indiceSubmissaoAtiva !== -1) {
-                alert("É necessário voltar para a compilação atual para poder compilar.");
+                await pedirConfirmacaoAluno({
+                    titulo: "Submissão em Consulta",
+                    mensagem: "É necessário voltar ao rascunho atual para poder compilar uma nova versão.",
+                    textoConfirmar: "Entendido",
+                    corConfirmar: "btn-secondary",
+                    somenteAviso: true
+                });
                 return;
             }
 
@@ -1092,14 +1183,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (btnRestaurarCodigo) {
-        btnRestaurarCodigo.onclick = () => {
+        btnRestaurarCodigo.onclick = async () => {
             if (timerBloqueado) return;
             const exercicioAtual = listaExercicios[indiceAtual];
             if (!exercicioAtual) return;
 
             if (indiceSubmissaoAtiva !== -1) {
-                const subAtual = listaSubmissoesMeta[indiceSubmissaoAtiva];
-                const confirmar = confirm(`Deseja substituir seu Rascunho Atual pelo código do Envio ${indiceSubmissaoAtiva + 1}?`);
+                const confirmar = await pedirConfirmacaoAluno({
+                    titulo: "Recuperar Submissão",
+                    mensagem: `Deseja substituir seu Rascunho Atual pelo código do <strong>Envio ${indiceSubmissaoAtiva + 1}</strong>?`,
+                    textoConfirmar: "Substituir",
+                    corConfirmar: "btn-primary"
+                });
                 if (!confirmar) return;
 
                 rascunhosSessao[exercicioAtual._id] = editorCM.getValue();
@@ -1110,7 +1205,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            const confirmar = confirm("Deseja realmente restaurar para a estrutura inicial main()?");
+            const confirmar = await pedirConfirmacaoAluno({
+                titulo: "Restaurar Código",
+                mensagem: "Deseja realmente restaurar para a estrutura inicial main()?",
+                textoConfirmar: "Restaurar",
+                corConfirmar: "btn-warning text-dark"
+            });
             if (!confirmar) return;
 
             setCodigoNoEditor(MODELO_PADRAO);
@@ -1121,6 +1221,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             removerDestaqueErro();
             posicionarCursorAposAspas();
         };
+    }
+
+    if (window.$) {
+        $('#modalRankingGeral').on('show.bs.modal', function () {
+            atualizarRankingEStatus();
+        });
     }
 
     checarTimerAtividade();

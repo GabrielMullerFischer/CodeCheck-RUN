@@ -9,7 +9,7 @@ const Exercise = require('../models/Exercise');
 const Submission = require('../models/Submission');
 const ActivityAttempt = require('../models/ActivityAttempt');
 
-const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
+const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 30000;
 
 function isTestUser(userId, session, body) {
@@ -167,11 +167,9 @@ router.post('/submit', async (req, res) => {
 
         const isProfessorReal = req.session?.isProfessor === true || userId === 'professor_test';
 
-        // Validações antifraude e restrições para alunos
         if (!isProfessorReal && userId !== 'preview_user' && activityId && activityId !== 'preview') {
             const configAtividade = await ActivityConfig.findOne({ activityId });
             
-            // Trava de Tempo Limite da Avaliação
             if (configAtividade && configAtividade.hasTimeLimit) {
                 const attempt = await ActivityAttempt.findOne({ userId, activityId });
                 if (!attempt) {
@@ -182,7 +180,6 @@ router.post('/submit', async (req, res) => {
                 }
             }
 
-            // Validação de limite de tentativas
             if (configAtividade && configAtividade.isEvaluative) {
                 const totalTentativas = await Submission.countDocuments({
                     userId,
@@ -200,7 +197,6 @@ router.post('/submit', async (req, res) => {
 
         const isModoTeste = isTestUser(userId, req.session, req.body);
 
-        // Só salva rascunho se NÃO for professor testando
         if (!isModoTeste) {
             await minioService.salvarRascunho(userId, activityId || 'preview', idExercicioFinal, code);
         }
@@ -221,7 +217,6 @@ router.post('/submit', async (req, res) => {
         const isAccepted = resultado.status === 'Accepted';
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
 
-        // Apenas o teste interno não grava histórico
         if (isModoTeste) {
             return res.json({
                 ...resultado,
@@ -230,7 +225,6 @@ router.post('/submit', async (req, res) => {
             });
         }
 
-        // Salva o arquivo de código no MinIO
         const caminhoMinio = await minioService.arquivarSubmissao(
             userId, 
             activityId || 'preview', 
@@ -239,7 +233,6 @@ router.post('/submit', async (req, res) => {
             code
         );
 
-        // Salva o log bruto estruturado em formato JSON no MinIO
         const caminhoLog = caminhoMinio.replace(/\.c$/, '.json');
         const logPayload = JSON.stringify({
             status: resultado.status,
@@ -251,11 +244,12 @@ router.post('/submit', async (req, res) => {
             percentage: typeof resultado.percentage === 'number' ? resultado.percentage : 0,
             passedCount: resultado.passedCount || 0,
             totalCount: resultado.totalCount || 0,
+            isSlowMatch: !!resultado.isSlowMatch,
+            message: resultado.message || '',
             didacticHint: dicaDidatica
         });
         await minioService.salvarArquivo(caminhoLog, logPayload);
 
-        // Grava no MongoDB com o caminho do código e do log
         await Submission.create({
             userId,
             userName,
@@ -318,7 +312,6 @@ router.post('/test-custom', async (req, res) => {
         const tempoGastoMs = resultado.executionTime || 0;
 
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
-
         const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
 
         res.json({
@@ -374,14 +367,25 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
             return res.status(403).json({ error: "Não autorizado a acessar esta submissão." });
         }
 
-        const codigo = await minioService.lerArquivoPorPath(sub.codePath);
+        let codigo = '// Código não disponível.';
+        try {
+            if (sub.codePath) {
+                codigo = await minioService.lerArquivoPorPath(sub.codePath);
+            }
+        } catch (e) {
+            codigo = '// Arquivo de código não localizado no armazenamento.';
+        }
         
         let logResultado = null;
-        const caminhoLog = sub.logPath || sub.codePath.replace(/\.c$/, '.json');
+        const caminhoLog = sub.logPath || (sub.codePath ? sub.codePath.replace(/\.c$/, '.json') : '');
         try {
-            const rawLog = await minioService.lerArquivoPorPath(caminhoLog);
-            logResultado = JSON.parse(rawLog);
-        } catch {
+            if (caminhoLog) {
+                const rawLog = await minioService.lerArquivoPorPath(caminhoLog);
+                logResultado = JSON.parse(rawLog);
+            }
+        } catch {}
+
+        if (!logResultado) {
             logResultado = {
                 status: sub.status,
                 executionTime: sub.executionTime,
@@ -397,7 +401,8 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
             resultado: logResultado 
         });
     } catch (e) {
-        res.status(404).json({ error: "Erro ao carregar arquivos da submissão do MinIO." });
+        console.error("Erro ao carregar submissão:", e);
+        res.status(500).json({ error: "Erro interno ao consultar submissão." });
     }
 });
 
@@ -458,20 +463,30 @@ router.get('/ranking', async (req, res) => {
         let meuTempoEx = null;
 
         if (exerciseId) {
-            const subsEx = submissoes.filter(s => String(s.exerciseId) === String(exerciseId) && s.isAccepted);
-            const melhoresPorAluno = {};
+            const subsEx = submissoes
+                .filter(s => String(s.exerciseId) === String(exerciseId) && s.isAccepted)
+                .sort((a, b) => {
+                    if (a.executionTime !== b.executionTime) return a.executionTime - b.executionTime;
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                });
 
+            const melhoresPorAluno = {};
             subsEx.forEach(sub => {
-                if (!melhoresPorAluno[sub.userId] || sub.executionTime < melhoresPorAluno[sub.userId].executionTime) {
+                if (!melhoresPorAluno[sub.userId]) {
                     melhoresPorAluno[sub.userId] = {
                         userId: sub.userId,
                         userName: sub.userName || 'Aluno',
-                        executionTime: sub.executionTime
+                        executionTime: sub.executionTime,
+                        createdAt: sub.createdAt
                     };
                 }
             });
 
-            rankingExercicio = Object.values(melhoresPorAluno).sort((a, b) => a.executionTime - b.executionTime);
+            rankingExercicio = Object.values(melhoresPorAluno).sort((a, b) => {
+                if (a.executionTime !== b.executionTime) return a.executionTime - b.executionTime;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+
             const posIdx = rankingExercicio.findIndex(r => r.userId === userId);
             if (posIdx !== -1) {
                 minhaPosicaoEx = posIdx + 1;

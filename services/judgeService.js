@@ -1,6 +1,7 @@
 const { k8sApi, namespace } = require('../config/kubernetes');
 
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 4;
+const BENCHMARK_ROUNDS = parseInt(process.env.BENCHMARK_ROUNDS, 10) || 5;
 let activeExecutions = 0;
 const executionQueue = [];
 
@@ -65,17 +66,17 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
     const podName = containerName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     const targetNs = process.env.K8S_NAMESPACE || namespace || 'default';
 
-    const cpuReq = process.env.K8S_CPU_REQUEST || '500m';
-    const cpuLim = process.env.K8S_CPU_LIMIT || '500m';
+    const cpuReq = process.env.K8S_CPU_REQUEST || '1000m';
+    const cpuLim = process.env.K8S_CPU_LIMIT || '1000m';
     const memReq = process.env.K8S_MEMORY_REQUEST || '512Mi';
     const memLim = process.env.K8S_MEMORY_LIMIT || '512Mi';
     const image = process.env.K8S_IMAGE || 'gcc:latest';
 
     const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
     const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : limiteCompiladorMs;
-    const timeoutAlunoSec = Math.max(1, Math.ceil(timeoutAlunoMs / 1000));
+    const timeoutHardSec = Math.min(Math.max(1, Math.ceil((timeoutAlunoMs * 5) / 1000)), 30);
 
-    const runnerScript = gerarScriptSandbox(code, tests, timeoutAlunoSec);
+    const runnerScript = gerarScriptSandbox(code, tests, timeoutHardSec, BENCHMARK_ROUNDS);
     const b64Runner = Buffer.from(runnerScript, 'utf-8').toString('base64');
 
     const podManifest = {
@@ -128,9 +129,9 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
         }
 
         const totalTestes = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
-        const tempoEsperaNodeMs = (timeoutAlunoMs * totalTestes) + 20000;
+        const tempoEsperaNodeMs = (timeoutHardSec * 1000 * totalTestes) + 25000;
         const outputBruto = await aguardarPodFinalizar(podName, targetNs, tempoEsperaNodeMs);
-        return processarResultadoSandbox(outputBruto, tests);
+        return processarResultadoSandbox(outputBruto, tests, timeoutAlunoMs);
     } catch (err) {
         if (err.message && err.message.includes('Tempo esgotado aguardando execução do Pod')) {
             return {
@@ -165,10 +166,15 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
     }
 }
 
-function gerarScriptSandbox(code, tests, timeoutSec) {
+function gerarScriptSandbox(code, tests, timeoutSec, totalRounds = 5) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
+    const totalTests = Array.isArray(tests) ? tests.length : 0;
 
-    let scriptTestes = '';
+    let scriptTestes = `
+HAD_FAIL=0
+SUM_R1=0
+`;
+
     tests.forEach((t, i) => {
         const b64In = Buffer.from(t.input || '', 'utf-8').toString('base64');
         const b64Exp = Buffer.from(t.output || '', 'utf-8').toString('base64');
@@ -184,6 +190,7 @@ timeout -k 1s -s 9 "${timeoutSec}s" ./prog < in_${i}.txt > got_${i}.txt 2> err_$
 EXIT_CODE=$?
 END_MS=$(date +%s%3N)
 DUR=$((END_MS - START_MS))
+SUM_R1=$((SUM_R1 + DUR))
 
 echo "---STEP---"
 echo "INDEX:${i}"
@@ -191,16 +198,41 @@ echo "TIME:$DUR"
 
 if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
     echo "STATUS:TIME_LIMIT"
+    HAD_FAIL=1
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "STATUS:RUNTIME_ERROR"
     echo "ERR_B64:$(base64 -w 0 < err_${i}.txt 2>/dev/null || echo '')"
+    HAD_FAIL=1
 else
     echo "STATUS:OK"
     echo "GOT_B64:$(base64 -w 0 < got_${i}.txt 2>/dev/null || echo '')"
     echo "EXP_B64:$(base64 -w 0 < exp_${i}.txt 2>/dev/null || echo '')"
+
+    tr -d '\\r' < got_${i}.txt | sed -e 's/[[:space:]]*$//' > norm_got_${i}.txt
+    tr -d '\\r' < exp_${i}.txt | sed -e 's/[[:space:]]*$//' > norm_exp_${i}.txt
+    if ! cmp -s norm_got_${i}.txt norm_exp_${i}.txt; then
+        HAD_FAIL=1
+    fi
 fi
 `;
     });
+
+    scriptTestes += `
+ROUNDS_LIST="$SUM_R1"
+# Roda as rodadas adicionais sem travas artificiais se passou 100% na primeira
+if [ $HAD_FAIL -eq 0 ] && [ ${totalRounds} -gt 1 ]; then
+    for ((r=2; r<=${totalRounds}; r++)); do
+        ROUND_START=$(date +%s%3N)
+        for ((idx=0; idx<${totalTests}; idx++)); do
+            ./prog < in_\${idx}.txt > /dev/null 2>&1
+        done
+        ROUND_END=$(date +%s%3N)
+        ROUND_DUR=$((ROUND_END - ROUND_START))
+        ROUNDS_LIST="\${ROUNDS_LIST},\${ROUND_DUR}"
+    done
+fi
+echo "BENCHMARK_ROUNDS:$ROUNDS_LIST"
+`;
 
     return `#!/usr/bin/env bash
 mkdir -p /sandbox && cd /sandbox
@@ -258,7 +290,7 @@ async function aguardarPodFinalizar(podName, ns, timeoutMs) {
     throw new Error(`Tempo esgotado aguardando execução do Pod no Kubernetes (ultrapassou ${maxWaitMs / 1000}s).`);
 }
 
-function processarResultadoSandbox(rawOutput, testsOriginais) {
+function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = 30000) {
     const totalCount = Array.isArray(testsOriginais) ? testsOriginais.length : 0;
 
     if (!rawOutput) {
@@ -273,6 +305,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais) {
 
     const steps = rawOutput.split('---STEP---').slice(1);
     let maxTime = 0;
+    let sumTimeR1 = 0;
     let passedCount = 0;
     let primeiroErro = null;
     let ultimoGot = '';
@@ -284,6 +317,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais) {
 
         const idx = idxMatch ? parseInt(idxMatch[1], 10) : 0;
         const dur = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+        sumTimeR1 += dur;
         if (dur > maxTime) maxTime = dur;
 
         const stepStatus = statusMatch ? statusMatch[1] : '';
@@ -317,7 +351,19 @@ function processarResultadoSandbox(rawOutput, testsOriginais) {
             ultimoGot = got;
 
             if (normalize(got) === normalize(exp)) {
-                passedCount++;
+                if (dur <= timeoutAlunoMs) {
+                    passedCount++;
+                } else {
+                    if (!primeiroErro) {
+                        primeiroErro = {
+                            status: 'Time Limit',
+                            message: `A saída está correta, mas demorou ${dur} ms (o limite do exercício é ${timeoutAlunoMs} ms). Tente otimizar seu algoritmo!`,
+                            executionTime: dur,
+                            testIndex: idx,
+                            isSlowMatch: true
+                        };
+                    }
+                }
             } else {
                 if (!primeiroErro) {
                     primeiroErro = {
@@ -336,11 +382,28 @@ function processarResultadoSandbox(rawOutput, testsOriginais) {
 
     const percentage = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
 
+    let finalExecutionTime = sumTimeR1;
+    const benchMatch = rawOutput.match(/BENCHMARK_ROUNDS:([0-9,]+)/);
+    if (benchMatch && benchMatch[1]) {
+        const rounds = benchMatch[1].split(',').map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+        
+        // Com 5 rodadas, remove o menor (rounds.shift) e o maior (rounds.pop) e tira a media dos 3 restantes
+        if (rounds.length >= 3) {
+            rounds.sort((a, b) => a - b);
+            rounds.shift();
+            rounds.pop();
+            const somaRestante = rounds.reduce((acc, val) => acc + val, 0);
+            finalExecutionTime = Math.round(somaRestante / rounds.length);
+        } else if (rounds.length > 0) {
+            finalExecutionTime = rounds[0];
+        }
+    }
+
     if (passedCount === totalCount && totalCount > 0) {
         return {
             status: 'Accepted',
             message: 'Correto!',
-            executionTime: maxTime,
+            executionTime: finalExecutionTime,
             percentage: 100,
             passedCount,
             totalCount,

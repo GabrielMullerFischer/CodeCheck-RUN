@@ -6,8 +6,9 @@ const ExerciseList = require('../models/ExerciseList');
 const ActivityConfig = require('../models/ActivityConfig');
 const Submission = require('../models/Submission');
 const ActivityAttempt = require('../models/ActivityAttempt');
+const minioService = require('../services/minioService');
 
-const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 7200000;
+const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
 
 router.post('/exercicio', async (req, res) => {
@@ -28,10 +29,10 @@ router.post('/exercicio', async (req, res) => {
                 return res.status(400).json({ success: false, error: "O tempo limite deve ser de pelo menos 100 ms." });
             }
             if (timeLimitVal > MAX_TIME_LIMIT_MS) {
-                const horas = (MAX_TIME_LIMIT_MS / 3600000).toFixed(1).replace('.0', '');
+                const minutos = (MAX_TIME_LIMIT_MS / 60000).toFixed(1).replace('.0', '');
                 return res.status(400).json({
                     success: false,
-                    error: `O tempo limite não pode exceder o teto máximo do servidor de ${MAX_TIME_LIMIT_MS} ms (${horas}h).`
+                    error: `O tempo limite não pode exceder o teto máximo do servidor de ${MAX_TIME_LIMIT_MS} ms (${minutos} min).`
                 });
             }
         }
@@ -74,10 +75,10 @@ router.put('/exercicio/:id', async (req, res) => {
                 return res.status(400).json({ success: false, error: "O tempo limite deve ser de pelo menos 100 ms." });
             }
             if (timeLimitVal > MAX_TIME_LIMIT_MS) {
-                const horas = (MAX_TIME_LIMIT_MS / 3600000).toFixed(1).replace('.0', '');
+                const minutos = (MAX_TIME_LIMIT_MS / 60000).toFixed(1).replace('.0', '');
                 return res.status(400).json({
                     success: false,
-                    error: `O tempo limite não pode exceder o teto máximo do servidor de ${MAX_TIME_LIMIT_MS} ms (${horas}h).`
+                    error: `O tempo limite não pode exceder o teto máximo do servidor de ${MAX_TIME_LIMIT_MS} ms (${minutos} min).`
                 });
             }
         }
@@ -241,6 +242,7 @@ router.post('/atividade/vincular', async (req, res) => {
         if (houveTrocaDeLista) {
             await ActivityAttempt.deleteMany({ activityId });
             await Submission.deleteMany({ activityId });
+            await minioService.limparArquivosAtividade(activityId);
         }
 
         res.json({ success: true });
@@ -266,7 +268,7 @@ router.post('/atividade/config', async (req, res) => {
                 timeLimitMinutes: duracaoMinutos,
                 updatedAt: new Date()
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         if (temLimiteTempo && duracaoMinutos > 0) {
@@ -428,6 +430,40 @@ router.get('/professor/turma-metricas', async (req, res) => {
         });
 
         const alunosMap = {};
+        const rankingPorExercicio = {};
+
+exercicios.forEach(ex => {
+            const exId = String(ex._id);
+            const subsEx = submissoes
+                .filter(s => String(s.exerciseId) === exId && s.isAccepted)
+                .sort((a, b) => {
+                    if (a.executionTime !== b.executionTime) return a.executionTime - b.executionTime;
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                });
+
+            const mapa = {};
+            subsEx.forEach(sub => {
+                if (!mapa[sub.userId]) {
+                    mapa[sub.userId] = {
+                        userId: sub.userId,
+                        userName: sub.userName || 'Aluno',
+                        executionTime: sub.executionTime,
+                        createdAt: sub.createdAt
+                    };
+                }
+            });
+
+            const ordenados = Object.values(mapa).sort((a, b) => {
+                if (a.executionTime !== b.executionTime) return a.executionTime - b.executionTime;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+
+            rankingPorExercicio[exId] = {
+                title: ex.title,
+                lider: ordenados[0] || null,
+                ranking: ordenados
+            };
+        });
 
         submissoes.forEach(sub => {
             if (!alunosMap[sub.userId]) {
@@ -497,7 +533,8 @@ router.get('/professor/turma-metricas', async (req, res) => {
             metricasExercicios,
             taxaGeralAcertos,
             tempoMedioMs,
-            ranking
+            ranking,
+            rankingPorExercicio
         });
     } catch (e) {
         console.error("Erro nas métricas:", e);
@@ -601,7 +638,6 @@ router.post('/professor/lista/importar', async (req, res) => {
             }
         }
 
-        // Se houver conflito de lista OU de algum exercício, pausa e solicita os novos nomes
         if (listConflict || exerciciosComConflito.length > 0) {
             return res.json({
                 success: false,
@@ -613,7 +649,6 @@ router.post('/professor/lista/importar', async (req, res) => {
             });
         }
 
-        // 3. Sem conflitos: cria os exercícios clonados com nomes limpos
         const novosIdsExercicios = [];
         for (const exOriginal of listaOriginal.exercises) {
             if (!exOriginal) continue;
@@ -646,6 +681,7 @@ router.post('/professor/lista/importar', async (req, res) => {
     }
 });
 
+// Rota para desvincular uma atividade de uma lista, removendo todos os dados relacionados
 router.post('/atividade/desvincular', async (req, res) => {
     try {
         const { activityId } = req.body;
@@ -659,10 +695,42 @@ router.post('/atividade/desvincular', async (req, res) => {
         );
 
         await ActivityAttempt.deleteMany({ activityId });
+        await Submission.deleteMany({ activityId });
+        await minioService.limparArquivosAtividade(activityId);
 
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/professor/submissao-codigo', async (req, res) => {
+    try {
+        const { codePath } = req.body;
+        if (!codePath) {
+            return res.status(400).json({ success: false, error: "codePath ausente." });
+        }
+
+        const code = await minioService.lerArquivoPorPath(codePath);
+        return res.json({ success: true, code });
+    } catch (err) {
+        console.error("[DEBUG POST] Erro MinIO:", err.message);
+        return res.status(404).json({ success: false, error: "Arquivo não localizado no MinIO.", code: null });
+    }
+});
+
+router.get('/professor/submissao-codigo', async (req, res) => {
+    try {
+        const { codePath } = req.query;
+        if (!codePath) {
+            return res.status(400).json({ success: false, error: "codePath ausente." });
+        }
+
+        const code = await minioService.lerArquivoPorPath(codePath);
+        return res.json({ success: true, code });
+    } catch (err) {
+        console.error("[DEBUG GET] Erro MinIO:", err.message);
+        return res.status(404).json({ success: false, error: "Arquivo não localizado no MinIO.", code: null });
     }
 });
 

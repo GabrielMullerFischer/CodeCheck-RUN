@@ -27,6 +27,15 @@ async function initMinio() {
     }
 }
 
+function isTestUser(userId, session, body) {
+    return (
+        userId === 'preview_user' ||
+        userId === 'professor_test' ||
+        session?.isProfessor === true ||
+        body?.mode === 'preview'
+    );
+}
+
 // Rascunhos isolados por exercício
 async function salvarRascunho(userId, activityId, exerciseId, code) {
     if (isTestUser(userId)) return null;
@@ -90,12 +99,26 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
 
 // Lê arquivo do MinIO por caminho
 async function lerArquivoPorPath(caminho) {
-    const stream = await minioClient.getObject(BUCKET_NAME, caminho);
+    if (!caminho) throw new Error("Caminho não fornecido.");
+    const objectName = caminho.replace(/^\/+/, '');
+
     return new Promise((resolve, reject) => {
-        let data = '';
-        stream.on('data', chunk => data += chunk);
-        stream.on('end', () => resolve(data));
-        stream.on('error', err => reject(err));
+        minioClient.getObject(BUCKET_NAME, objectName, (err, dataStream) => {
+            if (err) {
+                console.error(`[MinIO] Erro ao obter objeto "${objectName}":`, err.message);
+                return reject(err);
+            }
+            const chunks = [];
+            dataStream.on('data', chunk => chunks.push(chunk));
+            dataStream.on('end', () => {
+                const bufferCompleto = Buffer.concat(chunks);
+                resolve(bufferCompleto.toString('utf-8'));
+            });
+            dataStream.on('error', errStream => {
+                console.error(`[MinIO] Erro no stream de "${objectName}":`, errStream.message);
+                reject(errStream);
+            });
+        });
     });
 }
 
@@ -108,13 +131,36 @@ async function removerArquivo(objectName) {
     }
 }
 
-function isTestUser(userId, session, body) {
-    return (
-        userId === 'preview_user' ||
-        userId === 'professor_test' ||
-        session?.isProfessor === true ||
-        body?.mode === 'preview'
-    );
+// Limpa arquivos de uma atividade ao remiver da submissão
+async function limparArquivosAtividade(activityId) {
+    if (!activityId || activityId === 'preview') return;
+    try {
+        const objetosParaRemover = [];
+
+        const streamHist = minioClient.listObjectsV2(BUCKET_NAME, `historico/${activityId}/`, true);
+        await new Promise((resolve) => {
+            streamHist.on('data', obj => { if (obj && obj.name) objetosParaRemover.push(obj.name); });
+            streamHist.on('end', resolve);
+            streamHist.on('error', () => resolve());
+        });
+
+        const streamDrafts = minioClient.listObjectsV2(BUCKET_NAME, 'drafts/', true);
+        await new Promise((resolve) => {
+            streamDrafts.on('data', obj => {
+                if (obj && obj.name && obj.name.includes(`/${activityId}/`)) {
+                    objetosParaRemover.push(obj.name);
+                }
+            });
+            streamDrafts.on('end', resolve);
+            streamDrafts.on('error', () => resolve());
+        });
+
+        if (objetosParaRemover.length > 0) {
+            await minioClient.removeObjects(BUCKET_NAME, objetosParaRemover);
+        }
+    } catch (err) {
+        console.error(`Erro ao limpar arquivos da atividade ${activityId} no MinIO:`, err.message);
+    }
 }
 
 module.exports = {
@@ -127,32 +173,6 @@ module.exports = {
     arquivarSubmissao,
     lerArquivoPorPath,
     removerArquivo,
-    isTestUser,
-    salvarCodigo: async (userId, activityId, codigo) => {
-        const nomeArquivo = `aluno_${userId}/atividade_${activityId}.c`;
-        const buffer = Buffer.from(codigo, 'utf-8');
-        await minioClient.putObject(BUCKET_NAME, nomeArquivo, buffer);
-        return nomeArquivo;
-    },
-
-    lerCodigo: async (userId, activityId) => {
-        const nomeArquivo = `aluno_${userId}/atividade_${activityId}.c`;
-        const stream = await minioClient.getObject(BUCKET_NAME, nomeArquivo);
-        return new Promise((resolve, reject) => {
-            let content = '';
-            stream.on('data', chunk => content += chunk);
-            stream.on('end', () => resolve(content));
-            stream.on('error', reject);
-        });
-    },
-
-    listarArquivos: async (userId) => {
-        const objects = [];
-        const stream = minioClient.listObjects(BUCKET_NAME, `aluno_${userId}/`, true);
-        return new Promise((resolve, reject) => {
-            stream.on('data', obj => objects.push(obj));
-            stream.on('error', err => reject(err));
-            stream.on('end', () => resolve(objects));
-        });
-    }
+    limparArquivosAtividade,
+    isTestUser
 };

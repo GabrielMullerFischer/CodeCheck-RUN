@@ -371,6 +371,28 @@
         </div>
     </div>
 
+    <!-- Modal Confirmação Aluno (Declarado no nível raiz, fora da grid) -->
+    <div class="modal fade" id="modalConfirmacaoAluno" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content shadow border-0 text-center p-4" style="border-radius: 14px;">
+                <div class="modal-body p-0">
+                    <i class="fas fa-exclamation-circle text-warning mb-3" style="font-size: 3rem;"></i>
+                    <h5 class="font-weight-bold text-dark mb-2" id="modalConfirmAlunoTitulo">Tem certeza?</h5>
+                    <p class="text-secondary small mb-4" id="modalConfirmAlunoMsg"></p>
+                    <div class="d-flex justify-content-center" style="gap: 12px;">
+                        <button type="button" id="btnModalConfirmAlunoCancelar" class="btn btn-light px-4 font-weight-bold border" data-dismiss="modal">
+                            Cancelar
+                        </button>
+                        <button type="button" id="btnModalConfirmAlunoAcao" class="btn btn-primary px-4 font-weight-bold shadow-sm">
+                            Confirmar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Início Cronometrado -->
     <div class="modal fade" id="modalConfirmarInicioTempo" data-backdrop="static" data-keyboard="false" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">
             <div class="modal-content shadow border-0 text-center p-4">
@@ -390,6 +412,7 @@
         </div>
     </div>
 
+    <!-- Modal Classificação Geral -->
     <div class="modal fade" id="modalRankingGeral" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">
             <div class="modal-content">
