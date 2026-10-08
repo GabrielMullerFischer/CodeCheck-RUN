@@ -54,6 +54,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let mapaStatusQuestoes = {};
     let mapaRankingsPorExercicio = {};
 
+    const mapaUltimoCodigoCompilado = {};
+    const mapaUltimoTesteCustom = {};
+    const wrapperBtnTesteCustom = document.getElementById('wrapperBtnTesteCustom');
+
     let listaSubmissoesMeta = [];
     let indiceSubmissaoAtiva = -1;
     let linhaErroAtiva = null;
@@ -75,7 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (tituloElModal) tituloElModal.innerText = titulo;
             if (msgElModal) msgElModal.innerHTML = mensagem;
-            
+
             if (btnAcao) {
                 btnAcao.className = `btn ${corConfirmar} px-4 font-weight-bold shadow-sm`;
                 btnAcao.innerText = textoConfirmar;
@@ -110,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     if (window.CodeMirror) {
-        CodeMirror.registerHelper("hint", "cCustomHint", function(cm) {
+        CodeMirror.registerHelper("hint", "cCustomHint", function (cm) {
             const cur = cm.getCursor();
             const token = cm.getTokenAt(cur);
             const start = token.start;
@@ -180,12 +184,37 @@ document.addEventListener('DOMContentLoaded', async () => {
             indiceSubmissaoAtiva = -1;
             atualizarBotoesHistorico();
         }
+        atualizarEstadoBotaoCompilar();
+        atualizarEstadoBotaoTesteCustom();
     });
+
+    if (customInputStdin) {
+        customInputStdin.addEventListener('input', () => {
+            atualizarEstadoBotaoTesteCustom();
+        });
+    }
+
+
+
+    if (resultDiv) {
+        resultDiv.addEventListener('click', () => {
+            removerDestaqueErro();
+        });
+    }
+
+    const resultCustomEl = document.getElementById('resultTesteCustom');
+    if (resultCustomEl) {
+        resultCustomEl.addEventListener('click', () => {
+            removerDestaqueErro();
+        });
+    }
 
     function setCodigoNoEditor(codigo) {
         bloquearEventoChange = true;
         editorCM.setValue(codigo || '');
         bloquearEventoChange = false;
+        atualizarEstadoBotaoCompilar();
+        atualizarEstadoBotaoTesteCustom();
     }
 
     function posicionarCursorAposAspas() {
@@ -216,9 +245,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function removerDestaqueErro() {
         if (linhaErroAtiva !== null) {
-            editorCM.removeLineClass(linhaErroAtiva, 'background', 'linha-erro-cm');
+            try {
+                editorCM.removeLineClass(linhaErroAtiva, 'background', 'linha-erro-cm');
+            } catch { }
             linhaErroAtiva = null;
         }
+        try {
+            const totalLinhas = editorCM.lineCount();
+            for (let i = 0; i < totalLinhas; i++) {
+                editorCM.removeLineClass(i, 'background', 'linha-erro-cm');
+            }
+        } catch { }
     }
 
     function escapeHtml(str) {
@@ -229,6 +266,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    }
+
+    function formatarTempoExecucao(ms) {
+        if (ms === null || ms === undefined || ms === '') return '-';
+        const num = Number(ms);
+        if (isNaN(num) || num < 0) return '-';
+        if (num >= 1000) {
+            const seg = num / 1000;
+            return (seg < 10 ? seg.toFixed(2) : seg.toFixed(1)) + ' s';
+        }
+        if (num >= 100) {
+            return Math.round(num) + ' ms';
+        }
+        if (num >= 10) {
+            return num.toFixed(1) + ' ms';
+        }
+        return num.toFixed(2) + ' ms';
     }
 
     function renderizarFeedbackJuiz(data) {
@@ -243,7 +297,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (data.didacticHint) {
             cardDica = `
                 <div class="alert alert-warning py-2 mb-2">
-                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica do Compilador:</strong> ${escapeHtml(data.didacticHint)}
+                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica:</strong> ${escapeHtml(data.didacticHint)}
                 </div>
             `;
         }
@@ -254,19 +308,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let badgePorcentagem = '';
         if (total > 0) {
-            badgePorcentagem = `<span class="badge ${data.status === 'Accepted' ? 'badge-success' : 'badge-light border text-danger'} font-weight-bold" style="font-size: 0.85rem;"><i class="fas fa-chart-pie mr-1"></i>${pct}% de acerto (${passed}/${total} testes)</span>`;
+            badgePorcentagem = `<span class="badge ${data.status === 'Accepted' ? 'badge-success' : 'badge-light border text-danger'} font-weight-bold" style="font-size: 0.85rem;"><i class="fas fa-chart-pie mr-1"></i>${pct}% Correto </span>`;
         }
 
-        let tempoFormatado = '-';
-        if (typeof data.executionTime === 'number') {
-            if (data.executionTime === 0) {
-                tempoFormatado = '< 1 ms';
-            } else if (data.executionTime >= 1000) {
-                tempoFormatado = (data.executionTime / 1000).toFixed(2) + ' s';
-            } else {
-                tempoFormatado = data.executionTime + ' ms';
-            }
-        }
+        const tempoFormatado = formatarTempoExecucao(data.executionTime);
 
         if (data.status === 'Accepted') {
             removerDestaqueErro();
@@ -279,9 +324,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <h6 class="font-weight-bold text-success mb-1" style="font-size: 1.05rem;">
                                     Solução Aceita!
                                 </h6>
-                                <span class="text-secondary small">
-                                    Todos os casos de teste foram validados com sucesso.
-                                </span>
                             </div>
                         </div>
                         <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
@@ -289,7 +331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <i class="fas fa-stopwatch text-warning mr-1"></i> ${tempoFormatado}
                             </span>
                             <span class="badge badge-success font-weight-bold px-3 py-2 shadow-sm" style="font-size: 0.88rem;">
-                                <i class="fas fa-chart-pie mr-1"></i> ${pct}% de acerto (${passed}/${total} testes)
+                                <i class="fas fa-chart-pie mr-1"></i> ${pct}% Correto
                             </span>
                         </div>
                     </div>
@@ -312,7 +354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${badgeLinha}
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <strong>Erro de compilação:</strong>
-                        <span class="badge badge-danger font-weight-bold" style="font-size: 0.85rem;">0% de acerto</span>
+                        <span class="badge badge-danger font-weight-bold" style="font-size: 0.85rem;">0% Correto</span>
                     </div>
                     <pre class="bg-dark text-white p-2 mt-2 rounded small pre-io">${escapeHtml(data.details)}</pre>
                 </div>
@@ -341,7 +383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const ehLaranja = !!data.isSlowMatch;
             const alertClass = ehLaranja ? 'alert-warning' : 'alert-danger';
             const titulo = ehLaranja ? 'Tempo limite excedido (Lógica correta)' : 'Tempo limite excedido.';
-            const subTexto = ehLaranja 
+            const subTexto = ehLaranja
                 ? (data.message || 'A saída coincide com o esperado, porém o tempo limite do exercício foi atingido. Tente otimizar seu algoritmo!')
                 : 'Verifique se há laços infinitos ou se a condição de parada do laço está correta.';
 
@@ -377,7 +419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         listaExercicios.forEach((ex, index) => {
             const box = document.createElement('a');
             box.href = '#';
-            
+
             const status = mapaStatusQuestoes[String(ex._id)];
             let statusClass = '';
             if (status === 'accepted') statusClass = 'status-accepted';
@@ -416,10 +458,54 @@ document.addEventListener('DOMContentLoaded', async () => {
             tr.innerHTML = `
                 <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
                 <td>${aluno.userName}</td>
-                <td class="text-right font-weight-bold text-secondary">${aluno.executionTime} ms</td>
+                <td class="text-right font-weight-bold text-secondary">${formatarTempoExecucao(aluno.executionTime)}</td>
             `;
             tbodyAlunoRankingEx.appendChild(tr);
         });
+    }
+
+    function atualizarEstadoBotaoTesteCustom() {
+        if (!btnExecutarTesteCustom) return;
+        if (timerBloqueado) {
+            btnExecutarTesteCustom.disabled = true;
+            btnExecutarTesteCustom.style.pointerEvents = 'none';
+            btnExecutarTesteCustom.style.opacity = '0.65';
+            return;
+        }
+
+        const exercicioAtual = listaExercicios[indiceAtual];
+        const exId = exercicioAtual ? exercicioAtual._id : '';
+        const ultimoTeste = exId ? mapaUltimoTesteCustom[exId] : null;
+        const codigoAtual = editorCM ? editorCM.getValue() : '';
+        const inputAtual = customInputStdin ? customInputStdin.value : '';
+
+        if (ultimoTeste && ultimoTeste.code === codigoAtual && ultimoTeste.input === inputAtual) {
+            btnExecutarTesteCustom.disabled = true;
+            btnExecutarTesteCustom.style.pointerEvents = 'none';
+            btnExecutarTesteCustom.classList.remove('btn-outline-info');
+            btnExecutarTesteCustom.classList.add('btn-secondary');
+            btnExecutarTesteCustom.style.opacity = '0.65';
+            btnExecutarTesteCustom.innerHTML = '<i class="fas fa-check mr-1"></i> Compilado';
+
+            if (wrapperBtnTesteCustom) {
+                wrapperBtnTesteCustom.style.cursor = 'not-allowed';
+                wrapperBtnTesteCustom.title = 'Altere o código ou as entradas para compilar novamente.';
+            }
+            return;
+        }
+
+        btnExecutarTesteCustom.disabled = false;
+        btnExecutarTesteCustom.style.pointerEvents = 'auto';
+        btnExecutarTesteCustom.classList.remove('btn-secondary');
+        btnExecutarTesteCustom.classList.add('btn-outline-info');
+        btnExecutarTesteCustom.style.cursor = 'pointer';
+        btnExecutarTesteCustom.style.opacity = '1';
+        btnExecutarTesteCustom.innerHTML = '<i class="fas fa-play mr-1"></i> Compilar';
+
+        if (wrapperBtnTesteCustom) {
+            wrapperBtnTesteCustom.style.cursor = 'default';
+            wrapperBtnTesteCustom.removeAttribute('title');
+        }
     }
 
     function atualizarEstadoBotaoCompilar() {
@@ -460,6 +546,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (wrapperBtnSubmit) {
                 wrapperBtnSubmit.style.cursor = 'not-allowed';
                 wrapperBtnSubmit.title = 'Limite de tentativas atingido para este exercício.';
+            }
+            return;
+        }
+
+        const exercicioAtual = listaExercicios[indiceAtual];
+        const exId = exercicioAtual ? exercicioAtual._id : '';
+        const ultimoCodigo = exId ? mapaUltimoCodigoCompilado[exId] : null;
+        const codigoAtual = editorCM ? editorCM.getValue() : '';
+
+        if (ultimoCodigo !== undefined && ultimoCodigo !== null && codigoAtual === ultimoCodigo) {
+            btnSubmit.disabled = true;
+            btnSubmit.style.pointerEvents = 'none';
+            btnSubmit.classList.remove('btn-primary');
+            btnSubmit.classList.add('btn-secondary');
+            btnSubmit.style.opacity = '0.65';
+            btnSubmit.innerHTML = '<i class="fas fa-check mr-2"></i> Compilado';
+
+            if (wrapperBtnSubmit) {
+                wrapperBtnSubmit.style.cursor = 'not-allowed';
+                wrapperBtnSubmit.title = 'Altere seu código no editor para poder compilar novamente.';
             }
             return;
         }
@@ -525,10 +631,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const iconStatus = sub.isAccepted ? 'fa-check-circle' : 'fa-times-circle';
 
             labelHistoricoSub.innerHTML = `<span class="${badgeCor}"><i class="fas ${iconStatus} mr-1"></i> Envio ${indiceSubmissaoAtiva + 1}/${total}</span>`;
-            
+
             btnSubAnterior.disabled = (indiceSubmissaoAtiva === 0);
             btnSubAnterior.className = `btn ${indiceSubmissaoAtiva === 0 ? 'btn-outline-secondary disabled' : 'btn-outline-primary'} px-2 font-weight-bold`;
-            
+
             btnSubProximo.disabled = false;
             btnSubProximo.className = 'btn btn-outline-primary px-2 font-weight-bold';
 
@@ -562,12 +668,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 timerBloqueado = true;
                 const spanMinutos = document.getElementById('modal-tempo-limite-minutos');
                 if (spanMinutos) spanMinutos.innerText = data.timeLimitMinutes;
-                
+
                 if (btnSubmit) btnSubmit.disabled = true;
                 editorCM.setOption('readOnly', true);
 
                 document.getElementById('conteudo-principal-aluno')?.classList.add('conteudo-bloqueado-esfumacado');
-                
+
                 $('#modalConfirmarInicioTempo').modal('show');
             } else {
                 timerBloqueado = false;
@@ -595,7 +701,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     timerBloqueado = false;
                     document.getElementById('conteudo-principal-aluno')?.classList.remove('conteudo-bloqueado-esfumacado');
-                    
+
                     editorCM.setOption('readOnly', false);
                     atualizarEstadoBotaoCompilar();
                     posicionarCursorAposAspas();
@@ -646,7 +752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 valCronometro.innerText = "00:00:00";
                 badgeCronometro.className = "badge badge-danger p-2 mr-3 font-weight-bold";
                 editorCM.setOption('readOnly', true);
-                
+
                 if (btnSubmit) {
                     btnSubmit.disabled = true;
                     btnSubmit.dataset.esgotado = "true";
@@ -724,7 +830,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     badgeTentativas.style.display = 'inline-block';
                     const tentativasFeitas = data.minhasTentativasEx || 0;
                     const limiteMax = data.maxAttempts || 3;
-                    
+
                     const tentativasExibidas = Math.min(tentativasFeitas, limiteMax);
                     contadorTentativas.innerText = `${tentativasExibidas} / ${limiteMax}`;
 
@@ -758,7 +864,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (data.exercicio.minhaPosicao) {
                 rankPos.className = "badge badge-success p-2 font-weight-bold";
                 rankPos.innerText = `#${data.exercicio.minhaPosicao} de ${data.exercicio.totalResolvidos}`;
-                rankTempo.innerText = `Seu melhor tempo: ${data.exercicio.meuTempo} ms`;
+                rankTempo.innerText = `Seu melhor tempo: ${formatarTempoExecucao(data.exercicio.meuTempo)}`;
             } else {
                 rankPos.className = "badge badge-secondary p-2 font-weight-bold";
                 rankPos.innerText = "Pendente";
@@ -767,7 +873,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (data.exercicio.primeiroLugar) {
                 rankLiderNome.innerText = data.exercicio.primeiroLugar.userName;
-                rankLiderTempo.innerText = `Tempo: ${data.exercicio.primeiroLugar.executionTime} ms`;
+                rankLiderTempo.innerText = `Tempo: ${formatarTempoExecucao(data.exercicio.primeiroLugar.executionTime)}`;
             } else {
                 rankLiderNome.innerText = "Nenhum aluno ainda";
                 rankLiderTempo.innerText = "-";
@@ -807,7 +913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div class="text-right text-nowrap">
                                 <span class="badge badge-info mr-1">${aluno.totalResolvidos} ex</span>
-                                <span class="text-muted font-weight-normal">${aluno.tempoTotalMs > 0 ? aluno.tempoTotalMs + 'ms' : '-'}</span>
+                                <span class="text-muted font-weight-normal">${aluno.totalResolvidos > 0 ? formatarTempoExecucao(aluno.tempoTotalMs) : '-'}</span>
                             </div>
                         `;
                         containerTop3.appendChild(item);
@@ -835,7 +941,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
                             <td>${aluno.userName}</td>
                             <td class="text-center"><span class="badge badge-info">${aluno.totalResolvidos}</span></td>
-                            <td class="text-right text-muted">${aluno.tempoTotalMs > 0 ? aluno.tempoTotalMs + ' ms' : '-'}</td>
+                            <td class="text-right text-muted">${aluno.totalResolvidos > 0 ? formatarTempoExecucao(aluno.tempoTotalMs) : '-'}</td>
                         `;
                         tbodyModalRanking.appendChild(tr);
                     });
@@ -889,7 +995,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await res.json();
 
             if (res.ok && data.success && data.submissoes && data.submissoes.length > 0) {
-                listaSubmissoesMeta = data.submissoes;
+                listaSubmissoesMeta = data.submissoes.slice(-10);
                 navHistoricoSubmissoes.style.display = 'inline-flex';
                 atualizarBotoesHistorico();
             } else {
@@ -914,6 +1020,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (res.ok && data.success) {
                 if (!apenasLog) {
                     setCodigoNoEditor(data.code || '');
+                } else if (data.code) {
+                    const exAtual = listaExercicios[indiceAtual];
+                    if (exAtual) {
+                        mapaUltimoCodigoCompilado[exAtual._id] = data.code;
+                    }
                 }
                 renderizarFeedbackJuiz(data.resultado);
             } else if (!apenasLog) {
@@ -1034,6 +1145,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         editorCM.refresh();
         posicionarCursorAposAspas();
+        atualizarEstadoBotaoCompilar();
+        atualizarEstadoBotaoTesteCustom();
     }
 
     if (btnAnterior) btnAnterior.onclick = () => selecionarQuestao(indiceAtual - 1);
@@ -1059,6 +1172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             resultTesteCustom.innerHTML = '<div class="alert alert-info py-1 small mb-2"><i class="fas fa-spinner fa-spin mr-1"></i> Executando...</div>';
             btnExecutarTesteCustom.disabled = true;
+            btnExecutarTesteCustom.style.pointerEvents = 'none';
 
             try {
                 const res = await fetch('/judge/test-custom' + (ltiToken ? `?ltik=${ltiToken}` : ''), {
@@ -1075,6 +1189,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const data = await res.json();
 
                 if (res.ok && data.success) {
+                    if (exercicioAtual) {
+                        mapaUltimoTesteCustom[exercicioAtual._id] = { code, input };
+                    }
                     let cardDica = '';
                     if (data.didacticHint) {
                         cardDica = `
@@ -1090,7 +1207,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ${cardDica}
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <span class="badge badge-success font-weight-bold">Saída Gerada:</span>
-                                    <small class="text-muted">${data.executionTime} ms</small>
+                                    <small class="text-muted">${formatarTempoExecucao(data.executionTime)}</small>
                                 </div>
                                 <pre class="bg-dark text-white p-2 rounded mb-0 pre-io">${escapeHtml(data.output) || '<em>(Sem saída gerada)</em>'}</pre>
                             </div>
@@ -1120,7 +1237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch {
                 resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">Erro de conexão ao executar teste.</div>`;
             } finally {
-                btnExecutarTesteCustom.disabled = false;
+                atualizarEstadoBotaoTesteCustom();
             }
         };
     }
@@ -1150,27 +1267,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="fas fa-spinner fa-spin mr-2"></i> Validando...</div>';
             btnSubmit.disabled = true;
+            btnSubmit.style.pointerEvents = 'none';
 
             try {
                 const url = '/judge/submit' + (ltiToken ? `?ltik=${ltiToken}` : '');
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        code, 
-                        activityId: activityId || 'preview', 
-                        listId, 
-                        exerciseId: exercicioAtual._id 
+                    body: JSON.stringify({
+                        code,
+                        activityId: activityId || 'preview',
+                        listId,
+                        exerciseId: exercicioAtual._id
                     })
                 });
 
                 const data = await res.json();
 
                 if (res.ok) {
+                    if (exercicioAtual) {
+                        mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
+                    }
                     renderizarFeedbackJuiz(data);
                     await carregarHistoricoSubmissoesExercicio(exercicioAtual._id);
                     await atualizarRankingEStatus();
                 } else {
+                    if (exercicioAtual) {
+                        mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
+                    }
                     resultDiv.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Erro ao processar submissão.'}</div>`;
                     await atualizarRankingEStatus();
                 }
@@ -1200,6 +1324,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rascunhosSessao[exercicioAtual._id] = editorCM.getValue();
                 indiceSubmissaoAtiva = -1;
                 atualizarBotoesHistorico();
+                atualizarEstadoBotaoCompilar();
+                atualizarEstadoBotaoTesteCustom();
                 removerDestaqueErro();
                 posicionarCursorAposAspas();
                 return;

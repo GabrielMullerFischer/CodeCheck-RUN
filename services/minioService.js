@@ -66,10 +66,9 @@ async function salvarArquivo(caminho, conteudo) {
     return caminho;
 }
 
-// Histórico de submissões (até 10 acertos e 10 erros separados)
-async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code) {
-    const pastaTipo = isAccepted ? 'acertos' : 'erros';
-    const prefixo = `historico/${activityId}/${exerciseId}/${userId}/${pastaTipo}/`;
+// Histórico de submissões mantidas por exercício do aluno (as 10 últimas no total, protegendo sempre o código mais rápido)
+async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code, caminhoProtegido = null) {
+    const prefixo = `historico/${activityId}/${exerciseId}/${userId}/`;
 
     const objetos = [];
     const stream = minioClient.listObjectsV2(BUCKET_NAME, prefixo, true);
@@ -80,13 +79,48 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
         stream.on('error', () => resolve());
     });
 
-    if (objetos.length >= MAX_SUBMISSION_HISTORY) {
-        objetos.sort((a, b) => new Date(a.lastModified) - new Date(b.lastModified));
-        const excedentes = objetos.slice(0, objetos.length - (MAX_SUBMISSION_HISTORY - 1));
+    // Filtra estritamente os arquivos de código (.c) para contar as submissões reais
+    const arquivosCodigo = objetos.filter(obj => obj && obj.name && obj.name.endsWith('.c'));
+
+    // Normaliza o caminho do arquivo mais rápido protegido contra exclusão
+    const pathNormalizado = (caminhoProtegido && caminhoProtegido !== 'NOVO') 
+        ? caminhoProtegido.replace(/^\/+/, '') 
+        : null;
+
+    // Candidatos à exclusão nunca incluem o código mais rápido do aluno
+    const candidatosRemocao = arquivosCodigo.filter(obj => {
+        if (!pathNormalizado) return true;
+        return obj.name !== pathNormalizado;
+    });
+
+    const limiteMinio = MAX_SUBMISSION_HISTORY + 1;
+
+    if (candidatosRemocao.length >= limiteMinio) {
+        candidatosRemocao.sort((a, b) => {
+            const matchA = (a.name || '').match(/(\d+)\.c$/);
+            const matchB = (b.name || '').match(/(\d+)\.c$/);
+            const tA = matchA ? parseInt(matchA[1], 10) : 0;
+            const tB = matchB ? parseInt(matchB[1], 10) : 0;
+            if (tA && tB && tA !== tB) return tA - tB;
+            return new Date(a.lastModified) - new Date(b.lastModified);
+        });
+        const qtdRemover = candidatosRemocao.length - (limiteMinio - 1);
+        const excedentes = candidatosRemocao.slice(0, qtdRemover);
+
         for (const ex of excedentes) {
             await minioClient.removeObject(BUCKET_NAME, ex.name).catch(() => {});
             const logName = ex.name.replace(/\.c$/, '.json');
             await minioClient.removeObject(BUCKET_NAME, logName).catch(() => {});
+        }
+    }
+
+    // Limpa eventuais arquivos .json órfãos (cujo código .c não exista mais)
+    const nomesValidosC = new Set(arquivosCodigo.map(o => o.name));
+    const arquivosJson = objetos.filter(obj => obj && obj.name && obj.name.endsWith('.json'));
+    for (const j of arquivosJson) {
+        const esperadoC = j.name.replace(/\.json$/, '.c');
+        if (!nomesValidosC.has(esperadoC)) {
+            await minioClient.removeObject(BUCKET_NAME, j.name).catch(() => {});
         }
     }
 
@@ -167,6 +201,7 @@ module.exports = {
     initMinio,
     minioClient,
     BUCKET_NAME,
+    MAX_SUBMISSION_HISTORY,
     salvarRascunho,
     lerRascunho,
     salvarArquivo,

@@ -474,6 +474,7 @@ exercicios.forEach(ex => {
                     melhoresTemposPorEx: {},
                     submissoesAcertos: [],
                     submissoesErros: [],
+                    submissoes: [],
                     ultimaAtividade: sub.createdAt
                 };
             }
@@ -488,6 +489,8 @@ exercicios.forEach(ex => {
                 codePath: sub.codePath,
                 createdAt: sub.createdAt
             };
+
+            alunosMap[sub.userId].submissoes.push(itemSub);
 
             if (sub.isAccepted) {
                 somaTempoAceitos += itemSub.executionTime;
@@ -507,7 +510,8 @@ exercicios.forEach(ex => {
         });
 
         const ranking = Object.values(alunosMap).map(aluno => {
-            const tempoTotalMs = Object.values(aluno.melhoresTemposPorEx).reduce((acc, t) => acc + t, 0);
+            const somaTempos = Object.values(aluno.melhoresTemposPorEx).reduce((acc, t) => acc + t, 0);
+            const tempoTotalMs = somaTempos < 10 ? Number(somaTempos.toFixed(2)) : (somaTempos < 100 ? Number(somaTempos.toFixed(1)) : Math.round(somaTempos));
 
             return {
                 userId: aluno.userId,
@@ -517,7 +521,8 @@ exercicios.forEach(ex => {
                 ultimaAtividade: aluno.ultimaAtividade,
                 submissoesAcertos: aluno.submissoesAcertos,
                 submissoesErros: aluno.submissoesErros,
-                totalTentativas: aluno.submissoesAcertos.length + aluno.submissoesErros.length
+                submissoes: aluno.submissoes,
+                totalTentativas: aluno.submissoes.length
             };
         }).sort((a, b) => {
             if (b.totalResolvidos !== a.totalResolvidos) return b.totalResolvidos - a.totalResolvidos;
@@ -525,7 +530,8 @@ exercicios.forEach(ex => {
         });
 
         const taxaGeralAcertos = totalGeralEnvios > 0 ? Math.round((totalGeralAceitos / totalGeralEnvios) * 100) : 0;
-        const tempoMedioMs = totalGeralAceitos > 0 ? Math.round(somaTempoAceitos / totalGeralAceitos) : 0;
+        const mediaMs = totalGeralAceitos > 0 ? (somaTempoAceitos / totalGeralAceitos) : 0;
+        const tempoMedioMs = mediaMs < 10 ? Number(mediaMs.toFixed(2)) : (mediaMs < 100 ? Number(mediaMs.toFixed(1)) : Math.round(mediaMs));
 
         res.json({
             success: true,
@@ -706,31 +712,131 @@ router.post('/atividade/desvincular', async (req, res) => {
 
 router.post('/professor/submissao-codigo', async (req, res) => {
     try {
-        const { codePath } = req.body;
-        if (!codePath) {
-            return res.status(400).json({ success: false, error: "codePath ausente." });
+        const { codePath, submissionId } = req.body;
+        if (!codePath && !submissionId) {
+            return res.status(400).json({ success: false, error: "codePath ou submissionId ausente." });
         }
 
-        const code = await minioService.lerArquivoPorPath(codePath);
-        return res.json({ success: true, code });
+        let caminhoArquivo = codePath;
+        let caminhoLog = null;
+        let sub = null;
+
+        if (submissionId) {
+            sub = await Submission.findById(submissionId).lean();
+            if (sub) {
+                caminhoArquivo = sub.codePath;
+                caminhoLog = sub.logPath;
+            }
+        } else if (codePath) {
+            sub = await Submission.findOne({ codePath }).lean();
+            if (sub) {
+                caminhoLog = sub.logPath;
+            }
+        }
+
+        if (!caminhoArquivo) {
+            return res.status(404).json({ success: false, error: "Submissão não encontrada." });
+        }
+
+        let code = '// Código não disponível.';
+        try {
+            code = await minioService.lerArquivoPorPath(caminhoArquivo);
+        } catch (err) {
+            console.error("[MinIO] Erro ao carregar código:", err.message);
+            code = '// Arquivo de código não localizado no armazenamento.';
+        }
+
+        let logResultado = null;
+        const targetLog = caminhoLog || caminhoArquivo.replace(/\.c$/, '.json');
+        try {
+            const rawLog = await minioService.lerArquivoPorPath(targetLog);
+            logResultado = JSON.parse(rawLog);
+        } catch (err) {
+            if (sub) {
+                logResultado = {
+                    status: sub.status,
+                    executionTime: sub.executionTime,
+                    percentage: sub.percentage || 0,
+                    details: sub.compilationDetails || '',
+                    didacticHint: null
+                };
+            }
+        }
+
+        return res.json({ 
+            success: true, 
+            code, 
+            resultado: logResultado,
+            submission: sub 
+        });
     } catch (err) {
         console.error("[DEBUG POST] Erro MinIO:", err.message);
-        return res.status(404).json({ success: false, error: "Arquivo não localizado no MinIO.", code: null });
+        return res.status(500).json({ success: false, error: "Erro interno ao carregar submissão.", code: null });
     }
 });
 
 router.get('/professor/submissao-codigo', async (req, res) => {
     try {
-        const { codePath } = req.query;
-        if (!codePath) {
-            return res.status(400).json({ success: false, error: "codePath ausente." });
+        const { codePath, submissionId } = req.query;
+        if (!codePath && !submissionId) {
+            return res.status(400).json({ success: false, error: "codePath ou submissionId ausente." });
         }
 
-        const code = await minioService.lerArquivoPorPath(codePath);
-        return res.json({ success: true, code });
+        let caminhoArquivo = codePath;
+        let caminhoLog = null;
+        let sub = null;
+
+        if (submissionId) {
+            sub = await Submission.findById(submissionId).lean();
+            if (sub) {
+                caminhoArquivo = sub.codePath;
+                caminhoLog = sub.logPath;
+            }
+        } else if (codePath) {
+            sub = await Submission.findOne({ codePath }).lean();
+            if (sub) {
+                caminhoLog = sub.logPath;
+            }
+        }
+
+        if (!caminhoArquivo) {
+            return res.status(404).json({ success: false, error: "Submissão não encontrada." });
+        }
+
+        let code = '// Código não disponível.';
+        try {
+            code = await minioService.lerArquivoPorPath(caminhoArquivo);
+        } catch (err) {
+            console.error("[MinIO] Erro ao carregar código:", err.message);
+            code = '// Arquivo de código não localizado no armazenamento.';
+        }
+
+        let logResultado = null;
+        const targetLog = caminhoLog || caminhoArquivo.replace(/\.c$/, '.json');
+        try {
+            const rawLog = await minioService.lerArquivoPorPath(targetLog);
+            logResultado = JSON.parse(rawLog);
+        } catch (err) {
+            if (sub) {
+                logResultado = {
+                    status: sub.status,
+                    executionTime: sub.executionTime,
+                    percentage: sub.percentage || 0,
+                    details: sub.compilationDetails || '',
+                    didacticHint: null
+                };
+            }
+        }
+
+        return res.json({ 
+            success: true, 
+            code, 
+            resultado: logResultado,
+            submission: sub 
+        });
     } catch (err) {
         console.error("[DEBUG GET] Erro MinIO:", err.message);
-        return res.status(404).json({ success: false, error: "Arquivo não localizado no MinIO.", code: null });
+        return res.status(500).json({ success: false, error: "Erro interno ao carregar submissão.", code: null });
     }
 });
 

@@ -1,7 +1,6 @@
 const { k8sApi, namespace } = require('../config/kubernetes');
 
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 4;
-const BENCHMARK_ROUNDS = parseInt(process.env.BENCHMARK_ROUNDS, 10) || 5;
 let activeExecutions = 0;
 const executionQueue = [];
 
@@ -53,10 +52,28 @@ async function isAlreadyRunning(containerName) {
     }
 }
 
+function embaralharArray(array) {
+    if (!Array.isArray(array) || array.length === 0) return [];
+    const arr = array.map((t, idx) => {
+        const obj = (t && typeof t.toObject === 'function') ? t.toObject() : { ...t };
+        obj.originalIndex = idx;
+        return obj;
+    });
+    if (arr.length <= 1) return arr;
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+    }
+    return arr;
+}
+
 async function runTests(code, tests, containerName, timeLimitMs) {
     await adquirirVagaNaFila();
     try {
-        return await executarProcessoDeTesteK8s(code, tests, containerName, timeLimitMs);
+        const testesAleatorios = embaralharArray(tests);
+        return await executarProcessoDeTesteK8s(code, testesAleatorios, containerName, timeLimitMs);
     } finally {
         liberarVagaNaFila();
     }
@@ -72,11 +89,10 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
     const memLim = process.env.K8S_MEMORY_LIMIT || '512Mi';
     const image = process.env.K8S_IMAGE || 'gcc:latest';
 
-    const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+    const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 10000;
     const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : limiteCompiladorMs;
-    const timeoutHardSec = Math.min(Math.max(1, Math.ceil((timeoutAlunoMs * 5) / 1000)), 30);
 
-    const runnerScript = gerarScriptSandbox(code, tests, timeoutHardSec, BENCHMARK_ROUNDS);
+    const runnerScript = gerarScriptSandbox(code, tests, timeoutAlunoMs);
     const b64Runner = Buffer.from(runnerScript, 'utf-8').toString('base64');
 
     const podManifest = {
@@ -97,6 +113,7 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
                 {
                     name: 'runner',
                     image: image,
+                    imagePullPolicy: process.env.K8S_IMAGE_PULL_POLICY || 'IfNotPresent',
                     command: ['/bin/bash', '-c'],
                     args: [`echo "${b64Runner}" | base64 -d | /bin/bash`],
                     resources: {
@@ -129,7 +146,9 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
         }
 
         const totalTestes = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
-        const tempoEsperaNodeMs = (timeoutHardSec * 1000 * totalTestes) + 25000;
+        const hardTimeoutSec = Math.min(Math.max(1, Math.ceil((timeoutAlunoMs * 3) / 1000)), 30);
+        const tempoEsperaNodeMs = (hardTimeoutSec * 1000 * totalTestes) + 25000;
+        
         const outputBruto = await aguardarPodFinalizar(podName, targetNs, tempoEsperaNodeMs);
         return processarResultadoSandbox(outputBruto, tests, timeoutAlunoMs);
     } catch (err) {
@@ -166,82 +185,87 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
     }
 }
 
-function gerarScriptSandbox(code, tests, timeoutSec, totalRounds = 5) {
+function gerarScriptSandbox(code, tests, timeLimitMs) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
-    const totalTests = Array.isArray(tests) ? tests.length : 0;
+    const limitSec = timeLimitMs / 1000;
+    const hardTimeoutSec = Math.min(Math.max(1, Math.ceil(limitSec * 3)), 30);
+
+    const runnerC = `
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+
+int main(int argc, char *argv[]) {
+    if (argc < 3) return 1;
+    pid_t pid = fork();
+    if (pid < 0) return 1;
+    if (pid == 0) {
+        execv(argv[1], &argv[1]);
+        exit(1);
+    } else {
+        int status;
+        struct rusage usage;
+        if (wait4(pid, &status, 0, &usage) < 0) return 1;
+        
+        double user_time = usage.ru_utime.tv_sec + (usage.ru_utime.tv_usec / 1000000.0);
+        double sys_time  = usage.ru_stime.tv_sec + (usage.ru_stime.tv_usec / 1000000.0);
+        
+        FILE *f = fopen(argv[2], "w");
+        if (f) {
+            fprintf(f, "%.6f\\n", user_time + sys_time);
+            fclose(f);
+        }
+        
+        if (WIFEXITED(status)) return WEXITSTATUS(status);
+        if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+        return 1;
+    }
+}
+`;
+    const b64Runner = Buffer.from(runnerC, 'utf-8').toString('base64');
 
     let scriptTestes = `
-HAD_FAIL=0
-SUM_R1=0
+echo "${b64Runner}" | base64 -d > runner.c
+gcc -O2 runner.c -o runner
 `;
 
     tests.forEach((t, i) => {
         const b64In = Buffer.from(t.input || '', 'utf-8').toString('base64');
-        const b64Exp = Buffer.from(t.output || '', 'utf-8').toString('base64');
 
         scriptTestes += `
 # Teste ${i}
 echo "${b64In}" | base64 -d > in_${i}.txt
-echo "${b64Exp}" | base64 -d > exp_${i}.txt
-
-START_MS=$(date +%s%3N)
-set +e
-timeout -k 1s -s 9 "${timeoutSec}s" ./prog < in_${i}.txt > got_${i}.txt 2> err_${i}.txt
-EXIT_CODE=$?
-END_MS=$(date +%s%3N)
-DUR=$((END_MS - START_MS))
-SUM_R1=$((SUM_R1 + DUR))
 
 echo "---STEP---"
 echo "INDEX:${i}"
-echo "TIME:$DUR"
+
+rm -f time_${i}.txt
+timeout -k 1s -s 9 ${hardTimeoutSec}s ./runner ./prog time_${i}.txt < in_${i}.txt > got_${i}.txt 2> err_${i}.txt
+EXIT_CODE=$?
+
+CPUTIME=$(cat time_${i}.txt 2>/dev/null || echo "0.000000")
+echo "TIME:$CPUTIME"
 
 if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
-    echo "STATUS:TIME_LIMIT"
-    HAD_FAIL=1
+    echo "STATUS:HARD_TIME_LIMIT"
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "STATUS:RUNTIME_ERROR"
     echo "ERR_B64:$(base64 -w 0 < err_${i}.txt 2>/dev/null || echo '')"
-    HAD_FAIL=1
 else
     echo "STATUS:OK"
     echo "GOT_B64:$(base64 -w 0 < got_${i}.txt 2>/dev/null || echo '')"
-    echo "EXP_B64:$(base64 -w 0 < exp_${i}.txt 2>/dev/null || echo '')"
-
-    tr -d '\\r' < got_${i}.txt | sed -e 's/[[:space:]]*$//' > norm_got_${i}.txt
-    tr -d '\\r' < exp_${i}.txt | sed -e 's/[[:space:]]*$//' > norm_exp_${i}.txt
-    if ! cmp -s norm_got_${i}.txt norm_exp_${i}.txt; then
-        HAD_FAIL=1
-    fi
 fi
 `;
     });
 
-    scriptTestes += `
-ROUNDS_LIST="$SUM_R1"
-# Roda as rodadas adicionais sem travas artificiais se passou 100% na primeira
-if [ $HAD_FAIL -eq 0 ] && [ ${totalRounds} -gt 1 ]; then
-    for ((r=2; r<=${totalRounds}; r++)); do
-        ROUND_START=$(date +%s%3N)
-        for ((idx=0; idx<${totalTests}; idx++)); do
-            ./prog < in_\${idx}.txt > /dev/null 2>&1
-        done
-        ROUND_END=$(date +%s%3N)
-        ROUND_DUR=$((ROUND_END - ROUND_START))
-        ROUNDS_LIST="\${ROUNDS_LIST},\${ROUND_DUR}"
-    done
-fi
-echo "BENCHMARK_ROUNDS:$ROUNDS_LIST"
-`;
-
     return `#!/usr/bin/env bash
 mkdir -p /sandbox && cd /sandbox
-
 ulimit -u 50
 ulimit -f 50000
 
 echo "${b64Code}" | base64 -d > main.c
-
 set +e
 COMPILE_ERR=$(gcc main.c -o prog -lm 2>&1)
 COMPILE_STATUS=$?
@@ -253,7 +277,6 @@ if [ $COMPILE_STATUS -ne 0 ]; then
 fi
 
 ${scriptTestes}
-
 echo "STATUS:ALL_PASSED"
 `;
 }
@@ -290,7 +313,7 @@ async function aguardarPodFinalizar(podName, ns, timeoutMs) {
     throw new Error(`Tempo esgotado aguardando execução do Pod no Kubernetes (ultrapassou ${maxWaitMs / 1000}s).`);
 }
 
-function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = 30000) {
+function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (Number(process.env.COMPILE_TIMEOUT) || 10000)) {
     const totalCount = Array.isArray(testsOriginais) ? testsOriginais.length : 0;
 
     if (!rawOutput) {
@@ -305,30 +328,41 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = 3
 
     const steps = rawOutput.split('---STEP---').slice(1);
     let maxTime = 0;
-    let sumTimeR1 = 0;
+    let somaTotalSegundos = 0;
     let passedCount = 0;
     let primeiroErro = null;
     let ultimoGot = '';
 
     for (const step of steps) {
         const idxMatch = step.match(/INDEX:(\d+)/);
-        const timeMatch = step.match(/TIME:(\d+)/);
         const statusMatch = step.match(/STATUS:(\w+)/);
+        const timeMatch = step.match(/TIME:([0-9.]+)/);
 
         const idx = idxMatch ? parseInt(idxMatch[1], 10) : 0;
-        const dur = timeMatch ? parseInt(timeMatch[1], 10) : 0;
-        sumTimeR1 += dur;
-        if (dur > maxTime) maxTime = dur;
-
         const stepStatus = statusMatch ? statusMatch[1] : '';
+        const durSec = timeMatch ? parseFloat(timeMatch[1]) : 0;
+        const tempoPassoMs = durSec * 1000;
+        const durMs = tempoPassoMs < 10 ? Number(tempoPassoMs.toFixed(2)) : (tempoPassoMs < 100 ? Number(tempoPassoMs.toFixed(1)) : Math.round(tempoPassoMs));
 
-        if (stepStatus === 'TIME_LIMIT') {
+        somaTotalSegundos += durSec;
+        if (durMs > maxTime) maxTime = durMs;
+
+        const gotMatch = step.match(/GOT_B64:([A-Za-z0-9+/=]*)/);
+        const got = gotMatch && gotMatch[1] ? Buffer.from(gotMatch[1], 'base64').toString('utf-8') : '';
+        if (got) ultimoGot = got;
+
+        const testItem = testsOriginais[idx] || {};
+        const expected = testItem.output || '';
+        const corresponds = normalize(got) === normalize(expected);
+        const origIdx = testItem.originalIndex !== undefined ? testItem.originalIndex : idx;
+
+        if (stepStatus === 'HARD_TIME_LIMIT') {
             if (!primeiroErro) {
                 primeiroErro = {
                     status: 'Time Limit',
                     message: 'Tempo limite de execução excedido!',
-                    executionTime: dur,
-                    testIndex: idx
+                    executionTime: durMs,
+                    testIndex: origIdx
                 };
             }
         } else if (stepStatus === 'RUNTIME_ERROR') {
@@ -338,72 +372,48 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = 3
                 primeiroErro = {
                     status: 'Runtime Error',
                     details,
-                    executionTime: dur,
-                    testIndex: idx
+                    executionTime: durMs,
+                    testIndex: origIdx
                 };
             }
-        } else {
-            const gotMatch = step.match(/GOT_B64:([A-Za-z0-9+/=]*)/);
-            const expMatch = step.match(/EXP_B64:([A-Za-z0-9+/=]*)/);
-
-            const got = gotMatch && gotMatch[1] ? Buffer.from(gotMatch[1], 'base64').toString('utf-8') : '';
-            const exp = expMatch && expMatch[1] ? Buffer.from(expMatch[1], 'base64').toString('utf-8') : '';
-            ultimoGot = got;
-
-            if (normalize(got) === normalize(exp)) {
-                if (dur <= timeoutAlunoMs) {
-                    passedCount++;
-                } else {
-                    if (!primeiroErro) {
-                        primeiroErro = {
-                            status: 'Time Limit',
-                            message: `A saída está correta, mas demorou ${dur} ms (o limite do exercício é ${timeoutAlunoMs} ms). Tente otimizar seu algoritmo!`,
-                            executionTime: dur,
-                            testIndex: idx,
-                            isSlowMatch: true
-                        };
-                    }
-                }
-            } else {
+        } else if (stepStatus === 'WRONG_ANSWER' || !corresponds) {
+            if (!primeiroErro) {
+                primeiroErro = {
+                    status: 'Wrong Answer',
+                    message: 'A saída não corresponde!',
+                    input: testItem.input || '',
+                    got: got,
+                    expected: expected,
+                    executionTime: durMs,
+                    testIndex: origIdx
+                };
+            }
+        } else if (stepStatus === 'OK') {
+            if (durMs > timeoutAlunoMs) {
                 if (!primeiroErro) {
                     primeiroErro = {
-                        status: 'Wrong Answer',
-                        message: 'A saída não corresponde!',
-                        input: testsOriginais[idx]?.input || '',
-                        got: got,
-                        expected: testsOriginais[idx]?.output || '',
-                        executionTime: dur,
-                        testIndex: idx
+                        status: 'Time Limit',
+                        message: `A saída está correta, mas demorou ${durMs} ms (o limite do exercício é ${timeoutAlunoMs} ms). Tente otimizar seu algoritmo!`,
+                        executionTime: durMs,
+                        testIndex: origIdx,
+                        isSlowMatch: true
                     };
                 }
+            } else {
+                passedCount++;
             }
         }
     }
 
     const percentage = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-
-    let finalExecutionTime = sumTimeR1;
-    const benchMatch = rawOutput.match(/BENCHMARK_ROUNDS:([0-9,]+)/);
-    if (benchMatch && benchMatch[1]) {
-        const rounds = benchMatch[1].split(',').map(n => parseInt(n, 10)).filter(n => !isNaN(n));
-        
-        // Com 5 rodadas, remove o menor (rounds.shift) e o maior (rounds.pop) e tira a media dos 3 restantes
-        if (rounds.length >= 3) {
-            rounds.sort((a, b) => a - b);
-            rounds.shift();
-            rounds.pop();
-            const somaRestante = rounds.reduce((acc, val) => acc + val, 0);
-            finalExecutionTime = Math.round(somaRestante / rounds.length);
-        } else if (rounds.length > 0) {
-            finalExecutionTime = rounds[0];
-        }
-    }
+    const tempoTotalMs = somaTotalSegundos * 1000;
+    const somaTotalTemposMs = tempoTotalMs < 10 ? Number(tempoTotalMs.toFixed(2)) : (tempoTotalMs < 100 ? Number(tempoTotalMs.toFixed(1)) : Math.round(tempoTotalMs));
 
     if (passedCount === totalCount && totalCount > 0) {
         return {
             status: 'Accepted',
             message: 'Correto!',
-            executionTime: finalExecutionTime,
+            executionTime: somaTotalTemposMs,
             percentage: 100,
             passedCount,
             totalCount,
@@ -414,30 +424,17 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = 3
     if (primeiroErro) {
         return {
             ...primeiroErro,
-            executionTime: maxTime,
+            executionTime: somaTotalTemposMs,
             percentage,
             passedCount,
             totalCount
         };
     }
 
-    if (rawOutput.includes('STATUS:TIME_LIMIT')) {
-        const timeMatch = rawOutput.match(/TIME:(\d+)/);
-        const executionTime = timeMatch ? parseInt(timeMatch[1], 10) : maxTime;
-        return { status: 'Time Limit', message: 'Tempo limite de execução excedido!', executionTime, percentage: 0, passedCount: 0, totalCount };
-    }
-
-    if (rawOutput.includes('STATUS:RUNTIME_ERROR')) {
-        const timeMatch = rawOutput.match(/TIME:(\d+)/);
-        const errMatch = rawOutput.match(/ERR_B64:([A-Za-z0-9+/=]+)/);
-        const details = errMatch ? Buffer.from(errMatch[1], 'base64').toString('utf-8') : 'Runtime Error.';
-        return { status: 'Runtime Error', details, executionTime: timeMatch ? parseInt(timeMatch[1], 10) : maxTime, percentage: 0, passedCount: 0, totalCount };
-    }
-
     return {
         status: 'Runtime Error',
         details: 'Erro na execução dos testes.',
-        executionTime: maxTime,
+        executionTime: somaTotalTemposMs,
         percentage,
         passedCount,
         totalCount

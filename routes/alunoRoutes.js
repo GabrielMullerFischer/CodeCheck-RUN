@@ -10,7 +10,7 @@ const Submission = require('../models/Submission');
 const ActivityAttempt = require('../models/ActivityAttempt');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
-const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 30000;
+const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 10000;
 
 function isTestUser(userId, session, body) {
     return (
@@ -169,7 +169,7 @@ router.post('/submit', async (req, res) => {
 
         if (!isProfessorReal && userId !== 'preview_user' && activityId && activityId !== 'preview') {
             const configAtividade = await ActivityConfig.findOne({ activityId });
-            
+
             if (configAtividade && configAtividade.hasTimeLimit) {
                 const attempt = await ActivityAttempt.findOne({ userId, activityId });
                 if (!attempt) {
@@ -225,12 +225,31 @@ router.post('/submit', async (req, res) => {
             });
         }
 
+        const melhorExistente = await Submission.findOne({
+            userId,
+            activityId: activityId || 'preview',
+            exerciseId: idExercicioFinal,
+            isAccepted: true
+        }).sort({ executionTime: 1, createdAt: -1 });
+
+        let caminhoMaisRapidoProtegido = melhorExistente ? melhorExistente.codePath : null;
+
+        if (isAccepted) {
+            const menorTempo = (melhorExistente && typeof melhorExistente.executionTime === 'number')
+                ? melhorExistente.executionTime
+                : Infinity;
+            if (tempoGastoMs <= menorTempo) {
+                caminhoMaisRapidoProtegido = 'NOVO';
+            }
+        }
+
         const caminhoMinio = await minioService.arquivarSubmissao(
-            userId, 
-            activityId || 'preview', 
-            idExercicioFinal, 
-            isAccepted, 
-            code
+            userId,
+            activityId || 'preview',
+            idExercicioFinal,
+            isAccepted,
+            code,
+            caminhoMaisRapidoProtegido
         );
 
         const caminhoLog = caminhoMinio.replace(/\.c$/, '.json');
@@ -287,8 +306,8 @@ router.post('/test-custom', async (req, res) => {
         if (!isProfessor && activityId && activityId !== 'preview') {
             const configAtividade = await ActivityConfig.findOne({ activityId });
             if (configAtividade && configAtividade.isEvaluative) {
-                return res.status(403).json({ 
-                    error: "A depuração com entradas livres está desativada para atividades com limite de tentativas." 
+                return res.status(403).json({
+                    error: "A depuração com entradas livres está desativada para atividades com limite de tentativas."
                 });
             }
         }
@@ -340,10 +359,10 @@ router.get('/aluno/submissoes', async (req, res) => {
             activityId: activityId || 'preview',
             exerciseId
         })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .select('_id status isAccepted executionTime percentage createdAt codePath logPath')
-        .lean();
+            .sort({ createdAt: -1 })
+            .limit(minioService.MAX_SUBMISSION_HISTORY || 10)
+            .select('_id status isAccepted executionTime percentage createdAt codePath logPath')
+            .lean();
 
         const submissoes = ultimasSubmissoes.reverse();
 
@@ -375,7 +394,7 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
         } catch (e) {
             codigo = '// Arquivo de código não localizado no armazenamento.';
         }
-        
+
         let logResultado = null;
         const caminhoLog = sub.logPath || (sub.codePath ? sub.codePath.replace(/\.c$/, '.json') : '');
         try {
@@ -383,7 +402,7 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
                 const rawLog = await minioService.lerArquivoPorPath(caminhoLog);
                 logResultado = JSON.parse(rawLog);
             }
-        } catch {}
+        } catch { }
 
         if (!logResultado) {
             logResultado = {
@@ -395,10 +414,10 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
             };
         }
 
-        res.json({ 
-            success: true, 
-            code: codigo, 
-            resultado: logResultado 
+        res.json({
+            success: true,
+            code: codigo,
+            resultado: logResultado
         });
     } catch (e) {
         console.error("Erro ao carregar submissão:", e);
@@ -424,15 +443,15 @@ router.get('/ranking', async (req, res) => {
     const userId = req.session?.userId || req.query.userId || 'preview_user';
 
     try {
-        const submissoes = activityId && activityId !== 'preview' 
-            ? await Submission.find({ activityId, userId: { $nin: ['professor_test', 'preview_user'] } }).lean() 
+        const submissoes = activityId && activityId !== 'preview'
+            ? await Submission.find({ activityId, userId: { $nin: ['professor_test', 'preview_user'] } }).lean()
             : [];
 
-        const configAtividade = activityId && activityId !== 'preview' 
+        const configAtividade = activityId && activityId !== 'preview'
             ? await ActivityConfig.findOne({ activityId }).populate({
                 path: 'listId',
                 populate: { path: 'exercises' }
-            }).lean() 
+            }).lean()
             : null;
 
         const isEvaluative = configAtividade ? !!configAtividade.isEvaluative : false;
@@ -522,7 +541,10 @@ router.get('/ranking', async (req, res) => {
             userId: a.userId,
             userName: a.userName,
             totalResolvidos: a.resolvidos.size,
-            tempoTotalMs: Object.values(a.melhoresTemposPorEx).reduce((acc, t) => acc + t, 0)
+            tempoTotalMs: (() => {
+                const soma = Object.values(a.melhoresTemposPorEx).reduce((acc, t) => acc + t, 0);
+                return soma < 10 ? Number(soma.toFixed(2)) : (soma < 100 ? Number(soma.toFixed(1)) : Math.round(soma));
+            })()
         })).sort((a, b) => {
             if (b.totalResolvidos !== a.totalResolvidos) return b.totalResolvidos - a.totalResolvidos;
             return a.tempoTotalMs - b.tempoTotalMs;

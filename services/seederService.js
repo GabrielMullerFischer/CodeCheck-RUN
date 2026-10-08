@@ -32,6 +32,13 @@ async function popularBanco() {
                         authorId: SISTEMA_AUTHOR_ID,
                         authorName: SISTEMA_AUTHOR_NAME
                     });
+                } else {
+                    exercicio.description = exData.description;
+                    exercicio.tests = exData.tests;
+                    exercicio.timeLimit = exData.timeLimit || 1000;
+                    exercicio.isPublic = true;
+                    exercicio.isArchived = false;
+                    await exercicio.save();
                 }
                 mapaExerciciosCriados[exData.title] = exercicio._id;
             }
@@ -58,9 +65,16 @@ async function popularBanco() {
                         authorId: SISTEMA_AUTHOR_ID,
                         authorName: SISTEMA_AUTHOR_NAME
                     });
+                } else {
+                    lista.exercises = idsExercicios;
+                    lista.isPublic = true;
+                    lista.updatedAt = new Date();
+                    await lista.save();
                 }
             }
         }
+
+        console.log(`📦 Seeder: Sincronizados ${dadosPadrao.exercicios.length} exercícios e ${dadosPadrao.listas.length} listas padrão do exerciciosPadrao.json.`);
     } catch (err) {
         console.error('Erro no Seeder CodeCheck-RUN:', err.message);
     }

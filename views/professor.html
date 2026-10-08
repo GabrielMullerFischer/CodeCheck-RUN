@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <title>CodeCheck-RUN - Professor</title>
@@ -22,11 +23,13 @@
             border-radius: 0.35rem;
             background-color: #fff;
         }
+
         .custom-control.custom-radio {
             padding-left: 1.85rem;
             margin-left: 4px;
             overflow: visible !important;
         }
+
         .card-header-tabs .nav-link {
             color: #ffffff !important;
             background-color: rgba(255, 255, 255, 0.1);
@@ -34,14 +37,17 @@
             border-radius: 4px 4px 0 0;
             margin-right: 5px;
         }
+
         .card-header-tabs .nav-link.active {
             color: #00539b !important;
             background-color: #ffffff !important;
         }
+
         .card-header-tabs .nav-link.disabled {
             color: rgba(255, 255, 255, 0.4) !important;
             cursor: not-allowed;
         }
+
         input[type="search"]::-webkit-search-cancel-button {
             -webkit-appearance: none;
             height: 18px;
@@ -53,10 +59,12 @@
             opacity: 0.6;
             transition: opacity 0.2s ease, transform 0.1s ease;
         }
+
         input[type="search"]::-webkit-search-cancel-button:hover {
             opacity: 1;
             transform: scale(1.15);
         }
+
         .nav-segmented {
             background-color: #f4f7fa;
             padding: 4px;
@@ -64,6 +72,7 @@
             border: 1.5px solid #00539b;
             gap: 4px;
         }
+
         .nav-segmented .nav-link {
             color: #00539b !important;
             border-radius: 6px;
@@ -73,17 +82,20 @@
             text-align: center;
             font-weight: 600;
         }
+
         .nav-segmented .nav-link.active {
             background-color: #00539b !important;
             color: #ffffff !important;
             font-weight: 700;
             border: 1px solid #00539b;
         }
+
         .badge-privada {
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+
         .btn-action-round {
             width: 36px;
             height: 36px;
@@ -94,8 +106,24 @@
             font-size: 1.05rem;
             transition: all 0.15s ease-in-out;
         }
+
         .btn-action-round:hover {
             transform: translateY(-1px);
+        }
+
+        .metric-circle {
+            width: 105px;
+            height: 105px;
+            border-radius: 50%;
+            border: 6px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            font-weight: 800;
+            margin: 0 auto;
+            white-space: nowrap;
+            padding: 0 4px;
         }
 
         #toast-container {
@@ -108,6 +136,7 @@
             gap: 10px;
             pointer-events: none;
         }
+
         .toast-custom {
             pointer-events: auto;
             min-width: 280px;
@@ -124,14 +153,17 @@
             animation: slideInToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             transition: opacity 0.25s ease, transform 0.25s ease;
         }
+
         .toast-custom.toast-success {
             background: rgba(40, 167, 69, 0.92);
             border: 1px solid rgba(255, 255, 255, 0.25);
         }
+
         .toast-custom.toast-danger {
             background: rgba(220, 53, 69, 0.92);
             border: 1px solid rgba(255, 255, 255, 0.25);
         }
+
         .toast-custom.toast-warning {
             background: rgba(255, 193, 7, 0.95);
             color: #212529;
@@ -147,28 +179,34 @@
             border: 1px solid transparent !important;
             text-decoration: none !important;
         }
+
         .nav-pill-btn-acertos {
             background-color: #eafaf1 !important;
             color: #28a745 !important;
             border-color: #c3e6cb !important;
         }
+
         .nav-pill-btn-acertos:hover {
             background-color: #d4edda !important;
         }
+
         .nav-pill-btn-acertos.active {
             background-color: #28a745 !important;
             color: #ffffff !important;
             border-color: #28a745 !important;
             box-shadow: 0 2px 6px rgba(40, 167, 69, 0.35) !important;
         }
+
         .nav-pill-btn-erros {
             background-color: #fdf2f2 !important;
             color: #dc3545 !important;
             border-color: #f5c6cb !important;
         }
+
         .nav-pill-btn-erros:hover {
             background-color: #f8d7da !important;
         }
+
         .nav-pill-btn-erros.active {
             background-color: #dc3545 !important;
             color: #ffffff !important;
@@ -192,10 +230,12 @@
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
             transition: all 0.2s ease-in-out;
         }
+
         .theme-floating-pill-prof:hover {
             background: rgba(18, 22, 28, 0.95);
             border-color: rgba(255, 255, 255, 0.35);
         }
+
         .theme-floating-select-prof {
             background: transparent;
             color: #f8f9fa;
@@ -206,10 +246,12 @@
             outline: none;
             padding: 1px 4px;
         }
+
         .theme-floating-select-prof option {
             background-color: #212529;
             color: #ffffff;
         }
+
         #modalInspecionarWrapper .CodeMirror {
             height: 260px;
             border-radius: 6px;
@@ -218,21 +260,25 @@
             border: 1px solid #ced4da;
             line-height: 1.5;
         }
+
         @keyframes slideInToast {
             from {
                 opacity: 0;
                 transform: translateY(20px) scale(0.96);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0) scale(1);
             }
         }
+
         @keyframes fadeOutToast {
             from {
                 opacity: 1;
                 transform: translateY(0);
             }
+
             to {
                 opacity: 0;
                 transform: translateY(15px) scale(0.96);
@@ -240,6 +286,7 @@
         }
     </style>
 </head>
+
 <body class="bg-light">
 
     <div class="container-fluid px-4 my-4" style="max-width: 1700px;">
@@ -251,17 +298,21 @@
                 <div class="card-header text-white" style="background-color: #00539b;">
                     <ul class="nav nav-tabs card-header-tabs border-0" id="professorTabs" role="tablist">
                         <li class="nav-item">
-                            <a class="nav-link font-weight-bold disabled" id="tab-gerenciar-link" data-toggle="tab" href="#tab-gerenciar" role="tab" title="Vincule uma lista primeiro para liberar esta aba">
+                            <a class="nav-link font-weight-bold disabled" id="tab-gerenciar-link" data-toggle="tab"
+                                href="#tab-gerenciar" role="tab"
+                                title="Vincule uma lista primeiro para liberar esta aba">
                                 <i class="fas fa-tachometer-alt mr-1"></i> Gerenciar Atividade
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link font-weight-bold" id="tab-listas-link" data-toggle="tab" href="#tab-listas" role="tab">
+                            <a class="nav-link font-weight-bold" id="tab-listas-link" data-toggle="tab"
+                                href="#tab-listas" role="tab">
                                 <i class="fas fa-list mr-1"></i> Lista de Atividades
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link font-weight-bold" id="tab-nova-link" data-toggle="tab" href="#tab-nova" role="tab">
+                            <a class="nav-link font-weight-bold" id="tab-nova-link" data-toggle="tab" href="#tab-nova"
+                                role="tab">
                                 <i class="fas fa-plus mr-1"></i> Criar Lista
                             </a>
                         </li>
@@ -281,13 +332,16 @@
                                         <h4 class="font-weight-bold text-dark mb-0" id="nome-atividade-gerenciar">-</h4>
                                     </div>
                                     <div class="mt-2 mt-md-0 d-flex align-items-center">
-                                        <button type="button" id="btnEditarAtividadeAtiva" class="btn btn-outline-secondary btn-sm mr-2 font-weight-bold shadow-sm">
+                                        <button type="button" id="btnEditarAtividadeAtiva"
+                                            class="btn btn-outline-secondary btn-sm mr-2 font-weight-bold shadow-sm">
                                             <i class="fas fa-sliders-h mr-1"></i> Editar Atividade
                                         </button>
-                                        <button type="button" id="btnPreview" class="btn btn-outline-primary btn-sm mr-2 font-weight-bold shadow-sm">
+                                        <button type="button" id="btnPreview"
+                                            class="btn btn-outline-primary btn-sm mr-2 font-weight-bold shadow-sm">
                                             <i class="fas fa-eye mr-1"></i> Modo Aluno
                                         </button>
-                                        <button type="button" id="btnDesvincularAtividade" class="btn btn-outline-danger btn-sm font-weight-bold shadow-sm">
+                                        <button type="button" id="btnDesvincularAtividade"
+                                            class="btn btn-outline-danger btn-sm font-weight-bold shadow-sm">
                                             <i class="fas fa-unlink mr-1"></i> Remover Submissão
                                         </button>
                                     </div>
@@ -297,26 +351,33 @@
                             <div class="row">
                                 <div class="col-lg-7 col-md-12 mb-3">
                                     <div class="card shadow-sm border-0 h-100">
-                                        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                                        <div
+                                            class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                                             <h6 class="font-weight-bold text-dark mb-0">
-                                                <i class="fas fa-user-graduate text-primary mr-2"></i> Desempenho dos Alunos
+                                                <i class="fas fa-user-graduate text-primary mr-2"></i> Desempenho dos
+                                                Alunos
                                             </h6>
-                                            <button type="button" id="btnAtualizarTurma" class="btn btn-xs btn-outline-primary py-1 px-2 font-weight-bold">
+                                            <button type="button" id="btnAtualizarTurma"
+                                                class="btn btn-xs btn-outline-primary py-1 px-2 font-weight-bold">
                                                 <i class="fas fa-sync-alt mr-1"></i> Atualizar
                                             </button>
                                         </div>
                                         <div class="table-responsive" style="max-height: 540px; overflow-y: auto;">
-                                            <table class="table table-hover align-middle mb-0" style="font-size: 0.92rem;">
+                                            <table class="table table-hover align-middle mb-0"
+                                                style="font-size: 0.92rem;">
                                                 <thead class="thead-light">
                                                     <tr>
-                                                        <th>Aluno (Ordem Alfabética)</th>
+                                                        <th>Aluno </th>
                                                         <th class="text-center">Progresso</th>
                                                         <th class="text-center">Tentativas</th>
                                                         <th class="text-right pr-4">Ação</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody id="tbody-alunos-progresso">
-                                                    <tr><td colspan="4" class="text-center text-muted py-4">Carregando dados da turma...</td></tr>
+                                                    <tr>
+                                                        <td colspan="4" class="text-center text-muted py-4">Carregando
+                                                            dados da turma...</td>
+                                                    </tr>
                                                 </tbody>
                                             </table>
                                         </div>
@@ -324,30 +385,53 @@
                                 </div>
 
                                 <div class="col-lg-5 col-md-12 mb-3">
-                                    <div class="card shadow-sm border-0 h-100">
+                                    <div class="card shadow-sm border-0 mb-3 bg-light">
+                                        <div class="card-body p-3">
+                                            <div class="row text-center">
+                                                <div class="col-6 border-right">
+                                                    <div class="metric-circle border-success text-success mb-2 mx-auto"
+                                                        id="circle-taxa-acerto">0%</div>
+                                                    <span class="small font-weight-bold text-muted text-uppercase d-block" style="font-size: 0.72rem;">Taxa de Acertos</span>
+                                                </div>
+                                                <div class="col-6">
+                                                    <div class="metric-circle border-primary text-primary mb-2 mx-auto"
+                                                        id="circle-tempo-medio">-</div>
+                                                    <span class="small font-weight-bold text-muted text-uppercase d-block" style="font-size: 0.72rem;">Tempo Médio</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="card shadow-sm border-0">
                                         <div class="card-header bg-white py-3 border-bottom">
                                             <h6 class="font-weight-bold text-dark mb-0">
-                                                <i class="fas fa-trophy text-warning mr-2"></i> Classificação & Eficiência
+                                                <i class="fas fa-trophy text-warning mr-2"></i> Classificação &
+                                                Eficiência
                                             </h6>
                                         </div>
                                         <div class="p-3">
                                             <ul class="nav nav-pills nav-fill nav-segmented mb-3" role="tablist">
                                                 <li class="nav-item">
-                                                    <a class="nav-link active font-weight-bold py-1" data-toggle="pill" href="#tab-prof-ranking-geral" role="tab">
+                                                    <a class="nav-link active font-weight-bold py-1" data-toggle="pill"
+                                                        href="#tab-prof-ranking-geral" role="tab">
                                                         <i class="fas fa-list-ol mr-1"></i> Geral da Turma
                                                     </a>
                                                 </li>
                                                 <li class="nav-item">
-                                                    <a class="nav-link font-weight-bold py-1" data-toggle="pill" href="#tab-prof-ranking-exercicio" role="tab">
+                                                    <a class="nav-link font-weight-bold py-1" data-toggle="pill"
+                                                        href="#tab-prof-ranking-exercicio" role="tab">
                                                         <i class="fas fa-stopwatch mr-1"></i> Por Exercício
                                                     </a>
                                                 </li>
                                             </ul>
 
                                             <div class="tab-content">
-                                                <div class="tab-pane fade show active" id="tab-prof-ranking-geral" role="tabpanel">
-                                                    <div class="table-responsive" style="max-height: 440px; overflow-y: auto;">
-                                                        <table class="table table-sm table-hover mb-0" style="font-size: 0.88rem;">
+                                                <div class="tab-pane fade show active" id="tab-prof-ranking-geral"
+                                                    role="tabpanel">
+                                                    <div class="table-responsive"
+                                                        style="max-height: 440px; overflow-y: auto;">
+                                                        <table class="table table-sm table-hover mb-0"
+                                                            style="font-size: 0.88rem;">
                                                             <thead class="thead-light">
                                                                 <tr>
                                                                     <th>#</th>
@@ -357,28 +441,41 @@
                                                                 </tr>
                                                             </thead>
                                                             <tbody id="tbody-ranking-turma">
-                                                                <tr><td colspan="4" class="text-center text-muted py-3">Carregando ranking...</td></tr>
+                                                                <tr>
+                                                                    <td colspan="4" class="text-center text-muted py-3">
+                                                                        Carregando ranking...</td>
+                                                                </tr>
                                                             </tbody>
                                                         </table>
                                                     </div>
                                                 </div>
 
-                                                <div class="tab-pane fade" id="tab-prof-ranking-exercicio" role="tabpanel">
+                                                <div class="tab-pane fade" id="tab-prof-ranking-exercicio"
+                                                    role="tabpanel">
                                                     <div class="form-group mb-2">
-                                                        <label class="small text-muted font-weight-bold mb-1">Selecione o Exercício:</label>
-                                                        <select id="select-prof-ex-ranking" class="form-control form-control-sm font-weight-bold text-dark"></select>
+                                                        <label class="small text-muted font-weight-bold mb-1">Selecione
+                                                            o Exercício:</label>
+                                                        <select id="select-prof-ex-ranking"
+                                                            class="form-control form-control-sm font-weight-bold text-dark"></select>
                                                     </div>
 
-                                                    <div id="card-prof-lider-ex" class="alert alert-warning border py-2 px-3 mb-2 d-flex justify-content-between align-items-center" style="display: none;">
+                                                    <div id="card-prof-lider-ex"
+                                                        class="alert alert-warning border py-2 px-3 mb-2 d-flex justify-content-between align-items-center"
+                                                        style="display: none;">
                                                         <div>
-                                                            <span class="badge badge-warning text-dark font-weight-bold mr-2"><i class="fas fa-crown text-warning"></i> Líder</span>
+                                                            <span
+                                                                class="badge badge-warning text-dark font-weight-bold mr-2"><i
+                                                                    class="fas fa-crown text-warning"></i> Líder</span>
                                                             <strong id="prof-lider-nome">-</strong>
-                                                            <span class="text-muted ml-2">(<span id="prof-lider-tempo">-</span> ms)</span>
+                                                            <span class="text-muted ml-2">(<span
+                                                                    id="prof-lider-tempo">-</span>)</span>
                                                         </div>
                                                     </div>
 
-                                                    <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
-                                                        <table class="table table-sm table-hover mb-0" style="font-size: 0.88rem;">
+                                                    <div class="table-responsive"
+                                                        style="max-height: 360px; overflow-y: auto;">
+                                                        <table class="table table-sm table-hover mb-0"
+                                                            style="font-size: 0.88rem;">
                                                             <thead class="thead-light">
                                                                 <tr>
                                                                     <th>#</th>
@@ -387,7 +484,10 @@
                                                                 </tr>
                                                             </thead>
                                                             <tbody id="tbody-prof-ranking-exercicio">
-                                                                <tr><td colspan="3" class="text-center text-muted py-3">Selecione um exercício acima.</td></tr>
+                                                                <tr>
+                                                                    <td colspan="3" class="text-center text-muted py-3">
+                                                                        Selecione um exercício acima.</td>
+                                                                </tr>
                                                             </tbody>
                                                         </table>
                                                     </div>
@@ -402,12 +502,14 @@
                         <div class="tab-pane fade" id="tab-listas" role="tabpanel">
                             <ul class="nav nav-pills nav-fill mb-3 nav-segmented" id="pills-tipo-lista" role="tablist">
                                 <li class="nav-item">
-                                    <a class="nav-link active font-weight-bold" id="pill-minhas-listas" data-toggle="pill" href="#tab-minhas-listas" role="tab">
+                                    <a class="nav-link active font-weight-bold" id="pill-minhas-listas"
+                                        data-toggle="pill" href="#tab-minhas-listas" role="tab">
                                         <i class="fas fa-user-check mr-1"></i> Minhas Listas
                                     </a>
                                 </li>
                                 <li class="nav-item">
-                                    <a class="nav-link font-weight-bold" id="pill-banco-universal" data-toggle="pill" href="#tab-banco-universal" role="tab">
+                                    <a class="nav-link font-weight-bold" id="pill-banco-universal" data-toggle="pill"
+                                        href="#tab-banco-universal" role="tab">
                                         <i class="fas fa-globe mr-1"></i> Banco Universal
                                     </a>
                                 </li>
@@ -422,9 +524,11 @@
                                         <div class="col-md-4">
                                             <div class="input-group">
                                                 <div class="input-group-prepend">
-                                                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                                    <span class="input-group-text bg-white"><i
+                                                            class="fas fa-search text-muted"></i></span>
                                                 </div>
-                                                <input type="search" id="input-busca-lista" class="form-control" placeholder="Pesquisar lista...">
+                                                <input type="search" id="input-busca-lista" class="form-control"
+                                                    placeholder="Pesquisar lista...">
                                             </div>
                                         </div>
                                     </div>
@@ -436,16 +540,25 @@
                                             <div class="col-md-6 border-right">
                                                 <div class="d-flex align-items-center flex-wrap">
                                                     <div class="custom-control custom-switch">
-                                                        <input type="checkbox" class="custom-control-input" id="chk-limite-tentativas">
-                                                        <label class="custom-control-label font-weight-bold text-dark cursor-pointer mb-0" for="chk-limite-tentativas">
+                                                        <input type="checkbox" class="custom-control-input"
+                                                            id="chk-limite-tentativas">
+                                                        <label
+                                                            class="custom-control-label font-weight-bold text-dark cursor-pointer mb-0"
+                                                            for="chk-limite-tentativas">
                                                             Limite de Tentativas por Exercício
                                                         </label>
                                                     </div>
-                                                    <div id="box-tentativas" class="align-items-center ml-3 mt-1 mt-sm-0" style="display: none;">
-                                                        <label for="input-max-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
+                                                    <div id="box-tentativas"
+                                                        class="align-items-center ml-3 mt-1 mt-sm-0"
+                                                        style="display: none;">
+                                                        <label for="input-max-tentativas"
+                                                            class="small text-muted mb-0 mr-2 font-weight-bold">
                                                             Tentativas:
                                                         </label>
-                                                        <input type="number" id="input-max-tentativas" class="form-control form-control-sm text-center font-weight-bold" min="1" max="10" value="3" onwheel="this.blur()" style="width: 70px;">
+                                                        <input type="number" id="input-max-tentativas"
+                                                            class="form-control form-control-sm text-center font-weight-bold"
+                                                            min="1" max="10" value="3" onwheel="this.blur()"
+                                                            style="width: 70px;">
                                                     </div>
                                                 </div>
                                             </div>
@@ -453,23 +566,33 @@
                                             <div class="col-md-6 mt-3 mt-md-0">
                                                 <div class="d-flex align-items-center flex-wrap">
                                                     <div class="custom-control custom-switch">
-                                                        <input type="checkbox" class="custom-control-input" id="chk-tempo-atividade">
-                                                        <label class="custom-control-label font-weight-bold text-dark cursor-pointer mb-0" for="chk-tempo-atividade">
+                                                        <input type="checkbox" class="custom-control-input"
+                                                            id="chk-tempo-atividade">
+                                                        <label
+                                                            class="custom-control-label font-weight-bold text-dark cursor-pointer mb-0"
+                                                            for="chk-tempo-atividade">
                                                             Tempo Limite da Atividade
                                                         </label>
                                                     </div>
-                                                    <div id="box-tempo-atividade" class="align-items-center ml-3 mt-1 mt-sm-0" style="display: none;">
-                                                        <label for="input-tempo-atividade" class="small text-muted mb-0 mr-2 font-weight-bold">
+                                                    <div id="box-tempo-atividade"
+                                                        class="align-items-center ml-3 mt-1 mt-sm-0"
+                                                        style="display: none;">
+                                                        <label for="input-tempo-atividade"
+                                                            class="small text-muted mb-0 mr-2 font-weight-bold">
                                                             Duração (min):
                                                         </label>
-                                                        <input type="number" id="input-tempo-atividade" class="form-control form-control-sm text-center font-weight-bold" min="5" max="720" step="5" value="60" onwheel="this.blur()" style="width: 85px;">
+                                                        <input type="number" id="input-tempo-atividade"
+                                                            class="form-control form-control-sm text-center font-weight-bold"
+                                                            min="5" max="720" step="5" value="60" onwheel="this.blur()"
+                                                            style="width: 85px;">
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <button type="button" id="btnVincularLista" class="btn btn-success btn-lg btn-block font-weight-bold">
+                                    <button type="button" id="btnVincularLista"
+                                        class="btn btn-success btn-lg btn-block font-weight-bold">
                                         <i class="fas fa-check-circle mr-2"></i> Submeter Lista de Atividades
                                     </button>
                                 </div>
@@ -477,14 +600,17 @@
                                 <div class="tab-pane fade" id="tab-banco-universal" role="tabpanel">
                                     <div class="row mb-3 align-items-center">
                                         <div class="col-md-8">
-                                            <h5 class="font-weight-bold text-secondary mb-0">Listas compartilhadas pela comunidade:</h5>
+                                            <h5 class="font-weight-bold text-secondary mb-0">Listas compartilhadas pela
+                                                comunidade:</h5>
                                         </div>
                                         <div class="col-md-4">
                                             <div class="input-group">
                                                 <div class="input-group-prepend">
-                                                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                                    <span class="input-group-text bg-white"><i
+                                                            class="fas fa-search text-muted"></i></span>
                                                 </div>
-                                                <input type="search" id="input-busca-banco-universal" class="form-control" placeholder="Pesquisar lista...">
+                                                <input type="search" id="input-busca-banco-universal"
+                                                    class="form-control" placeholder="Pesquisar lista...">
                                             </div>
                                         </div>
                                     </div>
@@ -494,14 +620,17 @@
                         </div>
 
                         <div class="tab-pane fade" id="tab-nova" role="tabpanel">
-                            <ul class="nav nav-pills nav-fill mb-3 nav-segmented" id="pills-tipo-exercicio" role="tablist">
+                            <ul class="nav nav-pills nav-fill mb-3 nav-segmented" id="pills-tipo-exercicio"
+                                role="tablist">
                                 <li class="nav-item">
-                                    <a class="nav-link active font-weight-bold" id="pill-meus-ex" data-toggle="pill" href="#tab-meus-exercicios" role="tab">
+                                    <a class="nav-link active font-weight-bold" id="pill-meus-ex" data-toggle="pill"
+                                        href="#tab-meus-exercicios" role="tab">
                                         <i class="fas fa-user-edit mr-1"></i> Criar Lista
                                     </a>
                                 </li>
                                 <li class="nav-item">
-                                    <a class="nav-link font-weight-bold" id="pill-comunidade-ex" data-toggle="pill" href="#tab-banco-exercicios" role="tab">
+                                    <a class="nav-link font-weight-bold" id="pill-comunidade-ex" data-toggle="pill"
+                                        href="#tab-banco-exercicios" role="tab">
                                         <i class="fas fa-globe mr-1"></i> Banco Universal de Exercícios
                                     </a>
                                 </li>
@@ -512,16 +641,20 @@
                                     <div class="row align-items-center mb-3">
                                         <div class="col-md-7">
                                             <label class="font-weight-bold">Nome da Nova Lista:</label>
-                                            <input type="text" id="nome-nova-lista" class="form-control" placeholder="...">
+                                            <input type="text" id="nome-nova-lista" class="form-control"
+                                                placeholder="...">
                                             <div class="custom-control custom-checkbox mt-2">
-                                                <input type="checkbox" class="custom-control-input" id="chk-lista-privada">
-                                                <label class="custom-control-label small cursor-pointer" for="chk-lista-privada">
+                                                <input type="checkbox" class="custom-control-input"
+                                                    id="chk-lista-privada">
+                                                <label class="custom-control-label small cursor-pointer"
+                                                    for="chk-lista-privada">
                                                     <i class="fas fa-lock mr-1"></i> Tornar lista privada
                                                 </label>
                                             </div>
                                         </div>
                                         <div class="col-md-5 text-right mt-4">
-                                            <button type="button" class="btn btn-outline-primary font-weight-bold" id="btnAbrirModalNovoExercicio">
+                                            <button type="button" class="btn btn-outline-primary font-weight-bold"
+                                                id="btnAbrirModalNovoExercicio">
                                                 <i class="fas fa-plus-circle mr-1"></i> Adicionar Novo Exercício
                                             </button>
                                         </div>
@@ -531,24 +664,29 @@
 
                                     <div class="row mb-2 align-items-center">
                                         <div class="col-md-6">
-                                            <span class="font-weight-bold text-secondary">Selecione os exercícios para compor esta lista:</span>
+                                            <span class="font-weight-bold text-secondary">Selecione os exercícios para
+                                                compor esta lista:</span>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="input-group input-group-sm">
                                                 <div class="input-group-prepend">
-                                                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                                    <span class="input-group-text bg-white"><i
+                                                            class="fas fa-search text-muted"></i></span>
                                                 </div>
-                                                <input type="search" id="input-busca-exercicio" class="form-control" placeholder="Pesquisar exercício...">
+                                                <input type="search" id="input-busca-exercicio" class="form-control"
+                                                    placeholder="Pesquisar exercício...">
                                             </div>
                                         </div>
                                     </div>
                                     <div class="scrollable-list p-2 mb-3" id="container-exercicios-disponiveis"></div>
 
-                                    <div class="d-flex justify-content-between align-items-center bg-light p-3 rounded border">
+                                    <div
+                                        class="d-flex justify-content-between align-items-center bg-light p-3 rounded border">
                                         <span class="font-weight-bold text-primary" id="contador-selecionados">
                                             <i class="fas fa-check-square mr-1"></i> 0 exercícios selecionados
                                         </span>
-                                        <button type="button" id="btnSalvarNovaLista" class="btn btn-success px-5 font-weight-bold">
+                                        <button type="button" id="btnSalvarNovaLista"
+                                            class="btn btn-success px-5 font-weight-bold">
                                             Salvar Nova Lista
                                         </button>
                                     </div>
@@ -557,18 +695,22 @@
                                 <div class="tab-pane fade" id="tab-banco-exercicios" role="tabpanel">
                                     <div class="row mb-3 align-items-center">
                                         <div class="col-md-8">
-                                            <h5 class="font-weight-bold text-secondary mb-0">Exercícios compartilhados pela comunidade:</h5>
+                                            <h5 class="font-weight-bold text-secondary mb-0">Exercícios compartilhados
+                                                pela comunidade:</h5>
                                         </div>
                                         <div class="col-md-4">
                                             <div class="input-group input-group-sm">
                                                 <div class="input-group-prepend">
-                                                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                                                    <span class="input-group-text bg-white"><i
+                                                            class="fas fa-search text-muted"></i></span>
                                                 </div>
-                                                <input type="search" id="input-busca-banco-ex" class="form-control" placeholder="Pesquisar exercício público...">
+                                                <input type="search" id="input-busca-banco-ex" class="form-control"
+                                                    placeholder="Pesquisar exercício público...">
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="scrollable-list p-2 mb-3" id="container-banco-exercicios-comunidade"></div>
+                                    <div class="scrollable-list p-2 mb-3" id="container-banco-exercicios-comunidade">
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -584,7 +726,8 @@
                     <i class="fas fa-arrow-left mr-1"></i> Voltar para Configurações
                 </button>
             </div>
-            <iframe id="iframe-aluno" src="about:blank" style="width: 100%; height: 850px; border: none; border-radius: 8px;" class="shadow-sm"></iframe>
+            <iframe id="iframe-aluno" src="about:blank"
+                style="width: 100%; height: 850px; border: none; border-radius: 8px;" class="shadow-sm"></iframe>
         </div>
 
         <!-- Modal Novo / Editar Exercício -->
@@ -607,9 +750,10 @@
                         </div>
                         <div class="form-group">
                             <label class="font-weight-bold">Descrição da atividade:</label>
-                            <textarea id="modal-desc" class="form-control" rows="3" placeholder="Explique o que o aluno precisa programar..."></textarea>
+                            <textarea id="modal-desc" class="form-control" rows="3"
+                                placeholder="Explique o que o aluno precisa programar..."></textarea>
                         </div>
-                        
+
                         <div class="custom-control custom-checkbox mt-3">
                             <input type="checkbox" class="custom-control-input" id="chk-definir-tempo-limite">
                             <label class="custom-control-label small cursor-pointer" for="chk-definir-tempo-limite">
@@ -618,7 +762,8 @@
                         </div>
                         <div id="box-campo-tempo-limite" class="form-group mt-2" style="display: none;">
                             <label class="small text-muted mb-1 font-weight-bold">Tempo Limite em ms:</label>
-                            <input type="number" id="modal-tempo-limite" class="form-control form-control-sm" value="1000" min="100" step="100" style="max-width: 200px;">
+                            <input type="number" id="modal-tempo-limite" class="form-control form-control-sm"
+                                value="1000" min="100" step="100" style="max-width: 200px;">
                             <small class="text-muted d-block mt-1" id="label-max-tempo-limite"></small>
                         </div>
 
@@ -643,11 +788,13 @@
                                 <div class="row">
                                     <div class="col-md-6 mb-2 mb-md-0">
                                         <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
-                                        <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter..."></textarea>
+                                        <textarea class="form-control form-control-sm input-val font-monospace" rows="3"
+                                            placeholder="Digite cada valor ou linha separada por Enter..."></textarea>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
-                                        <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada..."></textarea>
+                                        <textarea class="form-control form-control-sm output-val font-monospace"
+                                            rows="3" placeholder="Digite a saída esperada..."></textarea>
                                     </div>
                                 </div>
                             </div>
@@ -658,7 +805,8 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                        <button type="button" id="modalBtnSalvarEx" class="btn btn-primary font-weight-bold">Salvar Exercício</button>
+                        <button type="button" id="modalBtnSalvarEx" class="btn btn-primary font-weight-bold">Salvar
+                            Exercício</button>
                     </div>
                 </div>
             </div>
@@ -678,16 +826,19 @@
                     </div>
                     <div class="modal-body text-center p-4">
                         <i class="fas fa-check-circle text-success mb-3" style="font-size: 3rem;"></i>
-                        <h5 class="font-weight-bold text-dark" id="modalSucessoTituloExercicio">Exercício salvo com sucesso!</h5>
+                        <h5 class="font-weight-bold text-dark" id="modalSucessoTituloExercicio">Exercício salvo com
+                            sucesso!</h5>
                         <p class="text-muted small mb-0">
                             O exercício já está disponível no seu banco de dados. Deseja testá-lo agora no Modo Aluno?
                         </p>
                     </div>
                     <div class="modal-footer py-2 bg-light d-flex justify-content-between">
-                        <button type="button" class="btn btn-secondary btn-sm px-4 font-weight-bold" data-dismiss="modal">
+                        <button type="button" class="btn btn-secondary btn-sm px-4 font-weight-bold"
+                            data-dismiss="modal">
                             OK
                         </button>
-                        <button type="button" id="btnModalSucessoTestarEx" class="btn btn-primary btn-sm px-4 font-weight-bold">
+                        <button type="button" id="btnModalSucessoTestarEx"
+                            class="btn btn-primary btn-sm px-4 font-weight-bold">
                             <i class="fas fa-play mr-1"></i> Testar Exercício
                         </button>
                     </div>
@@ -721,11 +872,13 @@
                         </div>
 
                         <label class="font-weight-bold">Exercícios selecionados para esta lista:</label>
-                        <div id="modal-edit-lista-exercicios" class="scrollable-list p-2 mb-2" style="max-height: 250px;"></div>
+                        <div id="modal-edit-lista-exercicios" class="scrollable-list p-2 mb-2"
+                            style="max-height: 250px;"></div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                        <button type="button" id="modalBtnSalvarEdicaoLista" class="btn btn-success font-weight-bold">Salvar Alterações</button>
+                        <button type="button" id="modalBtnSalvarEdicaoLista"
+                            class="btn btn-success font-weight-bold">Salvar Alterações</button>
                     </div>
                 </div>
             </div>
@@ -751,22 +904,28 @@
                         <div class="card p-3 mb-3 bg-light border rounded">
                             <div class="custom-control custom-switch mb-2">
                                 <input type="checkbox" class="custom-control-input" id="modal-ativ-chk-tentativas">
-                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer" for="modal-ativ-chk-tentativas">
+                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer"
+                                    for="modal-ativ-chk-tentativas">
                                     Limite de Tentativas por Exercício
                                 </label>
                             </div>
-                            <div id="modal-ativ-box-tentativas" class="align-items-center ml-4 mt-2" style="display: none;">
-                                <label for="modal-ativ-input-tentativas" class="small text-muted mb-0 mr-2 font-weight-bold">
+                            <div id="modal-ativ-box-tentativas" class="align-items-center ml-4 mt-2"
+                                style="display: none;">
+                                <label for="modal-ativ-input-tentativas"
+                                    class="small text-muted mb-0 mr-2 font-weight-bold">
                                     Tentativas:
                                 </label>
-                                <input type="number" id="modal-ativ-input-tentativas" class="form-control form-control-sm text-center font-weight-bold" min="1" max="10" value="3" onwheel="this.blur()" style="width: 75px;">
+                                <input type="number" id="modal-ativ-input-tentativas"
+                                    class="form-control form-control-sm text-center font-weight-bold" min="1" max="10"
+                                    value="3" onwheel="this.blur()" style="width: 75px;">
                             </div>
                         </div>
 
                         <div class="card p-3 bg-light border rounded">
                             <div class="custom-control custom-switch mb-2">
                                 <input type="checkbox" class="custom-control-input" id="modal-ativ-chk-tempo">
-                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer" for="modal-ativ-chk-tempo">
+                                <label class="custom-control-label font-weight-bold text-dark cursor-pointer"
+                                    for="modal-ativ-chk-tempo">
                                     Tempo Limite para Realização da Atividade
                                 </label>
                             </div>
@@ -774,13 +933,16 @@
                                 <label for="modal-ativ-input-tempo" class="small text-muted mb-0 mr-2 font-weight-bold">
                                     Duração total (em minutos):
                                 </label>
-                                <input type="number" id="modal-ativ-input-tempo" class="form-control form-control-sm text-center font-weight-bold" min="5" max="720" step="5" value="60" onwheel="this.blur()" style="width: 85px;">
+                                <input type="number" id="modal-ativ-input-tempo"
+                                    class="form-control form-control-sm text-center font-weight-bold" min="5" max="720"
+                                    step="5" value="60" onwheel="this.blur()" style="width: 85px;">
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer py-2 bg-light">
                         <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancelar</button>
-                        <button type="button" id="btnSalvarConfigAtividadeModal" class="btn btn-sm btn-primary font-weight-bold">
+                        <button type="button" id="btnSalvarConfigAtividadeModal"
+                            class="btn btn-sm btn-primary font-weight-bold">
                             Salvar Regras da Atividade
                         </button>
                     </div>
@@ -806,15 +968,19 @@
                             Como deseja prosseguir com a remoção deste exercício?
                         </p>
                         <div class="d-flex flex-column" style="gap: 10px;">
-                            <button type="button" id="btnExcluirApenasMeuBanco" class="btn btn-outline-warning text-dark text-left font-weight-bold py-2">
-                                <i class="fas fa-archive mr-2 text-warning"></i> 
+                            <button type="button" id="btnExcluirApenasMeuBanco"
+                                class="btn btn-outline-warning text-dark text-left font-weight-bold py-2">
+                                <i class="fas fa-archive mr-2 text-warning"></i>
                                 Remover apenas de Meus Exercícios
-                                <small class="d-block text-muted font-weight-normal mt-1">Mantém o exercício funcionando intacto nas listas de atividades que já o utilizavam.</small>
+                                <small class="d-block text-muted font-weight-normal mt-1">Mantém o exercício funcionando
+                                    intacto nas listas de atividades que já o utilizavam.</small>
                             </button>
-                            <button type="button" id="btnExcluirDeTodasAsListas" class="btn btn-outline-danger text-left font-weight-bold py-2">
-                                <i class="fas fa-trash-alt mr-2"></i> 
+                            <button type="button" id="btnExcluirDeTodasAsListas"
+                                class="btn btn-outline-danger text-left font-weight-bold py-2">
+                                <i class="fas fa-trash-alt mr-2"></i>
                                 Excluir de TODAS as listas e do banco
-                                <small class="d-block text-muted font-weight-normal mt-1">Apaga o exercício do banco e remove de todas as listas que você já montou.</small>
+                                <small class="d-block text-muted font-weight-normal mt-1">Apaga o exercício do banco e
+                                    remove de todas as listas que você já montou.</small>
                             </button>
                         </div>
                     </div>
@@ -837,14 +1003,16 @@
                             <span>&times;</span>
                         </button>
                     </div>
-                    
+
                     <div class="modal-body p-3">
                         <div class="card mb-3 bg-light border-0 shadow-sm">
-                            <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between flex-wrap">
+                            <div
+                                class="card-body py-2 px-3 d-flex align-items-center justify-content-between flex-wrap">
                                 <button type="button" id="modalBtnExAnterior" class="btn btn-sm btn-outline-secondary">
                                     <i class="fas fa-chevron-left mr-1"></i> Anterior
                                 </button>
-                                <div id="modalContainerNavExercicios" class="d-flex flex-wrap justify-content-center my-1" style="gap: 6px;"></div>
+                                <div id="modalContainerNavExercicios"
+                                    class="d-flex flex-wrap justify-content-center my-1" style="gap: 6px;"></div>
                                 <button type="button" id="modalBtnExProximo" class="btn btn-sm btn-outline-secondary">
                                     Próximo <i class="fas fa-chevron-right ml-1"></i>
                                 </button>
@@ -852,77 +1020,70 @@
                         </div>
 
                         <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-                            <h6 class="font-weight-bold text-primary mb-0" id="modalTituloExercicioAtivo">Exercício: -</h6>
+                            <h6 class="font-weight-bold text-primary mb-0" id="modalTituloExercicioAtivo">Exercício: -
+                            </h6>
                             <span id="modalBadgeStatusExercicio" class="badge badge-secondary p-1">Pendente</span>
                         </div>
 
                         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap" style="gap: 8px;">
-                            <ul class="nav nav-pills" id="pillsModalAluno" role="tablist">
-                                <li class="nav-item mr-2">
-                                    <a class="nav-link active nav-pill-btn nav-pill-btn-acertos" id="pill-acertos-tab" data-toggle="pill" href="#pill-acertos" role="tab">
-                                        <i class="fas fa-check-circle mr-1"></i> Acertos (<span id="count-acertos">0</span>)
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link nav-pill-btn nav-pill-btn-erros" id="pill-erros-tab" data-toggle="pill" href="#pill-erros" role="tab">
-                                        <i class="fas fa-times-circle mr-1"></i> Erros (<span id="count-erros">0</span>)
-                                    </a>
-                                </li>
-                            </ul>
+                            <span class="font-weight-bold text-secondary" style="font-size: 0.92rem;">
+                                <i class="fas fa-history mr-1 text-primary"></i> Histórico de Envios Recentes
+                            </span>
 
-                            <!-- Contador Visual Acertos / Erros -->
-                            <div class="d-inline-flex align-items-center border rounded bg-white px-3 py-1 shadow-sm text-center">
+                            <!-- Contador Visual Acertos / Erros / Taxa de Acerto -->
+                            <div
+                                class="d-inline-flex align-items-center border rounded bg-white px-3 py-1 shadow-sm text-center">
                                 <div class="px-2">
-                                    <div class="small font-weight-bold text-success text-uppercase" style="font-size: 0.72rem;">Acertos</div>
-                                    <span class="font-weight-bold text-dark" id="box-placar-acertos" style="font-size: 1.05rem;">0</span>
+                                    <div class="small font-weight-bold text-success text-uppercase"
+                                        style="font-size: 0.70rem;">Acertos</div>
+                                    <span class="font-weight-bold text-success" id="box-placar-acertos"
+                                        style="font-size: 1.05rem;">0</span>
                                 </div>
                                 <div class="border-left h-100 mx-1" style="height: 24px;"></div>
                                 <div class="px-2">
-                                    <div class="small font-weight-bold text-danger text-uppercase" style="font-size: 0.72rem;">Erros</div>
-                                    <span class="font-weight-bold text-dark" id="box-placar-erros" style="font-size: 1.05rem;">0</span>
+                                    <div class="small font-weight-bold text-danger text-uppercase"
+                                        style="font-size: 0.70rem;">Erros</div>
+                                    <span class="font-weight-bold text-danger" id="box-placar-erros"
+                                        style="font-size: 1.05rem;">0</span>
+                                </div>
+                                <div class="border-left h-100 mx-1" style="height: 24px;"></div>
+                                <div class="px-2">
+                                    <div class="small font-weight-bold text-primary text-uppercase"
+                                        style="font-size: 0.70rem;">Taxa de Acerto</div>
+                                    <span class="font-weight-bold text-primary" id="box-placar-taxa"
+                                        style="font-size: 1.05rem;">-</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="tab-content border rounded p-2 bg-light mb-3" style="max-height: 200px; overflow-y: auto;">
-                            <div class="tab-pane fade show active" id="pill-acertos" role="tabpanel">
-                                <table class="table table-sm table-hover bg-white mb-0" style="font-size: 0.88rem;">
-                                    <thead class="thead-light">
-                                        <tr>
-                                            <th>Status</th>
-                                            <th>Tempo Execução</th>
-                                            <th>Data / Hora</th>
-                                            <th class="text-right">Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbody-modal-acertos"></tbody>
-                                </table>
-                            </div>
-
-                            <div class="tab-pane fade" id="pill-erros" role="tabpanel">
-                                <table class="table table-sm table-hover bg-white mb-0" style="font-size: 0.88rem;">
-                                    <thead class="thead-light">
-                                        <tr>
-                                            <th>Falha</th>
-                                            <th>Data / Hora</th>
-                                            <th class="text-right">Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbody-modal-erros"></tbody>
-                                </table>
-                            </div>
+                        <div class="border rounded p-2 bg-light mb-3" style="max-height: 210px; overflow-y: auto;">
+                            <table class="table table-sm table-hover bg-white mb-0" style="font-size: 0.88rem;">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th class="text-left" style="width: 25%;">Status</th>
+                                        <th class="text-center" style="width: 25%;">Tempo Execução</th>
+                                        <th class="text-center" style="width: 28%;">Data / Hora</th>
+                                        <th class="text-center" style="width: 22%;">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-modal-submissoes"></tbody>
+                            </table>
                         </div>
 
                         <div class="card border">
-                            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center flex-wrap" style="gap: 8px;">
+                            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center flex-wrap"
+                                style="gap: 8px;">
                                 <span class="font-weight-bold text-secondary small" id="labelInspecaoArquivo">
                                     <i class="fas fa-code mr-1"></i> Selecione uma submissão acima para inspecionar
                                 </span>
                                 <div class="d-flex align-items-center" style="gap: 6px;">
-                                    <button type="button" id="btnCopiarCodigoAluno" class="btn btn-sm btn-outline-secondary font-weight-bold" disabled title="Copiar código para a área de transferência">
+                                    <button type="button" id="btnCopiarCodigoAluno"
+                                        class="btn btn-sm btn-outline-secondary font-weight-bold" disabled
+                                        title="Copiar código para a área de transferência">
                                         <i class="fas fa-copy mr-1"></i> Copiar Código
                                     </button>
-                                    <button type="button" id="btnRecompilarCodigoAluno" class="btn btn-sm btn-primary font-weight-bold" disabled>
+                                    <button type="button" id="btnRecompilarCodigoAluno"
+                                        class="btn btn-sm btn-primary font-weight-bold" disabled>
                                         <i class="fas fa-play mr-1"></i> Compilar
                                     </button>
                                 </div>
@@ -930,7 +1091,8 @@
                             <div class="card-body p-2 position-relative" id="modalInspecionarWrapper">
                                 <div class="theme-floating-pill-prof">
                                     <i class="fas fa-palette text-warning mr-1" style="font-size: 0.78rem;"></i>
-                                    <select id="select-tema-editor-prof" class="theme-floating-select-prof" title="Alterar tema visual do editor">
+                                    <select id="select-tema-editor-prof" class="theme-floating-select-prof"
+                                        title="Alterar tema visual do editor">
                                         <option value="dracula">Dracula</option>
                                         <option value="monokai">Monokai</option>
                                         <option value="default">Claro</option>
@@ -967,13 +1129,15 @@
                                 <span class="text-muted small">Criado por:</span>
                                 <strong id="modalVerListaAutor" class="text-dark ml-1">-</strong>
                             </div>
-                            <span id="modalVerListaQtd" class="badge badge-info p-2 font-weight-bold">0 exercícios</span>
+                            <span id="modalVerListaQtd" class="badge badge-info p-2 font-weight-bold">0
+                                exercícios</span>
                         </div>
                         <div id="modalVerListaConteudo"></div>
                     </div>
                     <div class="modal-footer py-2 bg-light d-flex justify-content-between">
                         <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Fechar</button>
-                        <button type="button" id="modalBtnImportarListaAberta" class="btn btn-sm btn-success font-weight-bold">
+                        <button type="button" id="modalBtnImportarListaAberta"
+                            class="btn btn-sm btn-success font-weight-bold">
                             <i class="fas fa-file-import mr-1"></i> Importar esta Lista
                         </button>
                     </div>
@@ -998,22 +1162,27 @@
                             <span class="text-muted small font-weight-bold">
                                 <i class="fas fa-stopwatch mr-1 text-warning"></i> Tempo Limite de Execução:
                             </span>
-                            <span id="modalVerExTempoLimite" class="badge badge-warning text-dark font-weight-bold p-2">Sem Limite</span>
+                            <span id="modalVerExTempoLimite"
+                                class="badge badge-warning text-dark font-weight-bold p-2">Sem Limite</span>
                         </div>
                         <div class="mb-3">
                             <label class="font-weight-bold text-secondary mb-1">Enunciado:</label>
-                            <div id="modalVerExDescricao" class="p-3 bg-light border rounded text-secondary" style="white-space: pre-line;"></div>
+                            <div id="modalVerExDescricao" class="p-3 bg-light border rounded text-secondary"
+                                style="white-space: pre-line;"></div>
                         </div>
                         <div>
-                            <label class="font-weight-bold text-secondary mb-1"><i class="fas fa-vial mr-1"></i> Exemplo de Caso de Teste:</label>
+                            <label class="font-weight-bold text-secondary mb-1"><i class="fas fa-vial mr-1"></i> Exemplo
+                                de Caso de Teste:</label>
                             <div id="modalVerExTeste" class="p-2 border rounded bg-white small"></div>
                         </div>
                     </div>
                     <div class="modal-footer py-2 bg-light d-flex justify-content-between">
-                        <button type="button" id="btnFecharModalVerEx" class="btn btn-sm btn-secondary font-weight-bold px-3" data-dismiss="modal">
+                        <button type="button" id="btnFecharModalVerEx"
+                            class="btn btn-sm btn-secondary font-weight-bold px-3" data-dismiss="modal">
                             Fechar
                         </button>
-                        <button type="button" id="modalBtnCopiarExAberto" class="btn btn-sm btn-success font-weight-bold">
+                        <button type="button" id="modalBtnCopiarExAberto"
+                            class="btn btn-sm btn-success font-weight-bold">
                             <i class="fas fa-file-import mr-1"></i> Importar
                         </button>
                     </div>
@@ -1022,7 +1191,8 @@
         </div>
 
         <!-- Modal Unificado de Resolução de Conflitos na Importação de Lista -->
-        <div class="modal fade" id="modalResolverConflitosImportacao" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+        <div class="modal fade" id="modalResolverConflitosImportacao" tabindex="-1" role="dialog" aria-hidden="true"
+            data-backdrop="static">
             <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
                 <div class="modal-content shadow border-0 p-3" style="border-radius: 14px;">
                     <div class="modal-header border-0 pb-0">
@@ -1032,22 +1202,28 @@
                     </div>
                     <div class="modal-body py-3" style="max-height: 520px; overflow-y: auto;">
                         <p class="small text-secondary mb-3">
-                            Alguns nomes já existem em sua conta. Para manter sua biblioteca organizada e permitir que você identifique cada questão ao montar provas e atividades, defina os nomes das novas cópias:
+                            Alguns nomes já existem em sua conta. Para manter sua biblioteca organizada e permitir que
+                            você identifique cada questão ao montar provas e atividades, defina os nomes das novas
+                            cópias:
                         </p>
 
                         <div id="boxConflitoNomeLista" class="form-group mb-3" style="display: none;">
                             <label class="font-weight-bold small text-dark mb-1">Nome da Lista:</label>
-                            <input type="text" id="inputConflitoNomeLista" class="form-control form-control-sm font-weight-bold">
+                            <input type="text" id="inputConflitoNomeLista"
+                                class="form-control form-control-sm font-weight-bold">
                         </div>
 
                         <div id="boxConflitoExercicios" style="display: none;">
-                            <label class="font-weight-bold small text-dark mb-2">Exercícios que precisam de um novo nome:</label>
+                            <label class="font-weight-bold small text-dark mb-2">Exercícios que precisam de um novo
+                                nome:</label>
                             <div id="containerConflitosExercicios" class="d-flex flex-column" style="gap: 10px;"></div>
                         </div>
                     </div>
                     <div class="modal-footer border-0 pt-0 d-flex justify-content-end" style="gap: 10px;">
-                        <button type="button" class="btn btn-sm btn-light px-3 font-weight-bold border" data-dismiss="modal">Cancelar</button>
-                        <button type="button" id="btnSalvarConflitosImportacao" class="btn btn-sm btn-primary px-3 font-weight-bold shadow-sm">
+                        <button type="button" class="btn btn-sm btn-light px-3 font-weight-bold border"
+                            data-dismiss="modal">Cancelar</button>
+                        <button type="button" id="btnSalvarConflitosImportacao"
+                            class="btn btn-sm btn-primary px-3 font-weight-bold shadow-sm">
                             Confirmar e Importar
                         </button>
                     </div>
@@ -1056,7 +1232,8 @@
         </div>
 
         <!-- Modal Renomear Exercício Avulso -->
-        <div class="modal fade" id="modalRenomearExercicioImportado" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+        <div class="modal fade" id="modalRenomearExercicioImportado" tabindex="-1" role="dialog" aria-hidden="true"
+            data-backdrop="static">
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content shadow border-0 p-3" style="border-radius: 14px;">
                     <div class="modal-header border-0 pb-0">
@@ -1066,13 +1243,17 @@
                     </div>
                     <div class="modal-body py-3">
                         <p class="small text-secondary mb-3" id="msgConflitoExercicio">
-                            Você já possui um exercício com este título em <strong>Meus Exercícios</strong>. Digite um novo nome para esta cópia:
+                            Você já possui um exercício com este título em <strong>Meus Exercícios</strong>. Digite um
+                            novo nome para esta cópia:
                         </p>
-                        <input type="text" id="inputNomeExercicioConflito" class="form-control font-weight-bold" placeholder="Digite o novo título do exercício...">
+                        <input type="text" id="inputNomeExercicioConflito" class="form-control font-weight-bold"
+                            placeholder="Digite o novo título do exercício...">
                     </div>
                     <div class="modal-footer border-0 pt-0 d-flex justify-content-end" style="gap: 10px;">
-                        <button type="button" class="btn btn-sm btn-light px-3 font-weight-bold border" data-dismiss="modal">Cancelar</button>
-                        <button type="button" id="btnConfirmarNovoNomeExercicio" class="btn btn-sm btn-primary px-3 font-weight-bold shadow-sm">
+                        <button type="button" class="btn btn-sm btn-light px-3 font-weight-bold border"
+                            data-dismiss="modal">Cancelar</button>
+                        <button type="button" id="btnConfirmarNovoNomeExercicio"
+                            class="btn btn-sm btn-primary px-3 font-weight-bold shadow-sm">
                             Salvar Exercício
                         </button>
                     </div>
@@ -1081,18 +1262,22 @@
         </div>
 
         <!-- Modal Central de Confirmação -->
-        <div class="modal fade" id="modalConfirmacaoGenerica" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static" data-keyboard="false">
+        <div class="modal fade" id="modalConfirmacaoGenerica" tabindex="-1" role="dialog" aria-hidden="true"
+            data-backdrop="static" data-keyboard="false">
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content shadow border-0 text-center p-4" style="border-radius: 14px;">
                     <div class="modal-body p-0">
                         <div id="modalConfirmIcone" class="mb-3" style="font-size: 3.2rem;"></div>
                         <h5 class="font-weight-bold text-dark mb-2" id="modalConfirmTitulo">Tem certeza?</h5>
-                        <p class="text-secondary small mb-4" id="modalConfirmMensagem" style="white-space: pre-line;">Mensagem de confirmação...</p>
+                        <p class="text-secondary small mb-4" id="modalConfirmMensagem" style="white-space: pre-line;">
+                            Mensagem de confirmação...</p>
                         <div class="d-flex justify-content-center" style="gap: 12px;">
-                            <button type="button" id="btnModalConfirmCancelar" class="btn btn-light px-4 font-weight-bold border" data-dismiss="modal">
+                            <button type="button" id="btnModalConfirmCancelar"
+                                class="btn btn-light px-4 font-weight-bold border" data-dismiss="modal">
                                 Cancelar
                             </button>
-                            <button type="button" id="btnModalConfirmAcao" class="btn btn-danger px-4 font-weight-bold shadow-sm">
+                            <button type="button" id="btnModalConfirmAcao"
+                                class="btn btn-danger px-4 font-weight-bold shadow-sm">
                                 Confirmar
                             </button>
                         </div>
@@ -1111,4 +1296,5 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
     <script src="/js/professor.js"></script>
 </body>
+
 </html>

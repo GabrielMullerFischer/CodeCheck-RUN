@@ -38,6 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnEditarAtividadeAtiva = document.getElementById('btnEditarAtividadeAtiva');
     const btnPreview = document.getElementById('btnPreview');
     const btnDesvincularAtividade = document.getElementById('btnDesvincularAtividade');
+    const circleTaxaAcerto = document.getElementById('circle-taxa-acerto');
+    const circleTempoMedio = document.getElementById('circle-tempo-medio');
 
     const selectProfExRanking = document.getElementById('select-prof-ex-ranking');
     const tbodyProfRankingEx = document.getElementById('tbody-prof-ranking-exercicio');
@@ -156,6 +158,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const s = (ms / 1000).toFixed(1).replace('.0', '');
             return `Máximo permitido: ${ms.toLocaleString()} ms - equivalente a ${s} segundos`;
         }
+    }
+
+    function formatarTempo(ms) {
+        if (ms === null || ms === undefined || ms === '') return '-';
+        const num = Number(ms);
+        if (isNaN(num) || num < 0) return '-';
+        if (num >= 1000) {
+            const seg = num / 1000;
+            return (seg < 10 ? seg.toFixed(2) : seg.toFixed(1)) + ' s';
+        }
+        if (num >= 100) {
+            return Math.round(num) + ' ms';
+        }
+        if (num >= 10) {
+            return num.toFixed(1) + ' ms';
+        }
+        return num.toFixed(2) + ' ms';
     }
 
     document.addEventListener('wheel', (e) => {
@@ -428,18 +447,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (nomeAtividadeGerenciar) {
                     nomeAtividadeGerenciar.innerText = listaAtivaObjeto.title || 'Lista Vinculada';
                 }
-                
+
                 if (isInitialLoad && window.$ && tabGerenciarLink) {
                     $(tabGerenciarLink).tab('show');
                 }
-                
+
                 await carregarMetricasTurma();
             } else {
                 if (tabGerenciarLink) {
                     tabGerenciarLink.classList.add('disabled');
                     tabGerenciarLink.setAttribute('title', 'Vincule uma lista primeiro para liberar esta aba');
                 }
-                
+
                 if (isInitialLoad && window.$ && tabListasLink) {
                     $(tabListasLink).tab('show');
                 }
@@ -458,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const listaOrdenada = [...meusEx].sort((a, b) => 
+        const listaOrdenada = [...meusEx].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
 
@@ -475,9 +494,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </label>
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
-                    ${isPub 
-                        ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>' 
-                        : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
+                    ${isPub
+                    ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>'
+                    : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
                     <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-meu-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
                         <i class="fas fa-eye"></i>
                     </button>
@@ -512,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarBancoExercicios(bancoEx) {
-        const listaOrdenada = [...bancoEx].sort((a, b) => 
+        const listaOrdenada = [...bancoEx].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
         window.exerciciosComunidadeCache = listaOrdenada;
@@ -533,15 +552,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="text-truncate mr-2">
                     <strong class="text-dark">${ex.title}</strong>
                     ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
-                    ${isOficial 
-                        ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
-                        : `<small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${ex.authorName || 'Professor'}</small>`
-                    }
+                    ${isOficial
+                    ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
+                    : `<small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${ex.authorName || 'Professor'}</small>`
+                }
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
-                    ${isPub 
-                        ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>' 
-                        : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
+                    ${isPub
+                    ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>'
+                    : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
                     <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
                         <i class="fas fa-eye"></i>
                     </button>
@@ -632,7 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const listasOrdenadas = [...minhasListas].sort((a, b) => 
+        const listasOrdenadas = [...minhasListas].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
         listasOrdenadas.forEach(lista => {
@@ -651,9 +670,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </label>
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
-                    ${isPub 
-                        ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>' 
-                        : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
+                    ${isPub
+                    ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>'
+                    : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
                     <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-minha-lista shadow-sm" data-listid="${lista._id}" title="Testar lista no Modo Aluno">
                         <i class="fas fa-play"></i>
                     </button>
@@ -764,7 +783,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarBancoListas(listasComunidade) {
-        const listasOrdenadas = [...listasComunidade].sort((a, b) => 
+        const listasOrdenadas = [...listasComunidade].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
         window.listasComunidadeCache = listasOrdenadas;
@@ -785,15 +804,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="text-truncate mr-2">
                     <strong class="text-dark" style="font-size: 1.02rem;">${lista.title}</strong>
                     <span class="badge badge-light border text-muted ml-2">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
-                    ${isOficial 
-                        ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
-                        : `<small class="text-muted ml-3"><i class="fas fa-user-edit mr-1"></i>${lista.authorName || 'Professor'}</small>`
-                    }
+                    ${isOficial
+                    ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
+                    : `<small class="text-muted ml-3"><i class="fas fa-user-edit mr-1"></i>${lista.authorName || 'Professor'}</small>`
+                }
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
-                    ${isPub 
-                        ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>' 
-                        : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
+                    ${isPub
+                    ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>'
+                    : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
                     <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-lista shadow-sm" data-listid="${lista._id}" title="Ver exercícios da lista">
                         <i class="fas fa-eye"></i>
                     </button>
@@ -875,7 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
         containerExs.innerHTML = '';
 
         const idsNaLista = (lista.exercises || []).map(e => String(e._id || e));
-        const todosExs = [...(window.todosMeusExerciciosCache || [])].sort((a, b) => 
+        const todosExs = [...(window.todosMeusExerciciosCache || [])].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
 
@@ -1191,7 +1210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const description = document.getElementById('modal-desc')?.value.trim();
             const isPrivate = document.getElementById('modal-exercicio-privado')?.checked || false;
             const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
-            
+
             let timeLimit = null;
             if (chkDefinirTempoEl && chkDefinirTempoEl.checked) {
                 const val = parseInt(document.getElementById('modal-tempo-limite')?.value, 10);
@@ -1240,7 +1259,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!editId && data.exercicio && data.exercicio._id) {
                         const labelTitulo = document.getElementById('modalSucessoTituloExercicio');
                         if (labelTitulo) labelTitulo.innerText = `"${data.exercicio.title}" salvo com sucesso!`;
-                        
+
                         const btnModalTestar = document.getElementById('btnModalSucessoTestarEx');
                         if (btnModalTestar) {
                             btnModalTestar.onclick = () => {
@@ -1334,14 +1353,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     const res = await fetch(`/judge/atividade/vincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            activityId, 
-                            listId: rad.value, 
-                            isEvaluative, 
-                            maxAttempts, 
-                            hasTimeLimit, 
-                            timeLimitMinutes, 
-                            force: forcar 
+                        body: JSON.stringify({
+                            activityId,
+                            listId: rad.value,
+                            isEvaluative,
+                            maxAttempts,
+                            hasTimeLimit,
+                            timeLimitMinutes,
+                            force: forcar
                         })
                     });
                     const data = await res.json();
@@ -1434,6 +1453,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (!data.success) {
+                if (circleTaxaAcerto) circleTaxaAcerto.innerText = '0%';
+                if (circleTempoMedio) circleTempoMedio.innerText = '-';
                 if (tbodyAlunosProgresso) tbodyAlunosProgresso.innerHTML = `<tr><td colspan="4" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
                 return;
             }
@@ -1443,12 +1464,19 @@ document.addEventListener('DOMContentLoaded', () => {
             rankingPorExercicioCarregado = data.rankingPorExercicio || {};
             totalExerciciosAtividade = data.totalExercicios || metricasGlobaisExercicios.length || 0;
 
+            if (circleTaxaAcerto) {
+                circleTaxaAcerto.innerText = `${typeof data.taxaGeralAcertos === 'number' ? data.taxaGeralAcertos : 0}%`;
+            }
+            if (circleTempoMedio) {
+                circleTempoMedio.innerText = data.tempoMedioMs > 0 ? formatarTempo(data.tempoMedioMs) : '-';
+            }
+
             if (tbodyAlunosProgresso) {
                 tbodyAlunosProgresso.innerHTML = '';
                 if (dadosTurmaCarregados.length === 0) {
                     tbodyAlunosProgresso.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum aluno realizou submissões nesta atividade ainda.</td></tr>';
                 } else {
-                    const alunosOrdemAlfabetica = [...dadosTurmaCarregados].sort((a, b) => 
+                    const alunosOrdemAlfabetica = [...dadosTurmaCarregados].sort((a, b) =>
                         (a.userName || '').localeCompare(b.userName || '', undefined, { sensitivity: 'base' })
                     );
 
@@ -1495,7 +1523,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
                             <td><strong>${aluno.userName}</strong></td>
                             <td class="text-center font-weight-bold text-primary">${aluno.totalResolvidos}</td>
-                            <td class="text-right text-muted">${aluno.tempoTotalMs > 0 ? aluno.tempoTotalMs + ' ms' : '-'}</td>
+                            <td class="text-right text-muted">${aluno.totalResolvidos > 0 ? formatarTempo(aluno.tempoTotalMs) : '-'}</td>
                         `;
                         tbodyRanking.appendChild(tr);
                     });
@@ -1536,7 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dadosEx.lider && cardProfLiderEx && profLiderNome && profLiderTempo) {
             cardProfLiderEx.style.display = 'flex';
             profLiderNome.innerText = dadosEx.lider.userName;
-            profLiderTempo.innerText = dadosEx.lider.executionTime;
+            profLiderTempo.innerText = formatarTempo(dadosEx.lider.executionTime);
         } else if (cardProfLiderEx) {
             cardProfLiderEx.style.display = 'none';
         }
@@ -1546,7 +1574,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
                 <td><strong>${aluno.userName}</strong></td>
-                <td class="text-right font-weight-bold text-secondary">${aluno.executionTime} ms</td>
+                <td class="text-right font-weight-bold text-secondary">${formatarTempo(aluno.executionTime)}</td>
             `;
             tbodyProfRankingEx.appendChild(tr);
         });
@@ -1564,7 +1592,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <i class="fas fa-user-graduate mr-2 text-primary"></i> Submissões de: <strong>${alunoSelecionado.userName}</strong>
         `;
 
-        listaExerciciosModal = metricasGlobaisExercicios || []; 
+        listaExerciciosModal = metricasGlobaisExercicios || [];
         indiceExercicioModal = 0;
 
         montarNavegacaoModal();
@@ -1580,7 +1608,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const activityIdMeta = document.querySelector('meta[name="activity-id"]');
                 const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
 
-                divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Compilando...</div>';
+                divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Compilando e executando testes...</div>';
                 btnRecompilar.disabled = true;
 
                 try {
@@ -1595,14 +1623,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         })
                     });
                     const data = await res.json();
-
-                    if (data.status === 'Accepted') {
-                        divResultado.innerHTML = `<div class="alert alert-success py-1 small"><strong>Aceito!</strong> Tempo de execução: ${data.executionTime} ms</div>`;
-                    } else if (data.status === 'Compilation Error') {
-                        divResultado.innerHTML = `<div class="alert alert-warning py-1 small"><strong>Erro de Compilação:</strong><pre class="bg-dark text-white p-1 mt-1 mb-0">${data.details || ''}</pre></div>`;
-                    } else {
-                        divResultado.innerHTML = `<div class="alert alert-danger py-1 small"><strong>${data.status}:</strong> ${data.message || 'Falhou nos testes.'}</div>`;
-                    }
+                    renderizarFeedbackModalProfessor(data);
                 } catch (e) {
                     divResultado.innerHTML = '<div class="alert alert-danger py-1 small">Erro de conexão com o servidor.</div>';
                 } finally {
@@ -1612,6 +1633,192 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         $('#modalHistoricoAluno').modal('show');
+    }
+
+    function escapeHtml(str) {
+        if (!str && str !== 0) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function renderizarFeedbackModalProfessor(data) {
+        const divResultado = document.getElementById('modalInspecionarResultado');
+        if (!divResultado) return;
+        if (!data || !data.status) {
+            divResultado.innerHTML = '';
+            return;
+        }
+
+        let cardDica = '';
+        if (data.didacticHint) {
+            cardDica = `
+                <div class="alert alert-warning py-2 px-3 mb-2 small shadow-sm border">
+                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica Didática:</strong> ${escapeHtml(data.didacticHint)}
+                </div>
+            `;
+        }
+
+        let tempoFormatado = formatarTempo(data.executionTime);
+
+        const pct = typeof data.percentage === 'number' ? data.percentage : (data.status === 'Accepted' ? 100 : 0);
+        const passed = typeof data.passedCount === 'number' ? data.passedCount : (data.status === 'Accepted' ? data.totalCount : 0);
+        const total = typeof data.totalCount === 'number' ? data.totalCount : 0;
+
+        let badgeTestes = '';
+        if (total > 0) {
+            badgeTestes = `<span class="badge ${data.status === 'Accepted' ? 'badge-success' : 'badge-danger'} px-2 py-1 font-weight-bold ml-1">${pct}% (${passed}/${total} testes)</span>`;
+        }
+
+        if (data.status === 'Accepted') {
+            divResultado.innerHTML = `
+                <div class="alert alert-success py-2 px-3 mb-0 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap: 8px;">
+                        <div>
+                            <i class="fas fa-check-circle text-success mr-2"></i>
+                            <strong class="text-success">Solução Aceita (Accepted)</strong>
+                            <span class="text-muted small ml-2">Passou em todos os casos de teste</span>
+                        </div>
+                        <div class="d-flex align-items-center flex-wrap" style="gap: 6px;">
+                            <span class="badge badge-light border text-dark font-weight-bold px-2 py-1 shadow-sm">
+                                <i class="fas fa-stopwatch text-warning mr-1"></i> ${tempoFormatado}
+                            </span>
+                            ${badgeTestes}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (data.status === 'Compilation Error') {
+            divResultado.innerHTML = `
+                <div class="alert alert-warning py-2 px-3 mb-0 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div>
+                            <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
+                            <strong class="text-dark">Erro de Compilação</strong>
+                        </div>
+                        <span class="badge badge-danger font-weight-bold">0% de acerto</span>
+                    </div>
+                    ${cardDica}
+                    <pre class="bg-dark text-white p-2 mt-2 rounded small pre-io mb-0" style="max-height: 180px; overflow-y: auto;">${escapeHtml(data.details || 'Falha ao compilar o código.')}</pre>
+                </div>
+            `;
+        } else if (data.status === 'Wrong Answer') {
+            divResultado.innerHTML = `
+                <div class="alert alert-danger py-2 px-3 mb-0 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div>
+                            <i class="fas fa-times-circle text-danger mr-2"></i>
+                            <strong>Resposta Incorreta (Wrong Answer)</strong>
+                        </div>
+                        <div>${badgeTestes}</div>
+                    </div>
+                    ${cardDica}
+                    <div class="small mt-2">
+                        <div class="mb-1 text-dark"><strong>Entrada do Teste:</strong></div>
+                        <pre class="p-2 border rounded bg-white text-dark pre-io mb-1" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.input || '(sem entrada)')}</pre>
+                        <div class="mb-1 text-dark"><strong>Saída do Aluno:</strong></div>
+                        <pre class="p-2 border rounded bg-white text-danger pre-io mb-1" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.got || '(vazio)')}</pre>
+                        <div class="mb-1 text-dark"><strong>Saída Esperada:</strong></div>
+                        <pre class="p-2 border rounded bg-white text-success pre-io mb-0" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.expected || '')}</pre>
+                    </div>
+                </div>
+            `;
+        } else if (data.status === 'Time Limit') {
+            divResultado.innerHTML = `
+                <div class="alert alert-danger py-2 px-3 mb-0 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div>
+                            <i class="fas fa-clock text-danger mr-2"></i>
+                            <strong>Tempo Limite Excedido (Time Limit)</strong>
+                        </div>
+                        <div>${badgeTestes}</div>
+                    </div>
+                    ${cardDica}
+                    <div class="small mt-1 text-dark">${escapeHtml(data.message || 'O código excedeu o tempo limite configurado para execução.')}</div>
+                </div>
+            `;
+        } else {
+            divResultado.innerHTML = `
+                <div class="alert alert-danger py-2 px-3 mb-0 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div>
+                            <i class="fas fa-exclamation-circle text-danger mr-2"></i>
+                            <strong>${escapeHtml(data.status)}</strong>
+                        </div>
+                        <div>${badgeTestes}</div>
+                    </div>
+                    ${cardDica}
+                    ${data.details ? `<pre class="bg-dark text-white p-2 mt-2 rounded small pre-io mb-0" style="max-height: 180px; overflow-y: auto;">${escapeHtml(data.details)}</pre>` : ''}
+                </div>
+            `;
+        }
+    }
+
+    async function carregarCodigoESubmissaoModal(codePath, exId, exTitle, subId) {
+        const labelArquivo = document.getElementById('labelInspecaoArquivo');
+        const divResultado = document.getElementById('modalInspecionarResultado');
+        const btnCompilar = document.getElementById('btnRecompilarCodigoAluno');
+        const btnCopiar = document.getElementById('btnCopiarCodigoAluno');
+
+        if (labelArquivo) {
+            labelArquivo.innerHTML = `<i class="fas fa-code mr-1"></i> Inspecionando: <strong>${escapeHtml(exTitle)}</strong>`;
+        }
+        if (editorInspecaoCM) {
+            editorInspecaoCM.setValue("// Carregando código e log do MinIO...");
+        } else {
+            document.getElementById('modalInspecionarEditor').value = "// Carregando código e log do MinIO...";
+        }
+        if (divResultado) {
+            divResultado.innerHTML = '<div class="alert alert-light py-2 small border text-muted shadow-sm"><i class="fas fa-spinner fa-spin mr-1"></i> Carregando log da execução...</div>';
+        }
+        submissaoAtivaParaCompilar = { exerciseId: exId, codePath, submissionId: subId };
+
+        try {
+            const res = await fetch(`/judge/professor/submissao-codigo` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ codePath, submissionId: subId })
+            });
+            const d = await res.json();
+            if (res.ok && d.success) {
+                if (editorInspecaoCM) {
+                    editorInspecaoCM.setValue(d.code || '// Sem código gravado.');
+                    editorInspecaoCM.refresh();
+                } else {
+                    document.getElementById('modalInspecionarEditor').value = d.code || '// Sem código gravado.';
+                }
+                if (btnCompilar) btnCompilar.disabled = false;
+                if (btnCopiar) btnCopiar.disabled = false;
+
+                renderizarFeedbackModalProfessor(d.resultado);
+            } else {
+                const msgErro = d.error ? `// ${d.error}` : "// Sem código gravado.";
+                if (editorInspecaoCM) {
+                    editorInspecaoCM.setValue(msgErro);
+                } else {
+                    document.getElementById('modalInspecionarEditor').value = msgErro;
+                }
+                if (btnCompilar) btnCompilar.disabled = true;
+                if (btnCopiar) btnCopiar.disabled = true;
+                if (divResultado) {
+                    divResultado.innerHTML = `<div class="alert alert-warning py-1 small">${escapeHtml(d.error || 'Arquivo não localizado no MinIO.')}</div>`;
+                }
+            }
+        } catch (err) {
+            if (editorInspecaoCM) {
+                editorInspecaoCM.setValue("// Erro de conexão ao buscar arquivo no MinIO.");
+            } else {
+                document.getElementById('modalInspecionarEditor').value = "// Erro de conexão ao buscar arquivo no MinIO.";
+            }
+            if (btnCompilar) btnCompilar.disabled = true;
+            if (btnCopiar) btnCopiar.disabled = true;
+            if (divResultado) {
+                divResultado.innerHTML = '<div class="alert alert-danger py-1 small">Erro de conexão ao buscar arquivo.</div>';
+            }
+        }
     }
 
     function montarNavegacaoModal() {
@@ -1653,8 +1860,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const badgeStatus = document.getElementById('modalBadgeStatusExercicio');
         if (tituloEl) tituloEl.innerText = `Exercício ${index + 1}: ${exAtual.title}`;
 
-        const acertosEx = alunoSelecionado.submissoesAcertos.filter(s => String(s.exerciseId) === String(exAtual.exerciseId));
-        const errosEx = alunoSelecionado.submissoesErros.filter(s => String(s.exerciseId) === String(exAtual.exerciseId));
+        const acertosEx = alunoSelecionado.submissoesAcertos ? alunoSelecionado.submissoesAcertos.filter(s => String(s.exerciseId) === String(exAtual.exerciseId)) : [];
+        const errosEx = alunoSelecionado.submissoesErros ? alunoSelecionado.submissoesErros.filter(s => String(s.exerciseId) === String(exAtual.exerciseId)) : [];
 
         if (badgeStatus) {
             if (acertosEx.length > 0) {
@@ -1669,149 +1876,130 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        document.getElementById('count-acertos').innerText = acertosEx.length;
-        document.getElementById('count-erros').innerText = errosEx.length;
+        const countAcertosEl = document.getElementById('count-acertos');
+        const countErrosEl = document.getElementById('count-erros');
+        if (countAcertosEl) countAcertosEl.innerText = acertosEx.length;
+        if (countErrosEl) countErrosEl.innerText = errosEx.length;
 
         const boxPlacarAcertos = document.getElementById('box-placar-acertos');
         const boxPlacarErros = document.getElementById('box-placar-erros');
+        const boxPlacarTaxa = document.getElementById('box-placar-taxa');
         if (boxPlacarAcertos) boxPlacarAcertos.innerText = acertosEx.length;
         if (boxPlacarErros) boxPlacarErros.innerText = errosEx.length;
+
+        const totalTentativasEx = acertosEx.length + errosEx.length;
+        if (boxPlacarTaxa) {
+            if (totalTentativasEx > 0) {
+                const taxa = Math.round((acertosEx.length / totalTentativasEx) * 100);
+                boxPlacarTaxa.innerText = `${taxa}%`;
+                boxPlacarTaxa.className = `font-weight-bold ${taxa >= 70 ? 'text-success' : taxa >= 50 ? 'text-warning' : 'text-danger'}`;
+            } else {
+                boxPlacarTaxa.innerText = '-';
+                boxPlacarTaxa.className = 'font-weight-bold text-muted';
+            }
+        }
 
         const labelArquivo = document.getElementById('labelInspecaoArquivo');
         const divResultado = document.getElementById('modalInspecionarResultado');
         const btnCompilar = document.getElementById('btnRecompilarCodigoAluno');
-        
+
         if (editorInspecaoCM) {
             editorInspecaoCM.setValue('// Selecione um envio acima para carregar o código...');
         } else {
             document.getElementById('modalInspecionarEditor').value = '// Selecione um envio acima para carregar o código...';
         }
-        
+
         divResultado.innerHTML = '';
         btnCompilar.disabled = true;
         if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
         submissaoAtivaParaCompilar = null;
 
         let idMelhorSubmissao = null;
-
         if (acertosEx.length > 0) {
             acertosEx.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             const menorTempo = Math.min(...acertosEx.map(s => s.executionTime));
             const candidatasMelhor = acertosEx.filter(s => s.executionTime === menorTempo);
-            idMelhorSubmissao = candidatasMelhor[0]._id;
+            idMelhorSubmissao = candidatasMelhor[0]?._id;
         }
 
-        const tbodyAcertos = document.getElementById('tbody-modal-acertos');
-        tbodyAcertos.innerHTML = '';
-        if (acertosEx.length === 0) {
-            tbodyAcertos.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Nenhum acerto registrado para este exercício.</td></tr>';
+        let todasSubmissoesEx = [];
+        if (alunoSelecionado.submissoes && alunoSelecionado.submissoes.length > 0) {
+            todasSubmissoesEx = alunoSelecionado.submissoes.filter(s => String(s.exerciseId) === String(exAtual.exerciseId));
         } else {
-            acertosEx.forEach((sub) => {
-                const tr = document.createElement('tr');
-                const isMelhor = String(sub._id) === String(idMelhorSubmissao);
-                const dataFormat = new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            todasSubmissoesEx = [...acertosEx, ...errosEx];
+        }
+        todasSubmissoesEx.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const enviosEx = todasSubmissoesEx.slice(0, 10);
 
-                tr.innerHTML = `
-                    <td>
-                        <span class="badge badge-success mr-1">Accepted</span>
-                        ${isMelhor ? '<span class="badge badge-warning text-dark font-weight-bold"><i class="fas fa-star mr-1"></i>Melhor Tempo</span>' : ''}
-                    </td>
-                    <td><strong>${sub.executionTime} ms</strong></td>
-                    <td class="text-muted small">${dataFormat}</td>
-                    <td class="text-right">
-                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 btn-carregar-codigo font-weight-bold" 
-                                data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}">
-                            <i class="fas fa-eye mr-1"></i> Inspecionar
-                        </button>
-                    </td>
-                `;
-                tbodyAcertos.appendChild(tr);
-            });
+        const tbodySubmissoes = document.getElementById('tbody-modal-submissoes');
+        if (tbodySubmissoes) {
+            tbodySubmissoes.innerHTML = '';
+            if (enviosEx.length === 0) {
+                tbodySubmissoes.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum envio registrado para este exercício.</td></tr>';
+            } else {
+                enviosEx.forEach((sub) => {
+                    const tr = document.createElement('tr');
+                    const isMelhor = sub.isAccepted && String(sub._id) === String(idMelhorSubmissao);
+                    const d = new Date(sub.createdAt);
+                    const dataFormat = d.toLocaleDateString([], { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    const statusBadge = sub.isAccepted
+                        ? `<span class="badge badge-success font-weight-bold"><i class="fas fa-check-circle mr-1"></i>Accepted</span>`
+                        : `<span class="badge badge-danger font-weight-bold"><i class="fas fa-times-circle mr-1"></i>${sub.status || 'Erro'}</span>`;
+
+                    const tempoFormat = sub.isAccepted
+                        ? `<span class="d-inline-flex align-items-center justify-content-center">${isMelhor ? '<i class="fas fa-star text-warning mr-1" title="Melhor Tempo do Aluno"></i>' : ''}<strong>${formatarTempo(sub.executionTime)}</strong></span>`
+                        : `<span class="text-muted">-</span>`;
+
+                    tr.innerHTML = `
+                        <td class="text-left align-middle">${statusBadge}</td>
+                        <td class="text-center align-middle">${tempoFormat}</td>
+                        <td class="text-center align-middle text-muted small">${dataFormat}</td>
+                        <td class="text-center align-middle">
+                            <button type="button" class="btn btn-xs ${sub.isAccepted ? 'btn-outline-primary' : 'btn-outline-danger'} py-1 px-2 btn-carregar-codigo font-weight-bold" 
+                                    data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}" data-subid="${sub._id}">
+                                <i class="fas fa-eye mr-1"></i> Inspecionar
+                            </button>
+                        </td>
+                    `;
+                    tbodySubmissoes.appendChild(tr);
+                });
+            }
         }
 
-        const tbodyErros = document.getElementById('tbody-modal-erros');
-        tbodyErros.innerHTML = '';
-        if (errosEx.length === 0) {
-            tbodyErros.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Nenhum erro registrado para este exercício.</td></tr>';
-        } else {
-            errosEx.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            errosEx.forEach((sub) => {
-                const tr = document.createElement('tr');
-                const dataFormat = new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                tr.innerHTML = `
-                    <td>
-                        <span class="badge badge-danger mr-1">${sub.status}</span>
-                    </td>
-                    <td class="text-muted small">${dataFormat}</td>
-                    <td class="text-right">
-                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 btn-carregar-codigo font-weight-bold" 
-                                data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}">
-                            <i class="fas fa-eye mr-1"></i> Inspecionar
-                        </button>
-                    </td>
-                `;
-                tbodyErros.appendChild(tr);
-            });
-        }
-
-        $('#modalHistoricoAluno').find('.btn-carregar-codigo').off('click').on('click', async function() {
+        $('#modalHistoricoAluno').find('.btn-carregar-codigo').off('click').on('click', function () {
             const codePath = this.dataset.codepath;
             const exId = this.dataset.ex;
             const exTitle = this.dataset.title;
+            const subId = this.dataset.subid;
 
             $('#modalHistoricoAluno tr').removeClass('table-active');
             $(this).closest('tr').addClass('table-active');
 
-            labelArquivo.innerHTML = `<i class="fas fa-code mr-1"></i> Inspecionando: <strong>${exTitle}</strong>`;
-            if (editorInspecaoCM) {
-                editorInspecaoCM.setValue("// Carregando código do MinIO...");
-            } else {
-                document.getElementById('modalInspecionarEditor').value = "// Carregando código do MinIO...";
-            }
-            divResultado.innerHTML = '';
-            submissaoAtivaParaCompilar = { exerciseId: exId };
-
-            try {
-                const res = await fetch(`/judge/professor/submissao-codigo` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ codePath })
-                });
-                const d = await res.json();
-                if (res.ok && d.success && d.code) {
-                    if (editorInspecaoCM) {
-                        editorInspecaoCM.setValue(d.code);
-                        editorInspecaoCM.refresh();
-                    } else {
-                        document.getElementById('modalInspecionarEditor').value = d.code;
-                    }
-                    btnCompilar.disabled = false;
-                    if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = false;
-                } else {
-                    const msgErro = d.error ? `// ${d.error}` : "// Sem código gravado.";
-                    if (editorInspecaoCM) {
-                        editorInspecaoCM.setValue(msgErro);
-                    } else {
-                        document.getElementById('modalInspecionarEditor').value = msgErro;
-                    }
-                    btnCompilar.disabled = true;
-                    if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
-                }
-            } catch (err) {
-                if (editorInspecaoCM) {
-                    editorInspecaoCM.setValue("// Erro de conexão ao buscar arquivo no MinIO.");
-                } else {
-                    document.getElementById('modalInspecionarEditor').value = "// Erro de conexão ao buscar arquivo no MinIO.";
-                }
-                btnCompilar.disabled = true;
-                if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
-            }
+            carregarCodigoESubmissaoModal(codePath, exId, exTitle, subId);
         });
 
-        const btnAutoInspect = $('#modalHistoricoAluno .tab-pane.active .btn-carregar-codigo').first();
-        if (btnAutoInspect.length > 0) {
-            btnAutoInspect.click();
+        const primeiroBotao = $('#modalHistoricoAluno #tbody-modal-submissoes .btn-carregar-codigo').first();
+        if (primeiroBotao.length > 0) {
+            primeiroBotao.closest('tr').addClass('table-active');
+            const codePath = primeiroBotao.data('codepath');
+            const exId = primeiroBotao.data('ex');
+            const exTitle = primeiroBotao.data('title');
+            const subId = primeiroBotao.data('subid');
+            carregarCodigoESubmissaoModal(codePath, exId, exTitle, subId);
+        } else {
+            if (labelArquivo) {
+                labelArquivo.innerHTML = `<i class="fas fa-code mr-1"></i> Exercício: <strong>${escapeHtml(exAtual.title)}</strong> (Nenhum envio)`;
+            }
+            if (editorInspecaoCM) {
+                editorInspecaoCM.setValue('// Este aluno ainda não enviou código para este exercício.');
+            } else {
+                document.getElementById('modalInspecionarEditor').value = '// Este aluno ainda não enviou código para este exercício.';
+            }
+            divResultado.innerHTML = '';
+            btnCompilar.disabled = true;
+            if (btnCopiarCodigoAluno) btnCopiarCodigoAluno.disabled = true;
+            submissaoAtivaParaCompilar = null;
         }
     }
 
@@ -1884,7 +2072,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         tabGerenciarLink.classList.add('disabled');
                         tabGerenciarLink.setAttribute('title', 'Vincule uma lista primeiro para liberar esta aba');
                     }
-                    if (window.$&& tabListasLink) {$(tabListasLink).tab('show');
+                    if (window.$ && tabListasLink) {
+                        $(tabListasLink).tab('show');
                     }
                     await carregarEstadoInicial(false);
                 } else {
@@ -1899,7 +2088,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    if (window.$) {$('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+    if (window.$) {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
             if (e.target.id === 'tab-gerenciar-link' && idListaAtivaVinculada) {
                 carregarMetricasTurma();
             }
