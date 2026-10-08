@@ -1,8 +1,22 @@
 const { k8sApi, namespace } = require('../config/kubernetes');
+const warmPoolService = require('./warmPoolService');
 
-const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 4;
+const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 6;
 let activeExecutions = 0;
 const executionQueue = [];
+const activeUsers = new Set();
+
+function extrairUserId(containerName) {
+    if (!containerName) return null;
+    const match = String(containerName).match(/^(?:judge|test)_([^_]+)/);
+    return match ? match[1] : String(containerName);
+}
+
+async function isAlreadyRunning(containerName) {
+    const uid = extrairUserId(containerName);
+    if (!uid) return false;
+    return activeUsers.has(uid);
+}
 
 function adquirirVagaNaFila() {
     return new Promise((resolve) => {
@@ -33,25 +47,6 @@ function normalize(s) {
         .trim();
 }
 
-async function isAlreadyRunning(containerName) {
-    try {
-        const podName = containerName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-        const targetNs = process.env.K8S_NAMESPACE || namespace || 'default';
-        
-        let res;
-        try {
-            res = await k8sApi.readNamespacedPodStatus({ name: podName, namespace: targetNs });
-        } catch {
-            res = await k8sApi.readNamespacedPodStatus(podName, targetNs);
-        }
-        const pod = res?.body || res;
-        const phase = pod?.status?.phase;
-        return phase === 'Running' || phase === 'Pending';
-    } catch {
-        return false;
-    }
-}
-
 function embaralharArray(array) {
     if (!Array.isArray(array) || array.length === 0) return [];
     const arr = array.map((t, idx) => {
@@ -70,17 +65,36 @@ function embaralharArray(array) {
 }
 
 async function runTests(code, tests, containerName, timeLimitMs) {
+    const uid = extrairUserId(containerName);
+    if (uid) activeUsers.add(uid);
+
     await adquirirVagaNaFila();
     try {
         const testesAleatorios = embaralharArray(tests);
-        return await executarProcessoDeTesteK8s(code, testesAleatorios, containerName, timeLimitMs);
+        const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 10000;
+        const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : limiteCompiladorMs;
+
+        // 1. Tenta executar no Warm Pod Pool (respostas < 0.5s)
+        try {
+            const outputBruto = await warmPoolService.executarJobNoPool(
+                code,
+                testesAleatorios,
+                timeoutAlunoMs,
+                containerName || Date.now()
+            );
+            return processarResultadoSandbox(outputBruto, testesAleatorios, timeoutAlunoMs);
+        } catch (poolErr) {
+            console.warn(`[Judge] Warm pool falhou ou indisponível (${poolErr.message}). Utilizando fallback para Pod efêmero...`);
+            return await executarProcessoDeTesteK8sIndividual(code, testesAleatorios, containerName, timeoutAlunoMs);
+        }
     } finally {
         liberarVagaNaFila();
+        if (uid) activeUsers.delete(uid);
     }
 }
 
-async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitMs) {
-    const podName = containerName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, timeoutAlunoMs) {
+    const podName = (containerName || `judge-${Date.now()}`).toLowerCase().replace(/[^a-z0-9-]/g, '-');
     const targetNs = process.env.K8S_NAMESPACE || namespace || 'default';
 
     const cpuReq = process.env.K8S_CPU_REQUEST || '1000m';
@@ -88,9 +102,6 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
     const memReq = process.env.K8S_MEMORY_REQUEST || '512Mi';
     const memLim = process.env.K8S_MEMORY_LIMIT || '512Mi';
     const image = process.env.K8S_IMAGE || 'gcc:latest';
-
-    const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 10000;
-    const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : limiteCompiladorMs;
 
     const runnerScript = gerarScriptSandbox(code, tests, timeoutAlunoMs);
     const b64Runner = Buffer.from(runnerScript, 'utf-8').toString('base64');
@@ -117,14 +128,8 @@ async function executarProcessoDeTesteK8s(code, tests, containerName, timeLimitM
                     command: ['/bin/bash', '-c'],
                     args: [`echo "${b64Runner}" | base64 -d | /bin/bash`],
                     resources: {
-                        requests: {
-                            cpu: cpuReq,
-                            memory: memReq
-                        },
-                        limits: {
-                            cpu: cpuLim,
-                            memory: memLim
-                        }
+                        requests: { cpu: cpuReq, memory: memReq },
+                        limits: { cpu: cpuLim, memory: memLim }
                     }
                 }
             ]
@@ -227,8 +232,12 @@ int main(int argc, char *argv[]) {
     const b64Runner = Buffer.from(runnerC, 'utf-8').toString('base64');
 
     let scriptTestes = `
-echo "${b64Runner}" | base64 -d > runner.c
-gcc -O2 runner.c -o runner
+if [ ! -f /usr/local/bin/runner ]; then
+    echo "${b64Runner}" | base64 -d > /tmp/runner.c
+    gcc -O2 /tmp/runner.c -o /usr/local/bin/runner
+    chmod 555 /usr/local/bin/runner
+    rm -f /tmp/runner.c
+fi
 `;
 
     tests.forEach((t, i) => {
@@ -242,7 +251,7 @@ echo "---STEP---"
 echo "INDEX:${i}"
 
 rm -f time_${i}.txt
-timeout -k 1s -s 9 ${hardTimeoutSec}s ./runner ./prog time_${i}.txt < in_${i}.txt > got_${i}.txt 2> err_${i}.txt
+timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner ./prog time_${i}.txt < in_${i}.txt > got_${i}.txt 2> err_${i}.txt
 EXIT_CODE=$?
 
 CPUTIME=$(cat time_${i}.txt 2>/dev/null || echo "0.000000")
@@ -441,4 +450,9 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
     };
 }
 
-module.exports = { runTests, isAlreadyRunning };
+module.exports = {
+    runTests,
+    isAlreadyRunning,
+    inicializarPool: warmPoolService.inicializarPool,
+    obterStatusPool: warmPoolService.obterStatusPool
+};

@@ -10,6 +10,7 @@ const ColetorLixo = require('./services/coletorLixo');
 const seederService = require('./services/seederService');
 const professorRoutes = require('./routes/professorRoutes');
 const alunoRoutes = require('./routes/alunoRoutes');
+const judgeService = require('./services/judgeService');
 
 const app = express();
 const server = http.createServer(app);
@@ -55,6 +56,9 @@ async function start() {
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
             console.log(`🚀 Sistema Online na porta ${PORT} e Sessão Ativa`);
+            judgeService.inicializarPool().catch(err => {
+                console.warn("⚠️ [WarmPool] Aviso ao iniciar pool:", err.message);
+            });
         });
 
     } catch (error) {
