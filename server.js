@@ -53,11 +53,23 @@ async function start() {
         app.use('/judge', professorRoutes);
         app.use('/judge', alunoRoutes);
 
+        app.get('/healthz', (req, res) => {
+            res.status(200).json({ status: 'ok', uptime: process.uptime() });
+        });
+
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
             console.log(`🚀 Sistema Online na porta ${PORT} e Sessão Ativa`);
             judgeService.inicializarPool().catch(err => {
                 console.warn("⚠️ [WarmPool] Aviso ao iniciar pool:", err.message);
+            });
+        });
+
+        process.on('SIGTERM', () => {
+            console.log('🛑 [SIGTERM] Sinal de término recebido do Kubernetes. Fechando conexões...');
+            server.close(() => {
+                console.log('👋 Servidor encerrado com sucesso.');
+                process.exit(0);
             });
         });
 
