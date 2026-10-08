@@ -164,6 +164,20 @@
             user-select: none !important;
             transition: filter 0.3s ease-out;
         }
+        #btnSubmit {
+            min-width: 230px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, opacity 0.15s ease-in-out;
+        }
+        #btnExecutarTesteCustom {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, opacity 0.15s ease-in-out;
+        }
     </style>
 </head>
 <body>
@@ -194,7 +208,7 @@
                         
                         <span id="wrapperBtnTesteCustom" class="d-block mb-2">
                             <button type="button" id="btnExecutarTesteCustom" class="btn btn-sm btn-outline-info btn-block font-weight-bold py-2 shadow-sm">
-                                <i class="fas fa-play mr-1"></i> Compilar
+                                <i class="fas fa-play fa-fw mr-1"></i> Compilar
                             </button>
                         </span>
                         
@@ -286,8 +300,8 @@
                                 </span>
 
                                 <span id="wrapperBtnSubmit" class="d-inline-block">
-                                    <button id="btnSubmit" class="btn btn-primary btn-lg px-5 shadow-sm font-weight-bold">
-                                        <i class="fas fa-play mr-2"></i> Compilar
+                                    <button id="btnSubmit" class="btn btn-primary btn-lg px-4 shadow-sm font-weight-bold">
+                                        <i class="fas fa-play fa-fw mr-2"></i> Compilar
                                     </button>
                                 </span>
                             </div>

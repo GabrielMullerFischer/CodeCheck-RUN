@@ -485,7 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnExecutarTesteCustom.classList.remove('btn-outline-info');
             btnExecutarTesteCustom.classList.add('btn-secondary');
             btnExecutarTesteCustom.style.opacity = '0.65';
-            btnExecutarTesteCustom.innerHTML = '<i class="fas fa-check mr-1"></i> Compilado';
+            btnExecutarTesteCustom.innerHTML = '<i class="fas fa-check fa-fw mr-1"></i> Compilado';
 
             if (wrapperBtnTesteCustom) {
                 wrapperBtnTesteCustom.style.cursor = 'not-allowed';
@@ -500,7 +500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnExecutarTesteCustom.classList.add('btn-outline-info');
         btnExecutarTesteCustom.style.cursor = 'pointer';
         btnExecutarTesteCustom.style.opacity = '1';
-        btnExecutarTesteCustom.innerHTML = '<i class="fas fa-play mr-1"></i> Compilar';
+        btnExecutarTesteCustom.innerHTML = '<i class="fas fa-play fa-fw mr-1"></i> Compilar';
 
         if (wrapperBtnTesteCustom) {
             wrapperBtnTesteCustom.style.cursor = 'default';
@@ -526,7 +526,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubmit.classList.remove('btn-primary');
             btnSubmit.classList.add('btn-secondary');
             btnSubmit.style.opacity = '0.65';
-            btnSubmit.innerHTML = '<i class="fas fa-play mr-2"></i> Compilar';
+            btnSubmit.innerHTML = '<i class="fas fa-play fa-fw mr-2"></i> Compilar';
 
             if (wrapperBtnSubmit) {
                 wrapperBtnSubmit.style.cursor = 'not-allowed';
@@ -541,7 +541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubmit.classList.remove('btn-primary');
             btnSubmit.classList.add('btn-secondary');
             btnSubmit.style.opacity = '0.65';
-            btnSubmit.innerHTML = '<i class="fas fa-lock mr-2"></i> Limite Atingido';
+            btnSubmit.innerHTML = '<i class="fas fa-lock fa-fw mr-2"></i> Limite Atingido';
 
             if (wrapperBtnSubmit) {
                 wrapperBtnSubmit.style.cursor = 'not-allowed';
@@ -561,7 +561,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubmit.classList.remove('btn-primary');
             btnSubmit.classList.add('btn-secondary');
             btnSubmit.style.opacity = '0.65';
-            btnSubmit.innerHTML = '<i class="fas fa-check mr-2"></i> Compilado';
+            btnSubmit.innerHTML = '<i class="fas fa-check fa-fw mr-2"></i> Compilado';
 
             if (wrapperBtnSubmit) {
                 wrapperBtnSubmit.style.cursor = 'not-allowed';
@@ -577,7 +577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnSubmit.style.cursor = 'pointer';
         btnSubmit.style.opacity = '1';
         btnSubmit.removeAttribute('title');
-        btnSubmit.innerHTML = '<i class="fas fa-play mr-2"></i> Compilar';
+        btnSubmit.innerHTML = '<i class="fas fa-play fa-fw mr-2"></i> Compilar';
 
         if (wrapperBtnSubmit) {
             wrapperBtnSubmit.style.cursor = 'default';
