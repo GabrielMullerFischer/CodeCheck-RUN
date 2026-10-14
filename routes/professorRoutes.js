@@ -11,7 +11,148 @@ const minioService = require('../services/minioService');
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
 
-router.post('/exercicio', async (req, res) => {
+// Rota para consulta dos exercícios da atividade (acessível por alunos e professores)
+router.get('/atividade/exercicios', async (req, res) => {
+    try {
+        const { activityId, listId, exerciseId } = req.query;
+        const isProfessor = req.session?.isProfessor === true || (process.env.NODE_ENV === 'development' && !req.session?.userId);
+        const sessionUserId = req.session?.userId;
+        const sessionActivityId = req.session?.activityId;
+        const userId = sessionUserId || req.query.userId || 'preview_user';
+        const effectiveActivityId = (!isProfessor && sessionActivityId)
+            ? sessionActivityId
+            : (activityId || sessionActivityId || 'preview');
+
+        if (exerciseId) {
+            const exercicioIndividual = await Exercise.findById(exerciseId);
+            if (exercicioIndividual) {
+                const exObj = exercicioIndividual.toObject ? exercicioIndividual.toObject() : JSON.parse(JSON.stringify(exercicioIndividual));
+                // Para alunos, NUNCA envia os testes secretos (apenas os testes visíveis, máximo 3)
+                if (!isProfessor && Array.isArray(exObj.tests)) {
+                    const visiveis = exObj.tests.filter(t => t.isVisible === true);
+                    if (visiveis.length > 0) {
+                        exObj.tests = visiveis.slice(0, 3).map(t => ({ input: t.input, output: t.output, isVisible: true }));
+                    } else if (exObj.tests.length > 0) {
+                        exObj.tests = [{ input: exObj.tests[0].input, output: exObj.tests[0].output, isVisible: true }];
+                    } else {
+                        exObj.tests = [];
+                    }
+                }
+                return res.json({
+                    success: true,
+                    lista: {
+                        _id: 'individual_preview',
+                        title: `Teste: ${exObj.title}`,
+                        exercises: [exObj]
+                    }
+                });
+            }
+        }
+
+        let targetListId = listId;
+        let config = null;
+        if (!targetListId && effectiveActivityId && effectiveActivityId !== 'preview') {
+            config = await ActivityConfig.findOne({ activityId: effectiveActivityId });
+            if (config) {
+                targetListId = config.listId;
+            }
+        }
+
+        if (!targetListId) {
+            return res.status(404).json({ 
+                success: false, 
+                error: "Nenhuma lista de exercícios foi vinculada a esta atividade ainda." 
+            });
+        }
+
+        // Se a atividade for cronometrada e o aluno ainda não iniciou a tentativa,
+        // NÃO liberamos a lista com enunciados para impedir leitura antecipada via F12/Network.
+        if (!isProfessor && config && config.hasTimeLimit && effectiveActivityId && effectiveActivityId !== 'preview') {
+            const attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId });
+            if (!attempt) {
+                return res.json({
+                    success: true,
+                    timerRequired: true,
+                    hasTimeLimit: true,
+                    timeLimitMinutes: config.timeLimitMinutes || 0,
+                    lista: {
+                        _id: targetListId,
+                        title: "Atividade Cronometrada",
+                        exercises: []
+                    }
+                });
+            }
+        }
+
+        const listaCompleta = await ExerciseList.findById(targetListId).populate('exercises');
+        if (!listaCompleta) {
+            return res.status(404).json({ 
+                success: false, 
+                error: "A lista vinculada não foi encontrada no banco de dados." 
+            });
+        }
+
+        const listaObj = listaCompleta.toObject ? listaCompleta.toObject() : JSON.parse(JSON.stringify(listaCompleta));
+
+        // Sanitização crítica: para alunos, remove TODOS os casos de teste privados/secretos,
+        // enviando estritamente os casos de teste visíveis (máximo 3) que servem de exemplo na interface.
+        if (!isProfessor && Array.isArray(listaObj.exercises)) {
+            listaObj.exercises = listaObj.exercises.map(ex => {
+                if (Array.isArray(ex.tests) && ex.tests.length > 0) {
+                    const visiveis = ex.tests.filter(t => t.isVisible === true);
+                    if (visiveis.length > 0) {
+                        ex.tests = visiveis.slice(0, 3).map(t => ({ input: t.input, output: t.output, isVisible: true }));
+                    } else {
+                        ex.tests = [{ input: ex.tests[0].input, output: ex.tests[0].output, isVisible: true }];
+                    }
+                } else {
+                    ex.tests = [];
+                }
+                return ex;
+            });
+        }
+
+        res.json({
+            success: true,
+            lista: listaObj
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Middleware de proteção: TODAS as rotas abaixo exigem privilégios de professor
+function verificarProfessor(req, res, next) {
+    const isProf = req.session?.isProfessor === true;
+    const isDev = process.env.NODE_ENV === 'development' && !req.session?.userId;
+    if (isProf || isDev) {
+        return next();
+    }
+    return res.status(403).json({ 
+        success: false, 
+        error: "Acesso não autorizado: rota restrita a professores." 
+    });
+}
+
+
+function processarTestesExercicio(tests) {
+    if (!Array.isArray(tests)) return [];
+    const processados = tests
+        .filter(t => t && typeof t.output === 'string' && t.output.trim() !== '')
+        .map(t => ({
+            input: String(t.input || ''),
+            output: String(t.output || ''),
+            isVisible: t.isVisible === true || t.isVisible === 'true'
+        }));
+
+    const visiveisCount = processados.filter(t => t.isVisible).length;
+    if (processados.length > 0 && visiveisCount === 0) {
+        processados[0].isVisible = true;
+    }
+    return processados;
+}
+
+router.post('/exercicio', verificarProfessor, async (req, res) => {
     try {
         const { title, description, tests, isPrivate, timeLimit } = req.body;
         const authorId = req.session?.userId || 'preview_user';
@@ -21,6 +162,18 @@ router.post('/exercicio', async (req, res) => {
         const existe = await Exercise.findOne({ title: tituloFormatado, authorId, isArchived: { $ne: true } });
         if (existe) {
             return res.status(400).json({ success: false, error: "Você já possui um exercício cadastrado com este título." });
+        }
+
+        const testesFormatados = processarTestesExercicio(tests);
+        if (testesFormatados.length === 0) {
+            return res.status(400).json({ success: false, error: "Informe ao menos um caso de teste válido." });
+        }
+        const visiveisCount = testesFormatados.filter(t => t.isVisible).length;
+        if (visiveisCount === 0) {
+            return res.status(400).json({ success: false, error: "Pelo menos 1 caso de teste deve ser marcado como visível para o aluno." });
+        }
+        if (visiveisCount > 3) {
+            return res.status(400).json({ success: false, error: "No máximo 3 casos de teste podem ser marcados como visíveis." });
         }
 
         let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : null;
@@ -40,7 +193,7 @@ router.post('/exercicio', async (req, res) => {
         const exercicio = await Exercise.create({ 
             title: tituloFormatado, 
             description, 
-            tests, 
+            tests: testesFormatados, 
             authorId, 
             authorName, 
             isPublic: !isPrivate, 
@@ -52,7 +205,7 @@ router.post('/exercicio', async (req, res) => {
     }
 });
 
-router.put('/exercicio/:id', async (req, res) => {
+router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
     try {
         const { id } = req.params;
         const { title, description, tests, isPrivate, timeLimit } = req.body;
@@ -67,6 +220,18 @@ router.put('/exercicio/:id', async (req, res) => {
 
         if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
             return res.status(403).json({ success: false, error: "Sem permissão para alterar este exercício." });
+        }
+
+        const testesFormatados = processarTestesExercicio(tests);
+        if (testesFormatados.length === 0) {
+            return res.status(400).json({ success: false, error: "Informe ao menos um caso de teste válido." });
+        }
+        const visiveisCount = testesFormatados.filter(t => t.isVisible).length;
+        if (visiveisCount === 0) {
+            return res.status(400).json({ success: false, error: "Pelo menos 1 caso de teste deve ser marcado como visível para o aluno." });
+        }
+        if (visiveisCount > 3) {
+            return res.status(400).json({ success: false, error: "No máximo 3 casos de teste podem ser marcados como visíveis." });
         }
 
         let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : null;
@@ -85,7 +250,7 @@ router.put('/exercicio/:id', async (req, res) => {
 
         ex.title = (title || '').trim();
         ex.description = description;
-        ex.tests = tests;
+        ex.tests = testesFormatados;
         ex.isPublic = !isPrivate;
         ex.timeLimit = timeLimitVal;
         await ex.save();
@@ -96,7 +261,7 @@ router.put('/exercicio/:id', async (req, res) => {
     }
 });
 
-router.delete('/exercicio/:id', async (req, res) => {
+router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
     try {
         const { id } = req.params;
         const { removeFromAllLists } = req.query;
@@ -127,7 +292,7 @@ router.delete('/exercicio/:id', async (req, res) => {
     }
 });
 
-router.post('/lista', async (req, res) => {
+router.post('/lista', verificarProfessor, async (req, res) => {
     try {
         const { title, exercises, isPrivate } = req.body;
         const authorId = req.session?.userId || 'preview_user';
@@ -152,7 +317,7 @@ router.post('/lista', async (req, res) => {
     }
 });
 
-router.put('/lista/:id', async (req, res) => {
+router.put('/lista/:id', verificarProfessor, async (req, res) => {
     try {
         const { id } = req.params;
         const { title, exercises, isPrivate } = req.body;
@@ -181,7 +346,7 @@ router.put('/lista/:id', async (req, res) => {
     }
 });
 
-router.delete('/lista/:id', async (req, res) => {
+router.delete('/lista/:id', verificarProfessor, async (req, res) => {
     try {
         const { id } = req.params;
         const meuId = String(req.session?.userId || 'preview_user');
@@ -206,7 +371,7 @@ router.delete('/lista/:id', async (req, res) => {
     }
 });
 
-router.post('/atividade/vincular', async (req, res) => {
+router.post('/atividade/vincular', verificarProfessor, async (req, res) => {
     try {
         const { activityId, listId, isEvaluative, maxAttempts, hasTimeLimit, timeLimitMinutes, force } = req.body;
 
@@ -251,7 +416,7 @@ router.post('/atividade/vincular', async (req, res) => {
     }
 });
 
-router.post('/atividade/config', async (req, res) => {
+router.post('/atividade/config', verificarProfessor, async (req, res) => {
     try {
         const { activityId, isEvaluative, maxAttempts, hasTimeLimit, timeLimitMinutes } = req.body;
         if (!activityId) return res.status(400).json({ success: false, error: "activityId ausente." });
@@ -287,58 +452,7 @@ router.post('/atividade/config', async (req, res) => {
     }
 });
 
-router.get('/atividade/exercicios', async (req, res) => {
-    try {
-        const { activityId, listId, exerciseId } = req.query;
-
-        if (exerciseId) {
-            const exercicioIndividual = await Exercise.findById(exerciseId);
-            if (exercicioIndividual) {
-                return res.json({
-                    success: true,
-                    lista: {
-                        _id: 'individual_preview',
-                        title: `Teste: ${exercicioIndividual.title}`,
-                        exercises: [exercicioIndividual]
-                    }
-                });
-            }
-        }
-
-        let targetListId = listId;
-        if (!targetListId && activityId) {
-            const config = await ActivityConfig.findOne({ activityId });
-            if (config) {
-                targetListId = config.listId;
-            }
-        }
-
-        if (!targetListId) {
-            return res.status(404).json({ 
-                success: false, 
-                error: "Nenhuma lista de exercícios foi vinculada a esta atividade ainda." 
-            });
-        }
-
-        const listaCompleta = await ExerciseList.findById(targetListId).populate('exercises');
-        
-        if (!listaCompleta) {
-            return res.status(404).json({ 
-                success: false, 
-                error: "A lista vinculada não foi encontrada no banco de dados." 
-            });
-        }
-
-        res.json({
-            success: true,
-            lista: listaCompleta
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-
-router.get('/professor/dados', async (req, res) => {
+router.get('/professor/dados', verificarProfessor, async (req, res) => {
     try {
         const { activityId } = req.query;
         const meuId = String(req.session?.userId || 'preview_user');
@@ -380,7 +494,7 @@ router.get('/professor/dados', async (req, res) => {
     }
 });
 
-router.get('/professor/turma-metricas', async (req, res) => {
+router.get('/professor/turma-metricas', verificarProfessor, async (req, res) => {
     try {
         const { activityId } = req.query;
         if (!activityId) return res.status(400).json({ success: false, error: "activityId ausente." });
@@ -549,7 +663,7 @@ exercicios.forEach(ex => {
 });
 
 // Importação individual com nome limpo e checagem de colisão
-router.post('/professor/exercicio/importar', async (req, res) => {
+router.post('/professor/exercicio/importar', verificarProfessor, async (req, res) => {
     try {
         const { exerciseId, customTitle } = req.body;
         const meuId = String(req.session?.userId || 'preview_user');
@@ -600,7 +714,7 @@ router.post('/professor/exercicio/importar', async (req, res) => {
 });
 
 // Importação de lista com clonagem profunda e verificação de conflitos na lista e nos exercícios
-router.post('/professor/lista/importar', async (req, res) => {
+router.post('/professor/lista/importar', verificarProfessor, async (req, res) => {
     try {
         const { listId, customTitle, exerciseTitles } = req.body;
         const meuId = String(req.session?.userId || 'preview_user');
@@ -688,7 +802,7 @@ router.post('/professor/lista/importar', async (req, res) => {
 });
 
 // Rota para desvincular uma atividade de uma lista, removendo todos os dados relacionados
-router.post('/atividade/desvincular', async (req, res) => {
+router.post('/atividade/desvincular', verificarProfessor, async (req, res) => {
     try {
         const { activityId } = req.body;
         if (!activityId) {
@@ -710,7 +824,7 @@ router.post('/atividade/desvincular', async (req, res) => {
     }
 });
 
-router.post('/professor/submissao-codigo', async (req, res) => {
+router.post('/professor/submissao-codigo', verificarProfessor, async (req, res) => {
     try {
         const { codePath, submissionId } = req.body;
         if (!codePath && !submissionId) {
@@ -740,17 +854,21 @@ router.post('/professor/submissao-codigo', async (req, res) => {
 
         let code = '// Código não disponível.';
         try {
-            code = await minioService.lerArquivoPorPath(caminhoArquivo);
+            if (caminhoArquivo && caminhoArquivo !== 'preview') {
+                code = await minioService.lerArquivoPorPath(caminhoArquivo);
+            }
         } catch (err) {
             console.error("[MinIO] Erro ao carregar código:", err.message);
             code = '// Arquivo de código não localizado no armazenamento.';
         }
 
         let logResultado = null;
-        const targetLog = caminhoLog || caminhoArquivo.replace(/\.c$/, '.json');
+        const targetLog = caminhoLog || (caminhoArquivo && caminhoArquivo !== 'preview' ? caminhoArquivo.replace(/\.c$/, '.json') : null);
         try {
-            const rawLog = await minioService.lerArquivoPorPath(targetLog);
-            logResultado = JSON.parse(rawLog);
+            if (targetLog && targetLog !== 'preview') {
+                const rawLog = await minioService.lerArquivoPorPath(targetLog);
+                logResultado = JSON.parse(rawLog);
+            }
         } catch (err) {
             if (sub) {
                 logResultado = {
@@ -775,7 +893,7 @@ router.post('/professor/submissao-codigo', async (req, res) => {
     }
 });
 
-router.get('/professor/submissao-codigo', async (req, res) => {
+router.get('/professor/submissao-codigo', verificarProfessor, async (req, res) => {
     try {
         const { codePath, submissionId } = req.query;
         if (!codePath && !submissionId) {
@@ -805,17 +923,21 @@ router.get('/professor/submissao-codigo', async (req, res) => {
 
         let code = '// Código não disponível.';
         try {
-            code = await minioService.lerArquivoPorPath(caminhoArquivo);
+            if (caminhoArquivo && caminhoArquivo !== 'preview') {
+                code = await minioService.lerArquivoPorPath(caminhoArquivo);
+            }
         } catch (err) {
             console.error("[MinIO] Erro ao carregar código:", err.message);
             code = '// Arquivo de código não localizado no armazenamento.';
         }
 
         let logResultado = null;
-        const targetLog = caminhoLog || caminhoArquivo.replace(/\.c$/, '.json');
+        const targetLog = caminhoLog || (caminhoArquivo && caminhoArquivo !== 'preview' ? caminhoArquivo.replace(/\.c$/, '.json') : null);
         try {
-            const rawLog = await minioService.lerArquivoPorPath(targetLog);
-            logResultado = JSON.parse(rawLog);
+            if (targetLog && targetLog !== 'preview') {
+                const rawLog = await minioService.lerArquivoPorPath(targetLog);
+                logResultado = JSON.parse(rawLog);
+            }
         } catch (err) {
             if (sub) {
                 logResultado = {

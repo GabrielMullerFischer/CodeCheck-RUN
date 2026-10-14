@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { rateLimit } = require('express-rate-limit');
 
 const minioService = require('../services/minioService');
 const judgeService = require('../services/judgeService');
@@ -12,13 +13,53 @@ const ActivityAttempt = require('../models/ActivityAttempt');
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 10000;
 
+// Rate limit: 10 submissões/execuções por minuto por aluno/IP
+const submitLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
+    keyGenerator: (req) => {
+        return req.session?.userId || req.ip;
+    },
+    skip: (req) => {
+        return req.session?.isProfessor === true;
+    },
+    message: {
+        error: "Limite de submissões excedido. Você pode realizar no máximo 10 submissões por minuto. Aguarde um instante antes de tentar novamente."
+    }
+});
+
 function isTestUser(userId, session, body) {
-    return (
-        userId === 'preview_user' ||
-        userId === 'professor_test' ||
-        session?.isProfessor === true ||
-        body?.mode === 'preview'
-    );
+    if (session?.isProfessor === true) return true;
+    if (!session?.userId && (userId === 'preview_user' || userId === 'professor_test')) {
+        return true;
+    }
+    return false;
+}
+
+function sanitizarMensagemErroServidor(msg) {
+    if (!msg || typeof msg !== 'string') return "O ambiente de compilação está temporariamente indisponível. Tente novamente em instantes.";
+    if (
+        msg.includes('HTTP-Code') ||
+        msg.includes('apiVersion') ||
+        msg.includes('kind') ||
+        msg.includes('namespaces') ||
+        msg.includes('ECONNREFUSED') ||
+        msg.includes('ENOTFOUND') ||
+        msg.includes('ETIMEDOUT') ||
+        msg.includes('k8s') ||
+        msg.includes('WebSocket') ||
+        msg.includes('Tempo esgotado aguardando') ||
+        msg.includes('status code') ||
+        msg.includes('Kubernetes') ||
+        msg.includes('Orquestrador') ||
+        msg.trim().startsWith('{')
+    ) {
+        return "O ambiente de compilação e teste está temporariamente reiniciando no servidor. Por favor, tente novamente em instantes.";
+    }
+    return msg;
 }
 
 function gerarDicaDidatica(status, details, got) {
@@ -56,21 +97,25 @@ function gerarDicaDidatica(status, details, got) {
 
 // Consulta o status do cronômetro do aluno na atividade
 router.get('/atividade/timer-status', async (req, res) => {
-    const { activityId, mode } = req.query;
-    const userId = req.session?.userId || req.query.userId || 'preview_user';
-    const isProfessor = req.session?.isProfessor === true || userId === 'preview_user' || userId === 'professor_test' || mode === 'preview';
+    const isProfessor = req.session?.isProfessor === true || (process.env.NODE_ENV === 'development' && !req.session?.userId);
+    const sessionUserId = req.session?.userId;
+    const sessionActivityId = req.session?.activityId;
+    const userId = sessionUserId || req.query.userId || 'preview_user';
+    const effectiveActivityId = (!isProfessor && sessionActivityId)
+        ? sessionActivityId
+        : (req.query.activityId || sessionActivityId || 'preview');
 
-    if (isProfessor || !activityId || activityId === 'preview') {
+    if (isProfessor || !effectiveActivityId || effectiveActivityId === 'preview') {
         return res.json({ success: true, hasTimeLimit: false });
     }
 
     try {
-        const config = await ActivityConfig.findOne({ activityId });
+        const config = await ActivityConfig.findOne({ activityId: effectiveActivityId });
         if (!config || !config.hasTimeLimit) {
             return res.json({ success: true, hasTimeLimit: false });
         }
 
-        const attempt = await ActivityAttempt.findOne({ userId, activityId });
+        const attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId });
 
         res.json({
             success: true,
@@ -87,26 +132,37 @@ router.get('/atividade/timer-status', async (req, res) => {
 
 // Inicia a contagem oficial da avaliação no servidor
 router.post('/atividade/iniciar-timer', async (req, res) => {
-    const { activityId } = req.body;
-    const userId = req.session?.userId || req.body.userId || 'preview_user';
+    const isProfessor = req.session?.isProfessor === true;
+    const sessionUserId = req.session?.userId;
+    const sessionActivityId = req.session?.activityId;
 
-    if (!activityId || activityId === 'preview') {
+    // Bloqueio de segurança em produção: exige sessão ativa do Moodle
+    if (!sessionUserId && !isProfessor && process.env.NODE_ENV !== 'development') {
+        return res.status(401).json({ success: false, error: "Não autorizado: faça login pelo Moodle." });
+    }
+
+    const userId = sessionUserId || req.body.userId || 'preview_user';
+    const effectiveActivityId = (!isProfessor && sessionActivityId)
+        ? sessionActivityId
+        : (req.body.activityId || sessionActivityId || 'preview');
+
+    if (isProfessor || !effectiveActivityId || effectiveActivityId === 'preview') {
         return res.json({ success: true, hasTimeLimit: false });
     }
 
     try {
-        const config = await ActivityConfig.findOne({ activityId });
+        const config = await ActivityConfig.findOne({ activityId: effectiveActivityId });
         if (!config || !config.hasTimeLimit) {
             return res.json({ success: true, hasTimeLimit: false });
         }
 
-        let attempt = await ActivityAttempt.findOne({ userId, activityId });
+        let attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId });
         if (!attempt) {
             const startedAt = new Date();
             const expiresAt = new Date(startedAt.getTime() + (config.timeLimitMinutes * 60 * 1000));
             attempt = await ActivityAttempt.create({
                 userId,
-                activityId,
+                activityId: effectiveActivityId,
                 startedAt,
                 expiresAt
             });
@@ -122,13 +178,27 @@ router.post('/atividade/iniciar-timer', async (req, res) => {
     }
 });
 
-// Submissão oficial
-router.post('/submit', async (req, res) => {
+// Submissão oficial (protegida com limite de 10 submissões por minuto)
+router.post('/submit', submitLimiter, async (req, res) => {
     const { code, activityId, listId, exerciseId, draftOnly } = req.body;
-    const userId = req.session?.userId || req.body.userId || 'preview_user';
-    const userName = req.session?.userName || req.body.userName || (userId === 'preview_user' ? 'Professor (Preview)' : 'Aluno');
+    const isProfessorReal = req.session?.isProfessor === true;
+    const sessionUserId = req.session?.userId;
+    const sessionUserName = req.session?.userName;
+    const sessionActivityId = req.session?.activityId;
 
-    if (!activityId && !listId && !exerciseId) {
+    // Bloqueio de segurança em produção: exige sessão ativa do Moodle
+    if (!sessionUserId && !isProfessorReal && process.env.NODE_ENV !== 'development') {
+        return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
+    }
+
+    // Se o aluno está autenticado em sessão, impede falsificação de userId, userName ou activityId via req.body
+    const userId = sessionUserId || req.body.userId || 'preview_user';
+    const userName = sessionUserName || req.body.userName || (userId === 'preview_user' ? 'Professor (Preview)' : 'Aluno');
+    const effectiveActivityId = (!isProfessorReal && sessionActivityId)
+        ? sessionActivityId
+        : (activityId || sessionActivityId || 'preview');
+
+    if (!effectiveActivityId && !listId && !exerciseId) {
         return res.status(400).json({ error: "ID da atividade, lista ou exercício faltando." });
     }
 
@@ -141,8 +211,8 @@ router.post('/submit', async (req, res) => {
             const lista = await ExerciseList.findById(listId).populate('exercises');
             if (lista?.exercises?.length > 0) exercicioAlvo = lista.exercises[0];
         }
-        if (!exercicioAlvo && activityId) {
-            const config = await ActivityConfig.findOne({ activityId }).populate({
+        if (!exercicioAlvo && effectiveActivityId && effectiveActivityId !== 'preview') {
+            const config = await ActivityConfig.findOne({ activityId: effectiveActivityId }).populate({
                 path: 'listId',
                 populate: { path: 'exercises' }
             });
@@ -165,13 +235,12 @@ router.post('/submit', async (req, res) => {
             timeLimit = MAX_TIME_LIMIT_MS;
         }
 
-        const isProfessorReal = req.session?.isProfessor === true || userId === 'professor_test';
-
-        if (!isProfessorReal && userId !== 'preview_user' && activityId && activityId !== 'preview') {
-            const configAtividade = await ActivityConfig.findOne({ activityId });
+        // Validações de servidor para alunos: tempo limite e limite de tentativas
+        if (!isProfessorReal && userId !== 'preview_user' && effectiveActivityId && effectiveActivityId !== 'preview') {
+            const configAtividade = await ActivityConfig.findOne({ activityId: effectiveActivityId });
 
             if (configAtividade && configAtividade.hasTimeLimit) {
-                const attempt = await ActivityAttempt.findOne({ userId, activityId });
+                const attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId });
                 if (!attempt) {
                     return res.status(403).json({ error: "Você precisa iniciar a contagem de tempo da atividade primeiro." });
                 }
@@ -183,7 +252,7 @@ router.post('/submit', async (req, res) => {
             if (configAtividade && configAtividade.isEvaluative) {
                 const totalTentativas = await Submission.countDocuments({
                     userId,
-                    activityId,
+                    activityId: effectiveActivityId,
                     exerciseId: idExercicioFinal
                 });
                 const maxTentativas = configAtividade.maxAttempts || 3;
@@ -197,8 +266,28 @@ router.post('/submit', async (req, res) => {
 
         const isModoTeste = isTestUser(userId, req.session, req.body);
 
+        // Bloqueio no servidor para submissões idênticas (impede burlar 'Altere seu código' no F12)
+        if (!isProfessorReal && !isModoTeste && !draftOnly) {
+            const ultimaSub = await Submission.findOne({
+                userId,
+                activityId: effectiveActivityId,
+                exerciseId: idExercicioFinal
+            }).sort({ createdAt: -1 });
+
+            if (ultimaSub && ultimaSub.codePath) {
+                try {
+                    const ultimoCodigo = await minioService.lerArquivoPorPath(ultimaSub.codePath);
+                    if (ultimoCodigo && ultimoCodigo.trim() === (code || '').trim()) {
+                        return res.status(400).json({
+                            error: "Altere seu código no editor para poder compilar novamente."
+                        });
+                    }
+                } catch {}
+            }
+        }
+
         if (!isModoTeste) {
-            await minioService.salvarRascunho(userId, activityId || 'preview', idExercicioFinal, code);
+            await minioService.salvarRascunho(userId, effectiveActivityId, idExercicioFinal, code);
         }
 
         if (draftOnly) {
@@ -211,23 +300,64 @@ router.post('/submit', async (req, res) => {
             return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
         }
 
-        const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit);
-        const tempoGastoMs = resultado.executionTime || 0;
+        let resultado;
+        try {
+            resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit);
+        } catch (execErr) {
+            judgeService.liberarTravaUsuario(containerName);
+            throw execErr;
+        }
 
+        const tempoGastoMs = resultado.executionTime || 0;
         const isAccepted = resultado.status === 'Accepted';
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
 
+        let respostaResultado = {
+            ...resultado,
+            executionTime: tempoGastoMs,
+            didacticHint: dicaDidatica
+        };
+
+        // Se a submissão falhar por Wrong Answer em um caso de teste secreto/fechado (não visível),
+        // mascara a entrada e a saída esperada para manter o feedback limpo e uniforme tanto para alunos quanto em modo teste/preview
+        if (respostaResultado.status === 'Wrong Answer') {
+            const testIndexFalha = typeof respostaResultado.testIndex === 'number' ? respostaResultado.testIndex : -1;
+            const testeFalho = (testesParaExecutar && testIndexFalha >= 0) ? testesParaExecutar[testIndexFalha] : null;
+            const temAlgumVisivelDefinido = testesParaExecutar?.some(t => t.isVisible === true);
+            const isTesteVisivel = testeFalho 
+                ? (temAlgumVisivelDefinido ? (testeFalho.isVisible === true) : (testIndexFalha === 0))
+                : false;
+
+            if (!isTesteVisivel) {
+                respostaResultado.input = "(Caso de teste fechado / oculto)";
+                respostaResultado.expected = "(Oculto em testes fechados)";
+            }
+        }
+
         if (isModoTeste) {
-            return res.json({
-                ...resultado,
-                executionTime: tempoGastoMs,
-                didacticHint: dicaDidatica
-            });
+            try {
+                await Submission.create({
+                    userId,
+                    userName,
+                    activityId: effectiveActivityId,
+                    exerciseId: idExercicioFinal,
+                    codePath: 'preview',
+                    logPath: null,
+                    status: resultado.status,
+                    isAccepted,
+                    executionTime: isAccepted ? tempoGastoMs : null,
+                    percentage: typeof resultado.percentage === 'number' ? resultado.percentage : 0,
+                    compilationDetails: resultado.details || ''
+                });
+            } catch (errSubTest) {
+                console.warn("Aviso ao salvar submissão em modo teste:", errSubTest.message);
+            }
+            return res.json(respostaResultado);
         }
 
         const melhorExistente = await Submission.findOne({
             userId,
-            activityId: activityId || 'preview',
+            activityId: effectiveActivityId,
             exerciseId: idExercicioFinal,
             isAccepted: true
         }).sort({ executionTime: 1, createdAt: -1 });
@@ -245,7 +375,7 @@ router.post('/submit', async (req, res) => {
 
         const caminhoMinio = await minioService.arquivarSubmissao(
             userId,
-            activityId || 'preview',
+            effectiveActivityId,
             idExercicioFinal,
             isAccepted,
             code,
@@ -272,7 +402,7 @@ router.post('/submit', async (req, res) => {
         await Submission.create({
             userId,
             userName,
-            activityId: activityId || 'preview',
+            activityId: effectiveActivityId,
             exerciseId: idExercicioFinal,
             codePath: caminhoMinio,
             logPath: caminhoLog,
@@ -283,32 +413,49 @@ router.post('/submit', async (req, res) => {
             compilationDetails: resultado.details || ''
         });
 
-        res.json({
-            ...resultado,
-            executionTime: tempoGastoMs,
-            didacticHint: dicaDidatica
-        });
+        res.json(respostaResultado);
     } catch (err) {
         console.error("Erro na submissão:", err);
-        res.status(500).json({ error: "Erro no motor de correção: " + err.message });
+        res.status(500).json({ error: sanitizarMensagemErroServidor(err.message) });
     }
 });
 
-// Execução livre com entrada customizada do aluno
-router.post('/test-custom', async (req, res) => {
+// Execução livre com entrada customizada do aluno (protegida com limite de 10 execuções por minuto)
+router.post('/test-custom', submitLimiter, async (req, res) => {
     const { code, input, exerciseId, activityId } = req.body;
-    const userId = req.session?.userId || req.body.userId || 'preview_user';
-    const isProfessor = req.session?.isProfessor === true || userId === 'professor_test' || userId === 'preview_user';
+    const isProfessor = req.session?.isProfessor === true || (process.env.NODE_ENV === 'development' && !req.session?.userId);
+    const sessionUserId = req.session?.userId;
+    const sessionActivityId = req.session?.activityId;
+
+    // Bloqueio de segurança em produção: exige sessão ativa do Moodle
+    if (!sessionUserId && !isProfessor && process.env.NODE_ENV !== 'development') {
+        return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
+    }
+
+    const userId = sessionUserId || req.body.userId || 'preview_user';
+    const effectiveActivityId = (!isProfessor && sessionActivityId)
+        ? sessionActivityId
+        : (activityId || sessionActivityId || 'preview');
 
     if (!code) return res.status(400).json({ error: "Código vazio." });
 
     try {
-        if (!isProfessor && activityId && activityId !== 'preview') {
-            const configAtividade = await ActivityConfig.findOne({ activityId });
+        if (!isProfessor && effectiveActivityId && effectiveActivityId !== 'preview') {
+            const configAtividade = await ActivityConfig.findOne({ activityId: effectiveActivityId });
             if (configAtividade && configAtividade.isEvaluative) {
                 return res.status(403).json({
                     error: "A depuração com entradas livres está desativada para atividades com limite de tentativas."
                 });
+            }
+
+            if (configAtividade && configAtividade.hasTimeLimit) {
+                const attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId });
+                if (!attempt) {
+                    return res.status(403).json({ error: "Você precisa iniciar a contagem de tempo da atividade primeiro." });
+                }
+                if (Date.now() > new Date(attempt.expiresAt).getTime()) {
+                    return res.status(403).json({ error: "O tempo limite de realização desta atividade encerrou." });
+                }
             }
         }
 
@@ -326,10 +473,16 @@ router.post('/test-custom', async (req, res) => {
             return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
         }
 
-        const testes = [{ input: input || '', output: '' }];
-        const resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
-        const tempoGastoMs = resultado.executionTime || 0;
+        let resultado;
+        try {
+            const testes = [{ input: input || '', output: '' }];
+            resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
+        } catch (execErr) {
+            judgeService.liberarTravaUsuario(containerName);
+            throw execErr;
+        }
 
+        const tempoGastoMs = resultado.executionTime || 0;
         const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
         const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
 
@@ -342,21 +495,36 @@ router.post('/test-custom', async (req, res) => {
             didacticHint: dicaDidatica
         });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao executar teste: " + err.message });
+        console.error("Erro no teste customizado:", err);
+        res.status(500).json({ error: sanitizarMensagemErroServidor(err.message) });
     }
 });
 
 // Lista de submissões do aluno
 router.get('/aluno/submissoes', async (req, res) => {
-    const { activityId, exerciseId } = req.query;
-    const userId = req.session?.userId || req.query.userId || 'preview_user';
+    const { exerciseId, listId } = req.query;
+    const isProfessor = req.session?.isProfessor === true;
+    const sessionUserId = req.session?.userId;
+    const sessionActivityId = req.session?.activityId;
+
+    const userId = sessionUserId || (isProfessor ? req.query.userId : 'preview_user');
+    let effectiveActivityId = (!isProfessor && sessionActivityId)
+        ? sessionActivityId
+        : (req.query.activityId || sessionActivityId || 'preview');
+
+    if ((!effectiveActivityId || effectiveActivityId === 'preview') && listId) {
+        try {
+            const configByList = await ActivityConfig.findOne({ listId });
+            if (configByList) effectiveActivityId = configByList.activityId;
+        } catch {}
+    }
 
     if (!exerciseId) return res.status(400).json({ success: false, error: "exerciseId ausente." });
 
     try {
         const ultimasSubmissoes = await Submission.find({
             userId,
-            activityId: activityId || 'preview',
+            activityId: effectiveActivityId,
             exerciseId
         })
             .sort({ createdAt: -1 })
@@ -375,8 +543,13 @@ router.get('/aluno/submissoes', async (req, res) => {
 // Carregamento sob demanda do código e do log bruto
 router.get('/aluno/submissao-codigo', async (req, res) => {
     const { submissionId } = req.query;
-    const userId = req.session?.userId || req.query.userId || 'preview_user';
-    const isProfessor = req.session?.isProfessor === true || userId === 'preview_user';
+    const isProfessor = req.session?.isProfessor === true;
+    const sessionUserId = req.session?.userId;
+    const userId = sessionUserId || (isProfessor ? 'professor' : 'preview_user');
+
+    if (!sessionUserId && !isProfessor && process.env.NODE_ENV !== 'development') {
+        return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
+    }
 
     try {
         const sub = await Submission.findById(submissionId);
@@ -388,7 +561,7 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
 
         let codigo = '// Código não disponível.';
         try {
-            if (sub.codePath) {
+            if (sub.codePath && sub.codePath !== 'preview') {
                 codigo = await minioService.lerArquivoPorPath(sub.codePath);
             }
         } catch (e) {
@@ -396,9 +569,9 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
         }
 
         let logResultado = null;
-        const caminhoLog = sub.logPath || (sub.codePath ? sub.codePath.replace(/\.c$/, '.json') : '');
+        const caminhoLog = sub.logPath || (sub.codePath && sub.codePath !== 'preview' ? sub.codePath.replace(/\.c$/, '.json') : '');
         try {
-            if (caminhoLog) {
+            if (caminhoLog && caminhoLog !== 'preview') {
                 const rawLog = await minioService.lerArquivoPorPath(caminhoLog);
                 logResultado = JSON.parse(rawLog);
             }
@@ -414,6 +587,12 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
             };
         }
 
+        // Para alunos, NÃO vazar a entrada nem a saída esperada dos casos de teste fechados (testIndex > 0)
+        if (!isProfessor && logResultado.status === 'Wrong Answer' && typeof logResultado.testIndex === 'number' && logResultado.testIndex > 0) {
+            logResultado.input = "(Caso de teste fechado / oculto)";
+            logResultado.expected = "(Oculto em testes fechados)";
+        }
+
         res.json({
             success: true,
             code: codigo,
@@ -426,12 +605,20 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
 });
 
 router.get('/get-draft', async (req, res) => {
-    const { activityId, exerciseId } = req.query;
-    const userId = req.session?.userId || req.query.userId || 'preview_user';
-    if (!activityId || !exerciseId) return res.status(400).json({ error: "Dados ausentes" });
+    const { exerciseId } = req.query;
+    const isProfessor = req.session?.isProfessor === true;
+    const sessionUserId = req.session?.userId;
+    const sessionActivityId = req.session?.activityId;
+
+    const userId = sessionUserId || req.query.userId || 'preview_user';
+    const effectiveActivityId = (!isProfessor && sessionActivityId)
+        ? sessionActivityId
+        : (req.query.activityId || sessionActivityId || 'preview');
+
+    if (!effectiveActivityId || !exerciseId) return res.status(400).json({ error: "Dados ausentes" });
 
     try {
-        const codigo = await minioService.lerRascunho(userId, activityId, exerciseId);
+        const codigo = await minioService.lerRascunho(userId, effectiveActivityId, exerciseId);
         res.json({ code: codigo });
     } catch (e) {
         res.status(404).json({ error: "Sem rascunho salvo para este exercício." });
@@ -439,22 +626,38 @@ router.get('/get-draft', async (req, res) => {
 });
 
 router.get('/ranking', async (req, res) => {
-    const { activityId, exerciseId } = req.query;
-    const userId = req.session?.userId || req.query.userId || 'preview_user';
+    const { exerciseId, listId } = req.query;
+    const isProfessorReal = req.session?.isProfessor === true;
+    const sessionUserId = req.session?.userId;
+    const sessionActivityId = req.session?.activityId;
+
+    const userId = sessionUserId || req.query.userId || 'preview_user';
+    let effectiveActivityId = (!isProfessorReal && sessionActivityId)
+        ? sessionActivityId
+        : (req.query.activityId || sessionActivityId || 'preview');
+
+    if ((!effectiveActivityId || effectiveActivityId === 'preview') && listId) {
+        try {
+            const configByList = await ActivityConfig.findOne({ listId });
+            if (configByList) {
+                effectiveActivityId = configByList.activityId;
+            }
+        } catch {}
+    }
 
     try {
-        const submissoes = activityId && activityId !== 'preview'
-            ? await Submission.find({ activityId, userId: { $nin: ['professor_test', 'preview_user'] } }).lean()
+        const submissoes = effectiveActivityId && effectiveActivityId !== 'preview'
+            ? await Submission.find({ activityId: effectiveActivityId }).lean()
             : [];
 
-        const configAtividade = activityId && activityId !== 'preview'
-            ? await ActivityConfig.findOne({ activityId }).populate({
+        const configAtividade = effectiveActivityId && effectiveActivityId !== 'preview'
+            ? await ActivityConfig.findOne({ activityId: effectiveActivityId }).populate({
                 path: 'listId',
                 populate: { path: 'exercises' }
             }).lean()
             : null;
 
-        const isEvaluative = configAtividade ? !!configAtividade.isEvaluative : false;
+        const isEvaluative = (configAtividade && !isProfessorReal) ? !!configAtividade.isEvaluative : false;
         const maxAttempts = configAtividade && configAtividade.maxAttempts ? configAtividade.maxAttempts : 3;
         const exercicios = configAtividade?.listId?.exercises || [];
 
@@ -462,13 +665,13 @@ router.get('/ranking', async (req, res) => {
         let timeLimitEx = null;
 
         if (exerciseId) {
-            minhasTentativasEx = submissoes.filter(s => s.userId === userId && String(s.exerciseId) === String(exerciseId)).length;
+            minhasTentativasEx = isProfessorReal ? 0 : submissoes.filter(s => String(s.userId) === String(userId) && String(s.exerciseId) === String(exerciseId)).length;
             const exObj = await Exercise.findById(exerciseId).lean();
             if (exObj && exObj.timeLimit) timeLimitEx = exObj.timeLimit;
         }
 
         const statusMeusExercicios = {};
-        submissoes.filter(s => s.userId === userId).forEach(s => {
+        submissoes.filter(s => String(s.userId) === String(userId)).forEach(s => {
             const exId = String(s.exerciseId);
             if (s.isAccepted) {
                 statusMeusExercicios[exId] = 'accepted';
@@ -477,12 +680,15 @@ router.get('/ranking', async (req, res) => {
             }
         });
 
+        // Para o pódio e ranking da turma, ignora usuários de teste/preview
+        const submissoesTurma = submissoes.filter(s => !['professor_test', 'preview_user'].includes(s.userId));
+
         let rankingExercicio = [];
         let minhaPosicaoEx = null;
         let meuTempoEx = null;
 
         if (exerciseId) {
-            const subsEx = submissoes
+            const subsEx = submissoesTurma
                 .filter(s => String(s.exerciseId) === String(exerciseId) && s.isAccepted)
                 .sort((a, b) => {
                     if (a.executionTime !== b.executionTime) return a.executionTime - b.executionTime;
@@ -506,7 +712,7 @@ router.get('/ranking', async (req, res) => {
                 return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
             });
 
-            const posIdx = rankingExercicio.findIndex(r => r.userId === userId);
+            const posIdx = rankingExercicio.findIndex(r => String(r.userId) === String(userId));
             if (posIdx !== -1) {
                 minhaPosicaoEx = posIdx + 1;
                 meuTempoEx = rankingExercicio[posIdx].executionTime;
@@ -514,7 +720,7 @@ router.get('/ranking', async (req, res) => {
         }
 
         const alunosGeral = {};
-        submissoes.forEach(sub => {
+        submissoesTurma.forEach(sub => {
             if (!alunosGeral[sub.userId]) {
                 alunosGeral[sub.userId] = {
                     userId: sub.userId,
@@ -550,12 +756,12 @@ router.get('/ranking', async (req, res) => {
             return a.tempoTotalMs - b.tempoTotalMs;
         });
 
-        const posGeralIdx = rankingGeral.findIndex(r => r.userId === userId);
+        const posGeralIdx = rankingGeral.findIndex(r => String(r.userId) === String(userId));
 
         const rankingPorExercicio = {};
         exercicios.forEach(ex => {
             const exId = String(ex._id);
-            const subsEsteEx = submissoes.filter(s => String(s.exerciseId) === exId && s.isAccepted);
+            const subsEsteEx = submissoesTurma.filter(s => String(s.exerciseId) === exId && s.isAccepted);
             const mapa = {};
             subsEsteEx.forEach(sub => {
                 if (!mapa[sub.userId] || sub.executionTime < mapa[sub.userId].executionTime) {

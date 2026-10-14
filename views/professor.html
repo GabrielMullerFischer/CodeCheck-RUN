@@ -391,12 +391,16 @@
                                                 <div class="col-6 border-right">
                                                     <div class="metric-circle border-success text-success mb-2 mx-auto"
                                                         id="circle-taxa-acerto">0%</div>
-                                                    <span class="small font-weight-bold text-muted text-uppercase d-block" style="font-size: 0.72rem;">Taxa de Acertos</span>
+                                                    <span
+                                                        class="small font-weight-bold text-muted text-uppercase d-block"
+                                                        style="font-size: 0.72rem;">Taxa de Acertos</span>
                                                 </div>
                                                 <div class="col-6">
                                                     <div class="metric-circle border-primary text-primary mb-2 mx-auto"
                                                         id="circle-tempo-medio">-</div>
-                                                    <span class="small font-weight-bold text-muted text-uppercase d-block" style="font-size: 0.72rem;">Tempo Médio</span>
+                                                    <span
+                                                        class="small font-weight-bold text-muted text-uppercase d-block"
+                                                        style="font-size: 0.72rem;">Tempo Médio</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -732,7 +736,7 @@
 
         <!-- Modal Novo / Editar Exercício -->
         <div class="modal fade" id="modalNovoExercicio" tabindex="-1" role="dialog" aria-hidden="true">
-            <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
                 <div class="modal-content">
                     <div class="modal-header bg-primary text-white">
                         <h5 class="modal-title font-weight-bold" id="modalExercicioTituloCabecalho">
@@ -777,14 +781,31 @@
                         <hr>
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <h6 class="font-weight-bold mb-0"><i class="fas fa-vial mr-1"></i> Casos de Teste</h6>
+                            <span id="badge-contador-testes-visiveis" class="badge badge-info p-2 font-weight-bold"
+                                style="font-size: 0.82rem;">
+                                <i class="fas fa-eye mr-1"></i> Testes visíveis: (<span
+                                    id="num-testes-visiveis">1</span>/3)
+                            </span>
                         </div>
                         <div class="alert alert-info py-2 px-3 small border-0 mb-3">
                             <i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha.
+                            Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).
                         </div>
 
                         <div id="modal-container-testes">
                             <div class="teste-item border rounded p-2 mb-2 bg-light position-relative">
-                                <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #1</span>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="badge badge-secondary font-weight-bold">Caso de Teste #1</span>
+                                    <div class="custom-control custom-checkbox mr-4">
+                                        <input type="checkbox" class="custom-control-input chk-teste-visivel"
+                                            id="chk-visivel-init" checked>
+                                        <label
+                                            class="custom-control-label small font-weight-bold text-primary cursor-pointer"
+                                            for="chk-visivel-init">
+                                            <i class="fas fa-eye mr-1"></i> Exemplo visível para o aluno
+                                        </label>
+                                    </div>
+                                </div>
                                 <div class="row">
                                     <div class="col-md-6 mb-2 mb-md-0">
                                         <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
@@ -805,8 +826,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                        <button type="button" id="modalBtnSalvarEx" class="btn btn-primary font-weight-bold">Salvar
-                            Exercício</button>
+                        <button type="button" id="modalBtnSalvarEx" class="btn btn-primary font-weight-bold">Salvar Exercício</button>
                     </div>
                 </div>
             </div>
@@ -1006,16 +1026,31 @@
 
                     <div class="modal-body p-3">
                         <div class="card mb-3 bg-light border-0 shadow-sm">
-                            <div
-                                class="card-body py-2 px-3 d-flex align-items-center justify-content-between flex-wrap">
-                                <button type="button" id="modalBtnExAnterior" class="btn btn-sm btn-outline-secondary">
-                                    <i class="fas fa-chevron-left mr-1"></i> Anterior
-                                </button>
-                                <div id="modalContainerNavExercicios"
-                                    class="d-flex flex-wrap justify-content-center my-1" style="gap: 6px;"></div>
-                                <button type="button" id="modalBtnExProximo" class="btn btn-sm btn-outline-secondary">
-                                    Próximo <i class="fas fa-chevron-right ml-1"></i>
-                                </button>
+                            <div class="card-body py-2 px-3">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap">
+                                    <button type="button" id="modalBtnExAnterior"
+                                        class="btn btn-sm btn-outline-secondary font-weight-bold">
+                                        <i class="fas fa-chevron-left mr-1"></i> Anterior
+                                    </button>
+                                    <div id="modalContainerNavExercicios"
+                                        class="d-flex flex-wrap justify-content-center my-1" style="gap: 6px;"></div>
+                                    <button type="button" id="modalBtnExProximo"
+                                        class="btn btn-sm btn-outline-secondary font-weight-bold">
+                                        Próximo <i class="fas fa-chevron-right ml-1"></i>
+                                    </button>
+                                </div>
+                                <div class="d-flex justify-content-center align-items-center mt-2 small text-muted"
+                                    style="gap: 18px; font-size: 0.78rem;">
+                                    <span><span class="badge badge-success mr-1"
+                                            style="width: 10px; height: 10px; padding: 0; border-radius: 50%; display: inline-block;"></span>
+                                        Resolvido</span>
+                                    <span><span class="badge badge-danger mr-1"
+                                            style="width: 10px; height: 10px; padding: 0; border-radius: 50%; display: inline-block;"></span>
+                                        Tentativa Incorreta</span>
+                                    <span><span class="badge badge-secondary mr-1"
+                                            style="width: 10px; height: 10px; padding: 0; border-radius: 50%; display: inline-block;"></span>
+                                        Nem tentou</span>
+                                </div>
                             </div>
                         </div>
 

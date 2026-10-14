@@ -10,7 +10,8 @@ const ExerciseSchema = new mongoose.Schema({
     isArchived: { type: Boolean, default: false },
     tests: [{
         input: { type: String, required: true },
-        output: { type: String, required: true }
+        output: { type: String, required: true },
+        isVisible: { type: Boolean, default: false }
     }],
     createdAt: { type: Date, default: Date.now }
 });

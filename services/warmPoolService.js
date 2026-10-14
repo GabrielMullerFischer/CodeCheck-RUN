@@ -1,4 +1,4 @@
-const { k8sApi, k8sExec, namespace } = require('../config/kubernetes');
+const { k8sApi, k8sNetworkingApi, k8sExec, namespace } = require('../config/kubernetes');
 const stream = require('stream');
 
 const MIN_WARM_PODS = parseInt(process.env.K8S_MIN_WARM_PODS, 10) || 1;
@@ -12,12 +12,16 @@ const RUNNER_C = `
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <sys/types.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 3) return 1;
     pid_t pid = fork();
     if (pid < 0) return 1;
     if (pid == 0) {
+        // Reduz privilégios estritamente para o usuário 'nobody' (UID/GID 65534)
+        setgid(65534);
+        setuid(65534);
         execv(argv[1], &argv[1]);
         exit(1);
     } else {
@@ -86,6 +90,10 @@ exec sleep infinity
         spec: {
             restartPolicy: 'Always',
             automountServiceAccountToken: false,
+            dnsPolicy: 'None',
+            dnsConfig: {
+                nameservers: ['127.0.0.1']
+            },
             containers: [
                 {
                     name: 'runner',
@@ -175,7 +183,17 @@ async function apiReadPodStatus(podName) {
 
 function isPodReady(podObj) {
     if (!podObj || !podObj.status) return false;
+    if (podObj.metadata?.deletionTimestamp) return false;
     if (podObj.status.phase !== 'Running') return false;
+
+    // Garante que os contêineres estejam ativos e não terminados/em erro
+    const containerStatuses = podObj.status.containerStatuses || [];
+    if (containerStatuses.length === 0) return false;
+    for (const cs of containerStatuses) {
+        if (!cs.ready) return false;
+        if (cs.state?.terminated || cs.state?.waiting) return false;
+    }
+
     const conditions = podObj.status.conditions || [];
     const readyCond = conditions.find(c => c.type === 'Ready');
     return readyCond && (readyCond.status === 'True' || readyCond.status === true);
@@ -216,7 +234,7 @@ async function criarPodWorker(isExtra = false) {
         await apiCreatePod(manifest);
         await aguardarPodFicarPronto(podName);
         podEntry.status = 'idle';
-        console.log(`[WarmPool] Pod ${podName} criado e PRONTO para compilações (extra: ${isExtra}).`);
+        console.log(`[WarmPool] Pod ${podName} criado e PRONTO para compilações`);
         return podEntry;
     } catch (err) {
         console.error(`[WarmPool] Falha ao criar Pod ${podName}:`, err.message);
@@ -304,7 +322,7 @@ function liberarPod(podName, teveErroGrave = false) {
             adquirirPod().then(pName => {
                 const next = filaEsperaExecucao.shift();
                 if (next) next(pName);
-            }).catch(() => {});
+            }).catch(() => { });
         }
         return;
     }
@@ -349,7 +367,7 @@ function executarComandoNoPod(podName, scriptBash, timeoutMs) {
             if (!isDone) {
                 isDone = true;
                 if (wsConn && typeof wsConn.close === 'function') {
-                    try { wsConn.close(); } catch {}
+                    try { wsConn.close(); } catch { }
                 }
                 reject(new Error(`Timeout na execução dentro do Pod (${timeoutMs}ms)`));
             }
@@ -437,8 +455,17 @@ fi
     });
 
     return `#!/usr/bin/env bash
+export http_proxy="http://127.0.0.1:0"
+export https_proxy="http://127.0.0.1:0"
+export HTTP_PROXY="http://127.0.0.1:0"
+export HTTPS_PROXY="http://127.0.0.1:0"
+export all_proxy="http://127.0.0.1:0"
+
 JOB_DIR="/sandbox/job_${jobId}"
 mkdir -p "$JOB_DIR" && cd "$JOB_DIR"
+chmod 777 "$JOB_DIR"
+
+trap 'cd / && rm -rf "$JOB_DIR"' EXIT
 
 ulimit -u 50
 ulimit -f 50000
@@ -470,7 +497,7 @@ cd / && rm -rf "$JOB_DIR"
 `;
 }
 
-async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now()) {
+async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now(), tentativa = 1) {
     const podName = await adquirirPod();
     let teveErroGrave = false;
 
@@ -487,9 +514,18 @@ async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now()
         return (resultado.stdout || resultado.stderr || '').toString();
     } catch (err) {
         teveErroGrave = true;
+        // Se foi a 1ª tentativa e o pod falhou na comunicação (ex: pod parado externamente no Docker/K8s),
+        // recicla imediatamente e tenta uma nova execução com outro pod de forma transparente
+        if (tentativa === 1) {
+            console.warn(`[WarmPool] Pod ${podName} indisponível ou parado (${err.message}). Auto-recuperando e tentando novamente...`);
+            liberarPod(podName, true);
+            return await executarJobNoPool(code, tests, timeoutAlunoMs, jobId, 2);
+        }
         throw err;
     } finally {
-        liberarPod(podName, teveErroGrave);
+        if (!teveErroGrave || tentativa > 1) {
+            liberarPod(podName, teveErroGrave);
+        }
     }
 }
 
@@ -501,24 +537,35 @@ async function verificarEManterPool() {
         for (const pod of podsCluster) {
             const name = pod.metadata?.name;
             if (!name) continue;
-            podsAtivosNoCluster.add(name);
 
-            // Adota pods saudáveis que já estejam no cluster (ex: após reboot da app)
-            if (!podMap.has(name) && isPodReady(pod)) {
-                podMap.set(name, {
-                    name,
-                    status: 'idle',
-                    createdAt: Date.now(),
-                    lastUsedAt: Date.now(),
-                    idleTimer: null,
-                    isExtra: podMap.size >= MIN_WARM_PODS
-                });
-                console.log(`[WarmPool] Pod existente ${name} adotado no pool.`);
+            const isHealthy = isPodReady(pod);
+            const isDeleting = !!pod.metadata?.deletionTimestamp;
+            const isFailed = pod.status?.phase === 'Failed';
+
+            // Se o pod falhou, está sendo terminado ou não está saudável, descarta
+            if (!isHealthy && (isDeleting || isFailed || podMap.has(name))) {
+                if (podMap.has(name) && podMap.get(name).status !== 'starting') {
+                    console.log(`[WarmPool] Detectado pod inativo/parado no cluster: ${name}. Removendo...`);
+                    await destruirPod(name, 'pod_inativo_ou_falho');
+                }
+                continue;
             }
 
-            // Remove do cluster pods que falharam
-            if (pod.status?.phase === 'Failed') {
-                await destruirPod(name, 'fase_failed');
+            if (isHealthy) {
+                podsAtivosNoCluster.add(name);
+
+                // Adota pods saudáveis que já estejam no cluster (ex: após reboot da app)
+                if (!podMap.has(name)) {
+                    podMap.set(name, {
+                        name,
+                        status: 'idle',
+                        createdAt: Date.now(),
+                        lastUsedAt: Date.now(),
+                        idleTimer: null,
+                        isExtra: podMap.size >= MIN_WARM_PODS
+                    });
+                    console.log(`[WarmPool] Pod existente ${name} adotado no pool.`);
+                }
             }
         }
 
@@ -530,11 +577,11 @@ async function verificarEManterPool() {
             }
         }
 
-        // Se estiver abaixo do mínimo de pods (2), sobe os que faltam
+        // Se estiver abaixo do mínimo de pods (MIN_WARM_PODS), sobe os que faltam
         const podsValidos = podMap.size;
         if (podsValidos < MIN_WARM_PODS) {
             const faltam = MIN_WARM_PODS - podsValidos;
-            console.log(`[WarmPool] Repondo ${faltam} pod(s) para manter o mínimo de ${MIN_WARM_PODS}...`);
+            console.log(`[WarmPool] Iniciando ${faltam} pod(s) que faltam (Ativos: ${podsValidos} | Teto Máximo: ${MAX_WARM_PODS})...`);
             for (let i = 0; i < faltam; i++) {
                 criarPodWorker(false).catch(err => {
                     console.warn('[WarmPool] Aviso ao criar pod de reposição:', err.message);
@@ -546,17 +593,84 @@ async function verificarEManterPool() {
     }
 }
 
+async function garantirIsolamentoRede() {
+    try {
+        const netPolicyManifest = {
+            apiVersion: 'networking.k8s.io/v1',
+            kind: 'NetworkPolicy',
+            metadata: {
+                name: 'isolate-judge-sandbox',
+                namespace: TARGET_NS,
+                labels: {
+                    app: 'codecheck-judge',
+                    role: 'judge-sandbox'
+                }
+            },
+            spec: {
+                podSelector: {
+                    matchLabels: {
+                        role: 'judge-sandbox'
+                    }
+                },
+                policyTypes: ['Ingress', 'Egress'],
+                ingress: [],
+                egress: []
+            }
+        };
+
+        try {
+            await k8sNetworkingApi.createNamespacedNetworkPolicy({
+                namespace: TARGET_NS,
+                body: netPolicyManifest
+            });
+            console.log(`🛡️ [Segurança] NetworkPolicy de isolamento total aplicada com sucesso (${TARGET_NS}).`);
+        } catch (createErr) {
+            if (createErr.statusCode === 409 || (createErr.message && (createErr.message.includes('already exists') || createErr.message.includes('Conflict')))) {
+                // Já existe
+            } else if (createErr.message && createErr.message.includes('Required parameter')) {
+                await k8sNetworkingApi.createNamespacedNetworkPolicy(TARGET_NS, netPolicyManifest);
+                console.log(`🛡️ [Segurança] NetworkPolicy de isolamento total aplicada com sucesso (${TARGET_NS}).`);
+            }
+        }
+    } catch (e) {
+        // CNI sem suporte ou sem permissão de cluster; silencioso
+    }
+}
+
+async function garantirNamespace() {
+    if (!TARGET_NS || TARGET_NS === 'default') return;
+    try {
+        try {
+            await k8sApi.readNamespace({ name: TARGET_NS });
+        } catch (readErr) {
+            const nsObj = { metadata: { name: TARGET_NS } };
+            try {
+                await k8sApi.createNamespace({ body: nsObj });
+                console.log(`📦 [Kubernetes] Namespace "${TARGET_NS}" criado automaticamente.`);
+            } catch (createErr) {
+                if (createErr.statusCode !== 409) {
+                    try {
+                        await k8sApi.createNamespace(nsObj);
+                        console.log(`📦 [Kubernetes] Namespace "${TARGET_NS}" criado automaticamente.`);
+                    } catch { }
+                }
+            }
+        }
+    } catch (e) { }
+}
+
 async function inicializarPool() {
     if (inicializando) return;
     inicializando = true;
 
     try {
-        console.log(`[WarmPool] Inicializando pool de pods quentes (Mínimo: ${MIN_WARM_PODS}, Máximo: ${MAX_WARM_PODS}, IdleTimeout: ${IDLE_TIMEOUT_MS / 60000}min)...`);
+        await garantirNamespace();
+        await garantirIsolamentoRede();
         await verificarEManterPool();
 
-        // Inicia manutenção periódica a cada 30 segundos
+        // Inicia manutenção periódica a cada 10 segundos para rápida auto-recuperação
         if (!loopManutencao) {
-            loopManutencao = setInterval(verificarEManterPool, 30000);
+            loopManutencao = setInterval(verificarEManterPool, 10000);
         }
     } catch (err) {
         console.warn('[WarmPool] Não foi possível conectar ao Kubernetes na inicialização:', err.message);

@@ -1021,26 +1021,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const containerTestes = document.getElementById('modal-container-testes');
         containerTestes.innerHTML = '';
         if (ex.tests && ex.tests.length > 0) {
+            const hasAnyVisible = ex.tests.some(t => t.isVisible === true);
             ex.tests.forEach((t, i) => {
-                const div = document.createElement('div');
-                div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
-                div.innerHTML = `
-                    <button type="button" class="close position-absolute" style="top: 4px; right: 10px; z-index: 10;" onclick="this.closest('.teste-item').remove()">&times;</button>
-                    <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #${i + 1}</span>
-                    <div class="row">
-                        <div class="col-md-6 mb-2 mb-md-0">
-                            <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
-                            <textarea class="form-control form-control-sm input-val font-monospace" rows="3">${t.input || ''}</textarea>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
-                            <textarea class="form-control form-control-sm output-val font-monospace" rows="3">${t.output || ''}</textarea>
-                        </div>
-                    </div>
-                `;
+                const isVisivel = hasAnyVisible ? (t.isVisible === true) : (i === 0);
+                const div = criarItemTesteHTML(i + 1, t.input || '', t.output || '', isVisivel);
                 containerTestes.appendChild(div);
             });
+        } else {
+            const div = criarItemTesteHTML(1, '', '', true);
+            containerTestes.appendChild(div);
         }
+        atualizarContadorTestesVisiveis();
 
         $('#modalNovoExercicio').modal('show');
     }
@@ -1174,32 +1165,113 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function atualizarContadorTestesVisiveis() {
+        const checkboxes = document.querySelectorAll('#modal-container-testes .chk-teste-visivel');
+        const checkedCount = Array.from(checkboxes).filter(chk => chk.checked).length;
+        const numSpan = document.getElementById('num-testes-visiveis');
+        const badge = document.getElementById('badge-contador-testes-visiveis');
+        if (numSpan) numSpan.innerText = checkedCount;
+
+        if (badge) {
+            if (checkedCount === 0) {
+                badge.className = 'badge badge-danger p-2 font-weight-bold';
+            } else if (checkedCount > 3) {
+                badge.className = 'badge badge-warning p-2 font-weight-bold';
+            } else {
+                badge.className = 'badge badge-info p-2 font-weight-bold';
+            }
+        }
+        return checkedCount;
+    }
+
+    function renumerarTestes() {
+        document.querySelectorAll('#modal-container-testes .teste-item').forEach((item, idx) => {
+            const badge = item.querySelector('.badge-secondary');
+            if (badge) badge.innerText = `Caso de Teste #${idx + 1}`;
+        });
+    }
+
+    function criarItemTesteHTML(idx, inputVal = '', outputVal = '', isVisible = false) {
+        const div = document.createElement('div');
+        div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
+        const uniqueId = 'chk-visivel-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+        div.innerHTML = `
+            <button type="button" class="close position-absolute btn-remover-teste" 
+                    style="top: 4px; right: 10px; z-index: 10; width: 26px; height: 26px; line-height: 26px; text-align: center; outline: none; cursor: pointer;" 
+                    title="Remover teste" 
+                    aria-label="Fechar">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <div class="d-flex justify-content-between align-items-center mb-2 pr-4">
+                <span class="badge badge-secondary font-weight-bold">Caso de Teste #${idx}</span>
+                <div class="custom-control custom-checkbox mr-3">
+                    <input type="checkbox" class="custom-control-input chk-teste-visivel" id="${uniqueId}" ${isVisible ? 'checked' : ''}>
+                    <label class="custom-control-label small font-weight-bold text-primary cursor-pointer" for="${uniqueId}">
+                        <i class="fas fa-eye mr-1"></i> Exemplo visível para o aluno
+                    </label>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-2 mb-md-0">
+                    <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
+                    <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter...">${escapeHtml(inputVal)}</textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
+                    <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada...">${escapeHtml(outputVal)}</textarea>
+                </div>
+            </div>
+        `;
+        return div;
+    }
+
+    if (modalContainerTestes) {
+        modalContainerTestes.addEventListener('change', (e) => {
+            if (e.target && e.target.classList.contains('chk-teste-visivel')) {
+                if (e.target.checked) {
+                    const totalVisiveis = document.querySelectorAll('#modal-container-testes .chk-teste-visivel:checked').length;
+                    if (totalVisiveis > 3) {
+                        e.target.checked = false;
+                        mostrarToast("Você pode selecionar no máximo 3 casos de teste visíveis como exemplo.", "warning");
+                    }
+                }
+                atualizarContadorTestesVisiveis();
+            }
+        });
+
+        modalContainerTestes.addEventListener('click', (e) => {
+            const btnRemover = e.target.closest('.btn-remover-teste, .close');
+            if (btnRemover) {
+                const item = btnRemover.closest('.teste-item');
+                if (item) {
+                    item.remove();
+                    renumerarTestes();
+                    atualizarContadorTestesVisiveis();
+                }
+            }
+        });
+    }
+
     if (modalBtnMaisTeste) {
         modalBtnMaisTeste.onclick = () => {
-            const count = modalContainerTestes.querySelectorAll('.teste-item').length + 1;
-            const div = document.createElement('div');
-            div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
-            div.innerHTML = `
-                <button type="button" class="close position-absolute" 
-                        style="top: 4px; right: 10px; z-index: 10; width: 26px; height: 26px; line-height: 26px; text-align: center; outline: none; cursor: pointer;" 
-                        onclick="this.closest('.teste-item').remove()" 
-                        title="Remover teste" 
-                        aria-label="Fechar">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-                <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #${count}</span>
-                <div class="row">
-                    <div class="col-md-6 mb-2 mb-md-0">
-                        <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
-                        <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter..."></textarea>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
-                        <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada..."></textarea>
-                    </div>
-                </div>
-            `;
+            const currentItems = modalContainerTestes.querySelectorAll('.teste-item');
+            const count = currentItems.length + 1;
+            const currentVisiveis = modalContainerTestes.querySelectorAll('.chk-teste-visivel:checked').length;
+            const deveSerVisivel = (currentVisiveis === 0);
+            const div = criarItemTesteHTML(count, '', '', deveSerVisivel);
             modalContainerTestes.appendChild(div);
+            atualizarContadorTestesVisiveis();
+            div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         };
     }
 
@@ -1231,11 +1303,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const tests = [];
+            let countVisiveis = 0;
             document.querySelectorAll('#modal-container-testes .teste-item').forEach(item => {
                 const input = item.querySelector('.input-val').value;
                 const output = item.querySelector('.output-val').value;
-                if (output.trim() !== '') tests.push({ input, output });
+                const isVisible = item.querySelector('.chk-teste-visivel')?.checked || false;
+                if (output.trim() !== '') {
+                    if (isVisible) countVisiveis++;
+                    tests.push({ input, output, isVisible });
+                }
             });
+
+            if (tests.length === 0) {
+                mostrarToast("Adicione pelo menos um caso de teste com saída esperada.", "warning");
+                return;
+            }
+
+            if (countVisiveis === 0) {
+                mostrarToast("Pelo menos 1 caso de teste deve ser marcado como visível para o aluno.", "warning");
+                return;
+            }
+
+            if (countVisiveis > 3) {
+                mostrarToast("No máximo 3 casos de teste podem ser marcados como visíveis.", "warning");
+                return;
+            }
 
             modalBtnSalvarEx.disabled = true;
             modalBtnSalvarEx.innerText = "Salvando...";
@@ -1679,8 +1771,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap: 8px;">
                         <div>
                             <i class="fas fa-check-circle text-success mr-2"></i>
-                            <strong class="text-success">Solução Aceita (Accepted)</strong>
-                            <span class="text-muted small ml-2">Passou em todos os casos de teste</span>
+                            <strong class="text-success">Solução Aceita</strong>
+                            <span class="text-muted small ml-2"></span>
                         </div>
                         <div class="d-flex align-items-center flex-wrap" style="gap: 6px;">
                             <span class="badge badge-light border text-dark font-weight-bold px-2 py-1 shadow-sm">
@@ -1829,9 +1921,53 @@ document.addEventListener('DOMContentLoaded', () => {
         listaExerciciosModal.forEach((ex, idx) => {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = `btn btn-sm ${idx === indiceExercicioModal ? 'btn-primary font-weight-bold shadow-sm' : 'btn-outline-secondary'} px-3`;
-            btn.style.minWidth = '38px';
+
+            const acertos = alunoSelecionado?.submissoesAcertos
+                ? alunoSelecionado.submissoesAcertos.filter(s => String(s.exerciseId) === String(ex.exerciseId))
+                : [];
+            const erros = alunoSelecionado?.submissoesErros
+                ? alunoSelecionado.submissoesErros.filter(s => String(s.exerciseId) === String(ex.exerciseId))
+                : [];
+
+            const isResolvido = acertos.length > 0;
+            const isTentou = erros.length > 0;
+            const isAtivo = (idx === indiceExercicioModal);
+
+            let statusTitle = "Nem tentou";
+            let bgStyle = "";
+
+            if (isResolvido) {
+                statusTitle = "Resolvido";
+                if (isAtivo) {
+                    btn.className = "btn btn-sm font-weight-bold text-white px-3";
+                    bgStyle = "background-color: #218838; border: 2px solid #00539b; box-shadow: 0 0 0 3px rgba(0, 83, 155, 0.45); transform: scale(1.08); z-index: 2;";
+                } else {
+                    btn.className = "btn btn-sm font-weight-bold text-white shadow-sm px-3";
+                    bgStyle = "background-color: #28a745; border: 1px solid #218838;";
+                }
+            } else if (isTentou) {
+                statusTitle = "Tentativa Incorreta";
+                if (isAtivo) {
+                    btn.className = "btn btn-sm font-weight-bold text-white px-3";
+                    bgStyle = "background-color: #c82333; border: 2px solid #00539b; box-shadow: 0 0 0 3px rgba(0, 83, 155, 0.45); transform: scale(1.08); z-index: 2;";
+                } else {
+                    btn.className = "btn btn-sm font-weight-bold text-white shadow-sm px-3";
+                    bgStyle = "background-color: #dc3545; border: 1px solid #c82333;";
+                }
+            } else {
+                statusTitle = "Não respondido (nem tentou)";
+                if (isAtivo) {
+                    btn.className = "btn btn-sm font-weight-bold px-3";
+                    bgStyle = "background-color: #ced4da; color: #212529; border: 2px solid #00539b; box-shadow: 0 0 0 3px rgba(0, 83, 155, 0.45); transform: scale(1.08); z-index: 2;";
+                } else {
+                    btn.className = "btn btn-sm px-3";
+                    bgStyle = "background-color: #e9ecef; color: #6c757d; border: 1px solid #ced4da;";
+                }
+            }
+
+            btn.style.cssText = `min-width: 38px; border-radius: 6px; transition: all 0.15s ease-in-out; ${bgStyle}`;
             btn.innerText = idx + 1;
+            btn.title = `Exercício ${idx + 1}: ${ex.title || ''} (${statusTitle})`;
 
             btn.onclick = () => carregarExercicioNoModal(idx);
             container.appendChild(btn);
@@ -2022,21 +2158,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (boxCampoTempoEl) boxCampoTempoEl.style.display = 'none';
 
         if (containerTestes) {
-            containerTestes.innerHTML = `
-                <div class="teste-item border rounded p-2 mb-2 bg-light position-relative">
-                    <span class="badge badge-secondary mb-2 font-weight-bold">Caso de Teste #1</span>
-                    <div class="row">
-                        <div class="col-md-6 mb-2 mb-md-0">
-                            <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
-                            <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter..."></textarea>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
-                            <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada..."></textarea>
-                        </div>
-                    </div>
-                </div>
-            `;
+            containerTestes.innerHTML = '';
+            const div = criarItemTesteHTML(1, '', '', true);
+            containerTestes.appendChild(div);
+            atualizarContadorTestesVisiveis();
         }
     }
 
@@ -2096,5 +2221,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    atualizarContadorTestesVisiveis();
     carregarEstadoInicial(true);
 });

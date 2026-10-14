@@ -16,7 +16,7 @@ const app = express();
 const server = http.createServer(app);
 
 const gari = new ColetorLixo(
-    path.join(__dirname, 'tmp'), 
+    path.join(__dirname, 'tmp'),
     Number(process.env.LIMPEZATMP) || 10
 );
 
@@ -34,24 +34,28 @@ async function start() {
 
         app.set('trust proxy', 1);
 
+        if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'chave-secreta-tcc') {
+            console.warn("⚠️ [AVISO DE SEGURANÇA] SESSION_SECRET não configurada ou usando chave padrão. Configure uma chave forte em produção!");
+        }
+
         app.use(session({
             secret: process.env.SESSION_SECRET || 'chave-secreta-tcc',
             resave: true,
             saveUninitialized: true,
-            cookie: { 
-                secure: true, 
+            cookie: {
+                secure: true,
                 sameSite: 'none',
                 httpOnly: true
             }
         }));
 
-        await ltiController.setup(app); 
+        await ltiController.setup(app);
 
-        app.use(express.json());
-        app.use(express.urlencoded({ extended: true }));
+        app.use(express.json({ limit: '1mb' }));
+        app.use(express.urlencoded({ extended: true, limit: '1mb' }));
         app.use(express.static(path.join(__dirname, 'public')));
-        app.use('/judge', professorRoutes);
         app.use('/judge', alunoRoutes);
+        app.use('/judge', professorRoutes);
 
         app.get('/healthz', (req, res) => {
             res.status(200).json({ status: 'ok', uptime: process.uptime() });

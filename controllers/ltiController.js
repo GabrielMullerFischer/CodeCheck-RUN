@@ -3,7 +3,7 @@ const fs = require('fs');
 const lti = require('ltijs').Provider;
 const ActivityConfig = require('../models/ActivityConfig');
 const ExerciseList = require('../models/ExerciseList');
-
+const ActivityAttempt = require('../models/ActivityAttempt');
 
 async function renderTemplate(res, req, userName, activityId) { 
     try {
@@ -14,6 +14,8 @@ async function renderTemplate(res, req, userName, activityId) {
         const ltikVal = req.query.ltik || (res.locals && (res.locals.ltik || res.locals.token)) || '';
 
         let exercicioAtual = null;
+        let configAtividade = null;
+
         if (req.query.listId) {
             const listaPreview = await ExerciseList.findById(req.query.listId).populate('exercises');
             if (listaPreview && listaPreview.exercises && listaPreview.exercises.length > 0) {
@@ -22,29 +24,52 @@ async function renderTemplate(res, req, userName, activityId) {
         }
 
         if (!exercicioAtual && activityId) {
-            const config = await ActivityConfig.findOne({ activityId }).populate({
+            configAtividade = await ActivityConfig.findOne({ activityId }).populate({
                 path: 'listId',
                 populate: { path: 'exercises' }
             });
-            if (config && config.listId && config.listId.exercises && config.listId.exercises.length > 0) {
-                exercicioAtual = config.listId.exercises[0];
+            if (configAtividade && configAtividade.listId && configAtividade.listId.exercises && configAtividade.listId.exercises.length > 0) {
+                exercicioAtual = configAtividade.listId.exercises[0];
+            }
+        }
+
+        // Se for aluno em atividade cronometrada que ainda não iniciou o cronômetro,
+        // NÃO enviamos o enunciado ou o exemplo de teste no HTML inicial (evita leitura prévia via F12/Elements).
+        let precisaIniciarTimer = false;
+        if (!isProf && !isPreview && configAtividade && configAtividade.hasTimeLimit && activityId && activityId !== 'preview') {
+            const userId = req.session?.userId;
+            const attempt = await ActivityAttempt.findOne({ userId, activityId });
+            if (!attempt) {
+                precisaIniciarTimer = true;
             }
         }
 
         let exemploTexto = "Nenhum exemplo disponível.";
-        if (exercicioAtual && exercicioAtual.tests) {
+        if (precisaIniciarTimer) {
+            exemploTexto = "Disponível após o início da atividade.";
+        } else if (exercicioAtual && exercicioAtual.tests) {
             try {
                 const testes = typeof exercicioAtual.tests === 'string' 
                     ? JSON.parse(exercicioAtual.tests) 
                     : exercicioAtual.tests;
                 if (Array.isArray(testes) && testes.length > 0) {
-                    exemploTexto = `Entrada(s): ${testes[0].input || '(vazio)'} | Saída Esperada: ${testes[0].output || ''}`;
+                    const visiveis = testes.filter(t => t.isVisible === true);
+                    const testesExibir = visiveis.length > 0 ? visiveis.slice(0, 3) : [testes[0]];
+                    exemploTexto = testesExibir.map((t, idx) => {
+                        const prefixo = testesExibir.length > 1 ? `Exemplo #${idx + 1}: ` : '';
+                        return `${prefixo}Entrada(s): ${t.input || '(vazio)'} | Saída Esperada: ${t.output || ''}`;
+                    }).join(' | ');
                 }
             } catch (jsonErr) {}
         }
 
-        const tituloFinal = exercicioAtual ? exercicioAtual.title : "Questão não configurada";
-        const descFinal = exercicioAtual ? exercicioAtual.description : "Aguardando enunciado pelo professor.";
+        const tituloFinal = precisaIniciarTimer
+            ? "Atividade Cronometrada"
+            : (exercicioAtual ? exercicioAtual.title : "Questão não configurada");
+
+        const descFinal = precisaIniciarTimer
+            ? "Esta atividade possui contagem de tempo. Clique no botão 'Iniciar Atividade' no aviso para iniciar o cronômetro e liberar as questões."
+            : (exercicioAtual ? exercicioAtual.description : "Aguardando enunciado pelo professor.");
 
         fs.readFile(templatePath, 'utf8', (err, html) => {
             if (err) return res.status(500).send("Erro ao carregar HTML.");
@@ -73,7 +98,7 @@ async function setup(app) {
         { url: process.env.MONGO_DB_URI },
         {
             cookies: { secure: true, sameSite: 'None' },
-            devMode: true
+            devMode: process.env.NODE_ENV === 'development' || process.env.LTI_DEV_MODE === 'true'
         }
     );
 

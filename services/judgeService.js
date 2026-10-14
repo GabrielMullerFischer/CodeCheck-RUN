@@ -4,7 +4,11 @@ const warmPoolService = require('./warmPoolService');
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 6;
 let activeExecutions = 0;
 const executionQueue = [];
-const activeUsers = new Set();
+
+// Mapa de usuário -> timestamp do bloqueio (libera compilação automaticamente após 5 minutos contra travamentos)
+const activeUsers = new Map();
+const USER_LOCK_TTL_MS = 5 * 60 * 1000; // Limite máximo de 5 minutos por usuário
+const QUEUE_WAIT_TIMEOUT_MS = 3 * 60 * 1000; // Limite máximo de 3 minutos de espera na fila
 
 function extrairUserId(containerName) {
     if (!containerName) return null;
@@ -12,19 +16,52 @@ function extrairUserId(containerName) {
     return match ? match[1] : String(containerName);
 }
 
-async function isAlreadyRunning(containerName) {
+function adquirirTravaUsuario(containerName) {
     const uid = extrairUserId(containerName);
-    if (!uid) return false;
-    return activeUsers.has(uid);
+    if (!uid) return true;
+    const agora = Date.now();
+    const lockTime = activeUsers.get(uid);
+
+    // Se o usuário já está executando e o bloqueio tem MENOS de 5 minutos, bloqueia segunda compilação
+    if (lockTime && (agora - lockTime < USER_LOCK_TTL_MS)) {
+        return false;
+    }
+
+    // Se não existia ou se já ultrapassou os 5 minutos (auto-destrava contra travamentos), libera e renova
+    activeUsers.set(uid, agora);
+    return true;
 }
 
-function adquirirVagaNaFila() {
-    return new Promise((resolve) => {
+function liberarTravaUsuario(containerName) {
+    const uid = extrairUserId(containerName);
+    if (uid) activeUsers.delete(uid);
+}
+
+async function isAlreadyRunning(containerName) {
+    const conseguiuTrava = adquirirTravaUsuario(containerName);
+    return !conseguiuTrava;
+}
+
+function adquirirVagaNaFila(timeoutMs = QUEUE_WAIT_TIMEOUT_MS) {
+    return new Promise((resolve, reject) => {
         if (activeExecutions < MAX_CONCURRENT) {
             activeExecutions++;
             return resolve();
         }
-        executionQueue.push(resolve);
+
+        let timer = null;
+        const itemFila = () => {
+            if (timer) clearTimeout(timer);
+            resolve();
+        };
+
+        timer = setTimeout(() => {
+            const idx = executionQueue.indexOf(itemFila);
+            if (idx !== -1) executionQueue.splice(idx, 1);
+            reject(new Error("Tempo limite de espera na fila de compilação excedido. Tente novamente em instantes."));
+        }, timeoutMs);
+
+        executionQueue.push(itemFila);
     });
 }
 
@@ -33,7 +70,7 @@ function liberarVagaNaFila() {
     if (executionQueue.length > 0) {
         activeExecutions++;
         const next = executionQueue.shift();
-        next();
+        if (typeof next === 'function') next();
     }
 }
 
@@ -47,30 +84,46 @@ function normalize(s) {
         .trim();
 }
 
-function embaralharArray(array) {
+function prepararTestesOrdenados(array) {
     if (!Array.isArray(array) || array.length === 0) return [];
-    const arr = array.map((t, idx) => {
+    const comOrigIdx = array.map((t, idx) => {
         const obj = (t && typeof t.toObject === 'function') ? t.toObject() : { ...t };
         obj.originalIndex = idx;
         return obj;
     });
-    if (arr.length <= 1) return arr;
-    for (let i = arr.length - 1; i > 0; i--) {
+
+    const hasExplicitVisible = comOrigIdx.some(t => t.isVisible === true);
+    const visiveis = [];
+    const fechados = [];
+
+    comOrigIdx.forEach((t, idx) => {
+        const ehVisivel = hasExplicitVisible ? (t.isVisible === true) : (idx === 0);
+        if (ehVisivel) {
+            visiveis.push(t);
+        } else {
+            fechados.push(t);
+        }
+    });
+
+    // Embaralha apenas os testes fechados/secretos para manter anti-trapaça
+    for (let i = fechados.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        const temp = arr[i];
-        arr[i] = arr[j];
-        arr[j] = temp;
+        const temp = fechados[i];
+        fechados[i] = fechados[j];
+        fechados[j] = temp;
     }
-    return arr;
+
+    // Casos de teste visíveis (exemplos na tela) SEMPRE rodam primeiro!
+    return [...visiveis, ...fechados];
 }
 
 async function runTests(code, tests, containerName, timeLimitMs) {
     const uid = extrairUserId(containerName);
-    if (uid) activeUsers.add(uid);
+    if (uid) activeUsers.set(uid, Date.now());
 
     await adquirirVagaNaFila();
     try {
-        const testesAleatorios = embaralharArray(tests);
+        const testesOrdenados = prepararTestesOrdenados(tests);
         const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 10000;
         const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : limiteCompiladorMs;
 
@@ -78,18 +131,18 @@ async function runTests(code, tests, containerName, timeLimitMs) {
         try {
             const outputBruto = await warmPoolService.executarJobNoPool(
                 code,
-                testesAleatorios,
+                testesOrdenados,
                 timeoutAlunoMs,
                 containerName || Date.now()
             );
-            return processarResultadoSandbox(outputBruto, testesAleatorios, timeoutAlunoMs);
+            return processarResultadoSandbox(outputBruto, testesOrdenados, timeoutAlunoMs);
         } catch (poolErr) {
             console.warn(`[Judge] Warm pool falhou ou indisponível (${poolErr.message}). Utilizando fallback para Pod efêmero...`);
-            return await executarProcessoDeTesteK8sIndividual(code, testesAleatorios, containerName, timeoutAlunoMs);
+            return await executarProcessoDeTesteK8sIndividual(code, testesOrdenados, containerName, timeoutAlunoMs);
         }
     } finally {
         liberarVagaNaFila();
-        if (uid) activeUsers.delete(uid);
+        liberarTravaUsuario(containerName);
     }
 }
 
@@ -114,12 +167,17 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
             namespace: targetNs,
             labels: {
                 app: 'codecheck-judge',
+                role: 'judge-sandbox',
                 submission: podName
             }
         },
         spec: {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
+            dnsPolicy: 'None',
+            dnsConfig: {
+                nameservers: ['127.0.0.1']
+            },
             containers: [
                 {
                     name: 'runner',
@@ -167,9 +225,10 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
                 totalCount: Array.isArray(tests) ? tests.length : 0
             };
         }
+        console.error(`[Judge] Erro no cluster Kubernetes (${podName}):`, err.message);
         return {
             status: 'Runtime Error',
-            details: `Erro no orquestrador Kubernetes: ${err.message}`,
+            details: 'O ambiente de execução e compilação está temporariamente indisponível no servidor. Por favor, tente novamente em instantes.',
             executionTime: 0,
             percentage: 0,
             passedCount: 0,
@@ -201,12 +260,16 @@ function gerarScriptSandbox(code, tests, timeLimitMs) {
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <sys/types.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 3) return 1;
     pid_t pid = fork();
     if (pid < 0) return 1;
     if (pid == 0) {
+        // Reduz privilégios estritamente para o usuário 'nobody' (UID/GID 65534)
+        setgid(65534);
+        setuid(65534);
         execv(argv[1], &argv[1]);
         exit(1);
     } else {
@@ -270,7 +333,14 @@ fi
     });
 
     return `#!/usr/bin/env bash
+export http_proxy="http://127.0.0.1:0"
+export https_proxy="http://127.0.0.1:0"
+export HTTP_PROXY="http://127.0.0.1:0"
+export HTTPS_PROXY="http://127.0.0.1:0"
+export all_proxy="http://127.0.0.1:0"
+
 mkdir -p /sandbox && cd /sandbox
+chmod 777 /sandbox
 ulimit -u 50
 ulimit -f 50000
 
@@ -453,6 +523,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
 module.exports = {
     runTests,
     isAlreadyRunning,
+    liberarTravaUsuario,
     inicializarPool: warmPoolService.inicializarPool,
     obterStatusPool: warmPoolService.obterStatusPool
 };

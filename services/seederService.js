@@ -21,11 +21,17 @@ async function popularBanco() {
                     authorId: SISTEMA_AUTHOR_ID
                 });
 
+                const testesFormatados = (exData.tests || []).map((t, idx) => ({
+                    input: t.input,
+                    output: t.output,
+                    isVisible: idx === 0
+                }));
+
                 if (!exercicio) {
                     exercicio = await Exercise.create({
                         title: exData.title,
                         description: exData.description,
-                        tests: exData.tests,
+                        tests: testesFormatados,
                         timeLimit: exData.timeLimit || 1000,
                         isPublic: true,
                         isArchived: false,
@@ -34,7 +40,7 @@ async function popularBanco() {
                     });
                 } else {
                     exercicio.description = exData.description;
-                    exercicio.tests = exData.tests;
+                    exercicio.tests = testesFormatados;
                     exercicio.timeLimit = exData.timeLimit || 1000;
                     exercicio.isPublic = true;
                     exercicio.isArchived = false;
@@ -42,6 +48,12 @@ async function popularBanco() {
                 }
                 mapaExerciciosCriados[exData.title] = exercicio._id;
             }
+
+            // Garante que qualquer exercício legado no banco tenha ao menos o primeiro teste marcado como visível
+            await Exercise.updateMany(
+                { "tests.0": { $exists: true }, "tests.isVisible": { $ne: true } },
+                { $set: { "tests.0.isVisible": true } }
+            );
         }
 
         if (Array.isArray(dadosPadrao.listas)) {

@@ -399,6 +399,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         } else {
             removerDestaqueErro();
+            let detalheMsg = data.details || data.message || 'Erro durante a execução.';
+            if (detalheMsg.includes('HTTP-Code') || detalheMsg.includes('apiVersion') || detalheMsg.includes('{"kind"') || detalheMsg.includes('Kubernetes')) {
+                detalheMsg = 'O ambiente de compilação está temporariamente indisponível ou reiniciando no servidor. Tente novamente em instantes.';
+            }
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
                     ${cardDica}
@@ -406,7 +410,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <strong>${escapeHtml(data.status)}:</strong>
                         ${badgePorcentagem}
                     </div>
-                    <div>${escapeHtml(data.details || data.message || 'Erro durante a execução.')}</div>
+                    <div>${escapeHtml(detalheMsg)}</div>
                 </div>
             `;
         }
@@ -703,6 +707,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     document.getElementById('conteudo-principal-aluno')?.classList.remove('conteudo-bloqueado-esfumacado');
 
                     editorCM.setOption('readOnly', false);
+                    await carregarLista();
                     atualizarEstadoBotaoCompilar();
                     posicionarCursorAposAspas();
                     iniciarContagemRegressiva(data.expiresAt, data.serverTime);
@@ -809,12 +814,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const exId = exercicioAtual ? exercicioAtual._id : (exerciseIdParam || '');
 
         try {
-            const res = await fetch(`/judge/ranking?activityId=${activityId || 'preview'}&exerciseId=${exId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const listParam = listId ? `&listId=${listId}` : '';
+            const res = await fetch(`/judge/ranking?activityId=${activityId || 'preview'}&exerciseId=${exId}${listParam}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
             const data = await res.json();
 
             if (!data.success) return;
 
-            mapaStatusQuestoes = data.statusMeusExercicios || {};
+            if (data.statusMeusExercicios && Object.keys(data.statusMeusExercicios).length > 0) {
+                mapaStatusQuestoes = { ...mapaStatusQuestoes, ...data.statusMeusExercicios };
+            }
             mapaRankingsPorExercicio = data.rankingPorExercicio || {};
 
             const bodyDepuracao = document.getElementById('body-depuracao-livre');
@@ -991,13 +999,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         indiceSubmissaoAtiva = -1;
 
         try {
-            const res = await fetch(`/judge/aluno/submissoes?activityId=${activityId || 'preview'}&exerciseId=${exerciseId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const listParam = listId ? `&listId=${listId}` : '';
+            const res = await fetch(`/judge/aluno/submissoes?activityId=${activityId || 'preview'}&exerciseId=${exerciseId}${listParam}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
             const data = await res.json();
 
             if (res.ok && data.success && data.submissoes && data.submissoes.length > 0) {
                 listaSubmissoesMeta = data.submissoes.slice(-10);
                 navHistoricoSubmissoes.style.display = 'inline-flex';
                 atualizarBotoesHistorico();
+
+                const exIdStr = String(exerciseId);
+                const temAcerto = data.submissoes.some(s => s.isAccepted === true);
+                if (temAcerto) {
+                    mapaStatusQuestoes[exIdStr] = 'accepted';
+                } else if (mapaStatusQuestoes[exIdStr] !== 'accepted') {
+                    mapaStatusQuestoes[exIdStr] = 'wrong';
+                }
+                montarNavegacaoMoodle();
             } else {
                 listaSubmissoesMeta = [];
                 navHistoricoSubmissoes.style.display = 'none';
@@ -1105,25 +1123,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (containerExemplos) {
             containerExemplos.innerHTML = '';
-            const primeiroTeste = (ex.tests && ex.tests.length > 0) ? ex.tests[0] : null;
+            const testesExibiveis = Array.isArray(ex.tests) ? ex.tests.filter(t => t.isVisible !== false) : [];
+            const testesParaMostrar = testesExibiveis.length > 0 
+                ? testesExibiveis.slice(0, 3) 
+                : (ex.tests && ex.tests.length > 0 ? [ex.tests[0]] : []);
 
-            if (!primeiroTeste) {
+            if (testesParaMostrar.length === 0) {
                 containerExemplos.innerHTML = '<span class="text-muted small">Nenhum exemplo disponível.</span>';
             } else {
-                containerExemplos.innerHTML = `
-                    <div class="mb-3">
-                        <label class="small font-weight-bold text-muted text-uppercase mb-1 d-block">
-                            Entrada:
-                        </label>
-                        <pre class="p-2 border rounded text-dark pre-io">${escapeHtml(primeiroTeste.input || '(sem entrada)')}</pre>
-                    </div>
-                    <div>
-                        <label class="small font-weight-bold text-muted text-uppercase mb-1 d-block">
-                            Saída Esperada:
-                        </label>
-                        <pre class="p-2 border rounded text-dark pre-io">${escapeHtml(primeiroTeste.output || '')}</pre>
-                    </div>
-                `;
+                let htmlExemplos = '';
+                testesParaMostrar.forEach((t, i) => {
+                    const badgeExemplo = testesParaMostrar.length > 1
+                        ? `<div class="d-flex justify-content-between align-items-center mb-1"><span class="badge badge-light border text-muted font-weight-bold" style="font-size: 0.75rem;">Exemplo #${i + 1}</span></div>`
+                        : '';
+                    const divisor = (i > 0) ? '<hr class="my-3 border-dashed">' : '';
+                    htmlExemplos += `
+                        ${divisor}
+                        ${badgeExemplo}
+                        <div class="mb-2">
+                            <label class="small font-weight-bold text-muted text-uppercase mb-1 d-block" style="font-size: 0.72rem;">
+                                Entrada:
+                            </label>
+                            <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${escapeHtml(t.input || '(sem entrada)')}</pre>
+                        </div>
+                        <div>
+                            <label class="small font-weight-bold text-muted text-uppercase mb-1 d-block" style="font-size: 0.72rem;">
+                                Saída Esperada:
+                            </label>
+                            <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${escapeHtml(t.output || '')}</pre>
+                        </div>
+                    `;
+                });
+                containerExemplos.innerHTML = htmlExemplos;
             }
         }
 
@@ -1224,10 +1255,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         `;
                     } else {
+                        let detalheMsg = data.details || 'Falha na execução.';
+                        if (detalheMsg.includes('HTTP-Code') || detalheMsg.includes('apiVersion') || detalheMsg.includes('{"kind"') || detalheMsg.includes('Kubernetes')) {
+                            detalheMsg = 'O ambiente de compilação está temporariamente indisponível ou reiniciando no servidor. Tente novamente em instantes.';
+                        }
                         resultTesteCustom.innerHTML = `
                             <div class="alert alert-danger p-2 mb-2 small">
                                 ${cardDica}
-                                <strong>${data.status}:</strong> ${escapeHtml(data.details) || 'Falha na execução.'}
+                                <strong>${escapeHtml(data.status)}:</strong> ${escapeHtml(detalheMsg)}
                             </div>
                         `;
                     }
@@ -1289,6 +1324,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
                     }
                     renderizarFeedbackJuiz(data);
+
+                    if (exercicioAtual && data.status) {
+                        const exIdStr = String(exercicioAtual._id);
+                        if (data.status === 'Accepted') {
+                            mapaStatusQuestoes[exIdStr] = 'accepted';
+                        } else if (mapaStatusQuestoes[exIdStr] !== 'accepted') {
+                            mapaStatusQuestoes[exIdStr] = 'wrong';
+                        }
+                        montarNavegacaoMoodle();
+                    }
+
                     await carregarHistoricoSubmissoesExercicio(exercicioAtual._id);
                     await atualizarRankingEStatus();
                 } else {
@@ -1296,6 +1342,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
                     }
                     resultDiv.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Erro ao processar submissão.'}</div>`;
+
+                    if (exercicioAtual && mapaStatusQuestoes[String(exercicioAtual._id)] !== 'accepted') {
+                        mapaStatusQuestoes[String(exercicioAtual._id)] = 'wrong';
+                        montarNavegacaoMoodle();
+                    }
+
                     await atualizarRankingEStatus();
                 }
             } catch (err) {
@@ -1355,6 +1407,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    checarTimerAtividade();
-    carregarLista();
+    await checarTimerAtividade();
+    if (!timerBloqueado) {
+        await carregarLista();
+    }
 });

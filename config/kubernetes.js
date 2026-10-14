@@ -42,10 +42,12 @@ if (process.env.KUBERNETES_SERVICE_HOST) {
 }
 
 const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
+const k8sNetworkingApi = kc.makeApiClient(k8s.NetworkingV1Api);
 const k8sExec = new k8s.Exec(kc);
 
 module.exports = {
     k8sApi,
+    k8sNetworkingApi,
     k8sExec,
     namespace: process.env.K8S_NAMESPACE || 'default'
 };

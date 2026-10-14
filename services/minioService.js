@@ -133,27 +133,36 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
 
 // Lê arquivo do MinIO por caminho
 async function lerArquivoPorPath(caminho) {
-    if (!caminho) throw new Error("Caminho não fornecido.");
+    if (!caminho || caminho === 'preview') {
+        const err = new Error("Caminho não fornecido ou em modo preview.");
+        err.code = 'PreviewIgnored';
+        throw err;
+    }
     const objectName = caminho.replace(/^\/+/, '');
 
-    return new Promise((resolve, reject) => {
-        minioClient.getObject(BUCKET_NAME, objectName, (err, dataStream) => {
-            if (err) {
-                console.error(`[MinIO] Erro ao obter objeto "${objectName}":`, err.message);
-                return reject(err);
-            }
-            const chunks = [];
-            dataStream.on('data', chunk => chunks.push(chunk));
-            dataStream.on('end', () => {
-                const bufferCompleto = Buffer.concat(chunks);
-                resolve(bufferCompleto.toString('utf-8'));
-            });
-            dataStream.on('error', errStream => {
-                console.error(`[MinIO] Erro no stream de "${objectName}":`, errStream.message);
-                reject(errStream);
+    const lerDoBucket = (bucket) => {
+        return new Promise((resolve, reject) => {
+            minioClient.getObject(bucket, objectName, (err, dataStream) => {
+                if (err) return reject(err);
+                const chunks = [];
+                dataStream.on('data', chunk => chunks.push(chunk));
+                dataStream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+                dataStream.on('error', errStream => reject(errStream));
             });
         });
-    });
+    };
+
+    try {
+        return await lerDoBucket(BUCKET_NAME);
+    } catch (err) {
+        if (err.code === 'NoSuchKey' && BUCKET_NAME !== 'arquivos-alunos') {
+            try {
+                return await lerDoBucket('arquivos-alunos');
+            } catch {}
+        }
+        console.error(`[MinIO] Erro ao obter objeto "${objectName}":`, err.message);
+        throw err;
+    }
 }
 
 // Remove arquivo do MinIO

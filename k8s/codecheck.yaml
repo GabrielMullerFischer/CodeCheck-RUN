@@ -1,0 +1,225 @@
+# ==============================================================================
+# CodeCheck-RUN — Manifesto Unificado de Produção (Cluster Multi-Node)
+# ==============================================================================
+# Arquivo unificado contendo todos os recursos necessários para o deploy
+# isolado no cluster Kubernetes, separados pelo delimitador padrão '---':
+#
+# 1. Namespace: codecheck (Isolamento total em relação ao terminal-web)
+# 2. RBAC: ServiceAccount, Role e RoleBinding específicos para o namespace
+# 3. Governança: ResourceQuota (limite de 12 pods: 2 app + até 10 compilações)
+# 4. Segurança de Rede: NetworkPolicies Calico (sandbox 100% isolado)
+# 5. Workload: Deployment da aplicação Node.js (via registry local)
+# 6. Service: ClusterIP interno (portas 3000 e 3001)
+# 7. Ingress: Roteamento NGINX com terminação TLS (cert-manager)
+# ==============================================================================
+
+# 1. Namespace isolado
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: codecheck
+  labels:
+    app.kubernetes.io/name: codecheck
+    app.kubernetes.io/part-of: codecheck-platform
+    environment: production
+---
+# 2. RBAC (Controle de Acesso Baseado em Função)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: codecheck-sa
+  namespace: codecheck
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: codecheck-pod-manager-role
+  namespace: codecheck
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status", "pods/exec"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "watch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: codecheck-pod-manager-binding
+  namespace: codecheck
+subjects:
+  - kind: ServiceAccount
+    name: codecheck-sa
+    namespace: codecheck
+roleRef:
+  kind: Role
+  name: codecheck-pod-manager-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# 3. ResourceQuota (Total do namespace: Aplicação Node + até 10 compilações de alunos)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: codecheck-quota
+  namespace: codecheck
+spec:
+  hard:
+    pods: "12"
+    requests.cpu: "11"
+    requests.memory: "8Gi"
+    limits.cpu: "12"
+    limits.memory: "12Gi"
+---
+# 4. NetworkPolicy (Isolamento de Rede Calico)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-judge-sandbox
+  namespace: codecheck
+spec:
+  podSelector:
+    matchLabels:
+      role: judge-sandbox
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-codecheck-backend
+  namespace: codecheck
+spec:
+  podSelector:
+    matchLabels:
+      app: codecheck-app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 3001
+  egress:
+    - {}
+---
+# 5. Deployment (Aplicação Principal Node.js)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codecheck-app
+  namespace: codecheck
+  labels:
+    app: codecheck-app
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: codecheck-app
+  template:
+    metadata:
+      labels:
+        app: codecheck-app
+    spec:
+      serviceAccountName: codecheck-sa
+      containers:
+        - name: codecheck-server
+          image: localhost:32000/codecheck-app:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+            - containerPort: 3001
+              name: lti
+          envFrom:
+            - secretRef:
+                name: codecheck-env
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+---
+# 6. Service (Exposição via NodePort 30000 e 30001 para túnel ngrok e acesso direto)
+apiVersion: v1
+kind: Service
+metadata:
+  name: codecheck-service
+  namespace: codecheck
+  labels:
+    app: codecheck-app
+spec:
+  type: NodePort
+  selector:
+    app: codecheck-app
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30000
+    - name: lti
+      port: 3001
+      targetPort: 3001
+      nodePort: 30001
+---
+# 7. Ingress (Roteamento com TLS Automático)
+# NOTA: Descomente este bloco assim que o domínio codecheck.inf.ufpel.edu.br
+# for aprovado e apontado no DNS pela administração da faculdade.
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: codecheck-ingress
+#   namespace: codecheck
+#   annotations:
+#     cert-manager.io/cluster-issuer: letsencrypt-prod
+#     acme.cert-manager.io/http01-edit-in-place: "true"
+#     nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+#     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+# spec:
+#   ingressClassName: public
+#   rules:
+#     - host: codecheck.inf.ufpel.edu.br
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: codecheck-service
+#                 port:
+#                   number: 3000
+#           - path: /lti
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: codecheck-service
+#                 port:
+#                   number: 3001
+#   tls:
+#     - hosts:
+#         - codecheck.inf.ufpel.edu.br
+#       secretName: codecheck-tls
