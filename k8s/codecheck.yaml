@@ -65,11 +65,11 @@ metadata:
   namespace: codecheck
 spec:
   hard:
-    pods: "12"
-    requests.cpu: "11"
-    requests.memory: "8Gi"
-    limits.cpu: "12"
-    limits.memory: "12Gi"
+    pods: "16"
+    requests.cpu: "12"
+    requests.memory: "10Gi"
+    limits.cpu: "14"
+    limits.memory: "16Gi"
 ---
 # 4. NetworkPolicy (Isolamento de Rede Calico)
 apiVersion: networking.k8s.io/v1
@@ -147,10 +147,10 @@ spec:
           resources:
             requests:
               cpu: "500m"
-              memory: "1Gi"
+              memory: "512Mi"
             limits:
               cpu: "2000m"
-              memory: "6Gi"
+              memory: "2Gi"
           readinessProbe:
             httpGet:
               path: /healthz
