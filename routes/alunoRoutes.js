@@ -33,6 +33,9 @@ const submitLimiter = rateLimit({
 
 function isTestUser(userId, session, body) {
     if (session?.isProfessor === true) return true;
+    if (body?.userId === 'professor_test' || userId === 'professor_test' || userId === 'preview_user' || body?.mode === 'preview') {
+        return true;
+    }
     if (!session?.userId && (userId === 'preview_user' || userId === 'professor_test')) {
         return true;
     }
@@ -191,9 +194,9 @@ router.post('/submit', submitLimiter, async (req, res) => {
         return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
     }
 
-    // Se o aluno está autenticado em sessão, impede falsificação de userId, userName ou activityId via req.body
-    const userId = sessionUserId || req.body.userId || 'preview_user';
-    const userName = sessionUserName || req.body.userName || (userId === 'preview_user' ? 'Professor (Preview)' : 'Aluno');
+    const isModoTeste = isProfessorReal || isTestUser(req.body.userId, req.session, req.body) || req.body.userId === 'professor_test' || req.body.mode === 'preview';
+    const userId = isModoTeste ? (req.body.userId || 'professor_test') : (sessionUserId || req.body.userId || 'preview_user');
+    const userName = isModoTeste ? 'Professor' : (sessionUserName || req.body.userName || (userId === 'preview_user' ? 'Professor (Preview)' : 'Aluno'));
     const effectiveActivityId = (!isProfessorReal && sessionActivityId)
         ? sessionActivityId
         : (activityId || sessionActivityId || 'preview');
@@ -264,8 +267,6 @@ router.post('/submit', submitLimiter, async (req, res) => {
             }
         }
 
-        const isModoTeste = isTestUser(userId, req.session, req.body);
-
         // Bloqueio no servidor para submissões idênticas (impede burlar 'Altere seu código' no F12)
         if (!isProfessorReal && !isModoTeste && !draftOnly) {
             const ultimaSub = await Submission.findOne({
@@ -282,12 +283,12 @@ router.post('/submit', submitLimiter, async (req, res) => {
                             error: "Altere seu código no editor para poder compilar novamente."
                         });
                     }
-                } catch {}
+                } catch { }
             }
         }
 
         if (!isModoTeste) {
-            await minioService.salvarRascunho(userId, effectiveActivityId, idExercicioFinal, code);
+            await minioService.salvarRascunho(userId, effectiveActivityId, idExercicioFinal, code, req.session);
         }
 
         if (draftOnly) {
@@ -324,7 +325,7 @@ router.post('/submit', submitLimiter, async (req, res) => {
             const testIndexFalha = typeof respostaResultado.testIndex === 'number' ? respostaResultado.testIndex : -1;
             const testeFalho = (testesParaExecutar && testIndexFalha >= 0) ? testesParaExecutar[testIndexFalha] : null;
             const temAlgumVisivelDefinido = testesParaExecutar?.some(t => t.isVisible === true);
-            const isTesteVisivel = testeFalho 
+            const isTesteVisivel = testeFalho
                 ? (temAlgumVisivelDefinido ? (testeFalho.isVisible === true) : (testIndexFalha === 0))
                 : false;
 
@@ -335,23 +336,9 @@ router.post('/submit', submitLimiter, async (req, res) => {
         }
 
         if (isModoTeste) {
-            try {
-                await Submission.create({
-                    userId,
-                    userName,
-                    activityId: effectiveActivityId,
-                    exerciseId: idExercicioFinal,
-                    codePath: 'preview',
-                    logPath: null,
-                    status: resultado.status,
-                    isAccepted,
-                    executionTime: isAccepted ? tempoGastoMs : null,
-                    percentage: typeof resultado.percentage === 'number' ? resultado.percentage : 0,
-                    compilationDetails: resultado.details || ''
-                });
-            } catch (errSubTest) {
-                console.warn("Aviso ao salvar submissão em modo teste:", errSubTest.message);
-            }
+            // Professor em teste/preview: exibe feedback na tela do navegador,
+            // mas NUNCA salva no MinIO nem grava no MongoDB (Submission).
+            // Não polui o ranking de alunos e ao fechar a aba/sair tudo se perde.
             return res.json(respostaResultado);
         }
 
@@ -512,11 +499,17 @@ router.get('/aluno/submissoes', async (req, res) => {
         ? sessionActivityId
         : (req.query.activityId || sessionActivityId || 'preview');
 
+    // Se é professor em teste/preview (não está consultando um aluno específico via req.query.userId),
+    // retorna lista vazia pois testes de professor não são salvos.
+    if (isProfessor && !req.query.userId) {
+        return res.json({ success: true, submissoes: [] });
+    }
+
     if ((!effectiveActivityId || effectiveActivityId === 'preview') && listId) {
         try {
             const configByList = await ActivityConfig.findOne({ listId });
             if (configByList) effectiveActivityId = configByList.activityId;
-        } catch {}
+        } catch { }
     }
 
     if (!exerciseId) return res.status(400).json({ success: false, error: "exerciseId ausente." });
@@ -615,6 +608,10 @@ router.get('/get-draft', async (req, res) => {
         ? sessionActivityId
         : (req.query.activityId || sessionActivityId || 'preview');
 
+    if (isProfessor) {
+        return res.status(404).json({ error: "Sem rascunho persistido para professor." });
+    }
+
     if (!effectiveActivityId || !exerciseId) return res.status(400).json({ error: "Dados ausentes" });
 
     try {
@@ -642,12 +639,16 @@ router.get('/ranking', async (req, res) => {
             if (configByList) {
                 effectiveActivityId = configByList.activityId;
             }
-        } catch {}
+        } catch { }
     }
 
     try {
         const submissoes = effectiveActivityId && effectiveActivityId !== 'preview'
-            ? await Submission.find({ activityId: effectiveActivityId }).lean()
+            ? await Submission.find({
+                activityId: effectiveActivityId,
+                codePath: { $ne: 'preview' },
+                userId: { $nin: ['professor_test', 'preview_user'] }
+            }).lean()
             : [];
 
         const configAtividade = effectiveActivityId && effectiveActivityId !== 'preview'
@@ -680,8 +681,12 @@ router.get('/ranking', async (req, res) => {
             }
         });
 
-        // Para o pódio e ranking da turma, ignora usuários de teste/preview
-        const submissoesTurma = submissoes.filter(s => !['professor_test', 'preview_user'].includes(s.userId));
+        // Para o pódio e ranking da turma, ignora usuários de teste/preview e submissões com codePath 'preview'
+        const submissoesTurma = submissoes.filter(s =>
+            s.codePath !== 'preview' &&
+            !['professor_test', 'preview_user'].includes(s.userId) &&
+            !(isProfessorReal && sessionUserId && String(s.userId) === String(sessionUserId))
+        );
 
         let rankingExercicio = [];
         let minhaPosicaoEx = null;

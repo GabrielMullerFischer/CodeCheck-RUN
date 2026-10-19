@@ -491,19 +491,19 @@ document.addEventListener('DOMContentLoaded', () => {
         listaOrdenada.forEach(ex => {
             const isPub = ex.isPublic !== false;
             const div = document.createElement('div');
-            div.className = 'border-bottom p-2 d-flex justify-content-between align-items-center';
+            div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
             div.innerHTML = `
-                <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem;">
+                <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
                     <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${ex._id}" value="${ex._id}">
                     <label class="custom-control-label cursor-pointer ml-1" for="ex_${ex._id}">
-                        <strong>${ex.title}</strong>
+                        <strong style="font-size: 1.02rem;">${ex.title}</strong>
                         ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
                     </label>
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
                     ${isPub
-                    ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>'
-                    : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
+                    ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Público</span>'
+                    : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
                     <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-meu-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
                         <i class="fas fa-eye"></i>
                     </button>
@@ -554,10 +554,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const isOficial = ex.authorId === 'codecheck_oficial';
             const isPub = ex.isPublic !== false;
             const div = document.createElement('div');
-            div.className = `border-bottom p-2 d-flex justify-content-between align-items-center ${isOficial ? 'bg-white' : ''}`;
+            div.className = `list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3 ${isOficial ? 'bg-white' : ''}`;
             div.innerHTML = `
                 <div class="text-truncate mr-2">
-                    <strong class="text-dark">${ex.title}</strong>
+                    <strong class="text-dark" style="font-size: 1.02rem;">${ex.title}</strong>
                     ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
                     ${isOficial
                     ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
@@ -566,8 +566,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
                     ${isPub
-                    ? '<span class="badge badge-info mr-2"><i class="fas fa-globe mr-1"></i>Público</span>'
-                    : '<span class="badge badge-privada mr-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
+                    ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Público</span>'
+                    : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
                     <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
                         <i class="fas fa-eye"></i>
                     </button>
@@ -2160,7 +2160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tbodySubmissoes) {
             tbodySubmissoes.innerHTML = '';
             if (enviosEx.length === 0) {
-                tbodySubmissoes.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum envio registrado para este exercício.</td></tr>';
+                tbodySubmissoes.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2 d-block text-secondary"></i>Nenhum envio registrado para este exercício.</td></tr>';
             } else {
                 enviosEx.forEach((sub) => {
                     const tr = document.createElement('tr');

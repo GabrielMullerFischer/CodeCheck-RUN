@@ -32,13 +32,14 @@ function isTestUser(userId, session, body) {
         userId === 'preview_user' ||
         userId === 'professor_test' ||
         session?.isProfessor === true ||
-        body?.mode === 'preview'
+        body?.mode === 'preview' ||
+        body?.userId === 'professor_test'
     );
 }
 
 // Rascunhos isolados por exercício
-async function salvarRascunho(userId, activityId, exerciseId, code) {
-    if (isTestUser(userId)) return null;
+async function salvarRascunho(userId, activityId, exerciseId, code, session = null) {
+    if (isTestUser(userId, session)) return null;
     const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
     const buffer = Buffer.from(code, 'utf-8');
     await minioClient.putObject(BUCKET_NAME, objectName, buffer);
@@ -46,7 +47,8 @@ async function salvarRascunho(userId, activityId, exerciseId, code) {
 }
 
 // Lê rascunho isolado por exercício
-async function lerRascunho(userId, activityId, exerciseId) {
+async function lerRascunho(userId, activityId, exerciseId, session = null) {
+    if (isTestUser(userId, session)) return null;
     const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
     const stream = await minioClient.getObject(BUCKET_NAME, objectName);
     return new Promise((resolve, reject) => {
@@ -67,7 +69,8 @@ async function salvarArquivo(caminho, conteudo) {
 }
 
 // Histórico de submissões mantidas por exercício do aluno (as 10 últimas no total, protegendo sempre o código mais rápido)
-async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code, caminhoProtegido = null) {
+async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code, caminhoProtegido = null, session = null) {
+    if (isTestUser(userId, session)) return 'preview';
     const prefixo = `historico/${activityId}/${exerciseId}/${userId}/`;
 
     const objetos = [];
@@ -83,8 +86,8 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
     const arquivosCodigo = objetos.filter(obj => obj && obj.name && obj.name.endsWith('.c'));
 
     // Normaliza o caminho do arquivo mais rápido protegido contra exclusão
-    const pathNormalizado = (caminhoProtegido && caminhoProtegido !== 'NOVO') 
-        ? caminhoProtegido.replace(/^\/+/, '') 
+    const pathNormalizado = (caminhoProtegido && caminhoProtegido !== 'NOVO')
+        ? caminhoProtegido.replace(/^\/+/, '')
         : null;
 
     // Candidatos à exclusão nunca incluem o código mais rápido do aluno
@@ -108,9 +111,9 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
         const excedentes = candidatosRemocao.slice(0, qtdRemover);
 
         for (const ex of excedentes) {
-            await minioClient.removeObject(BUCKET_NAME, ex.name).catch(() => {});
+            await minioClient.removeObject(BUCKET_NAME, ex.name).catch(() => { });
             const logName = ex.name.replace(/\.c$/, '.json');
-            await minioClient.removeObject(BUCKET_NAME, logName).catch(() => {});
+            await minioClient.removeObject(BUCKET_NAME, logName).catch(() => { });
         }
     }
 
@@ -120,14 +123,14 @@ async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, cod
     for (const j of arquivosJson) {
         const esperadoC = j.name.replace(/\.json$/, '.c');
         if (!nomesValidosC.has(esperadoC)) {
-            await minioClient.removeObject(BUCKET_NAME, j.name).catch(() => {});
+            await minioClient.removeObject(BUCKET_NAME, j.name).catch(() => { });
         }
     }
 
     const timestamp = Date.now();
     const nomeArquivo = `${prefixo}${timestamp}.c`;
     await minioClient.putObject(BUCKET_NAME, nomeArquivo, Buffer.from(code, 'utf-8'));
-    
+
     return nomeArquivo;
 }
 
@@ -158,7 +161,7 @@ async function lerArquivoPorPath(caminho) {
         if (err.code === 'NoSuchKey' && BUCKET_NAME !== 'arquivos-alunos') {
             try {
                 return await lerDoBucket('arquivos-alunos');
-            } catch {}
+            } catch { }
         }
         console.error(`[MinIO] Erro ao obter objeto "${objectName}":`, err.message);
         throw err;
