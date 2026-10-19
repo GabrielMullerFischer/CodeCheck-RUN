@@ -374,8 +374,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function atualizarContador() {
         const selecionados = containerExercicios ? containerExercicios.querySelectorAll('.chk-exercicio:checked').length : 0;
+        const total = containerExercicios ? containerExercicios.querySelectorAll('.chk-exercicio').length : 0;
+        const termo = inputBuscaExercicio && inputBuscaExercicio.value.trim();
         if (contadorEl) {
-            contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} ${selecionados === 1 ? 'exercício selecionado' : 'exercícios selecionados'}`;
+            if (termo) {
+                const visiveis = containerExercicios.querySelectorAll('.border-bottom:not([style*="display: none"])').length;
+                contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} selecionados (${visiveis} de ${total} exibidos)`;
+            } else {
+                contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} ${selecionados === 1 ? 'exercício selecionado' : 'exercícios selecionados'}`;
+            }
         }
     }
 
@@ -893,15 +900,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const containerExs = document.getElementById('modal-edit-lista-exercicios');
         containerExs.innerHTML = '';
 
+        const inputBusca = document.getElementById('modal-edit-lista-busca');
+        const contadorEl = document.getElementById('modal-edit-lista-contador');
+        if (inputBusca) inputBusca.value = '';
+
         const idsNaLista = (lista.exercises || []).map(e => String(e._id || e));
         const todosExs = [...(window.todosMeusExerciciosCache || [])].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
 
+        function atualizarContadorEdicao() {
+            if (!contadorEl) return;
+            const selecionados = containerExs.querySelectorAll('.chk-edit-lista-ex:checked').length;
+            contadorEl.innerHTML = `<i class="fas fa-check-square mr-1 text-primary"></i> ${selecionados} de ${todosExs.length} selecionados`;
+        }
+
         todosExs.forEach(ex => {
             const isChecked = idsNaLista.includes(String(ex._id));
             const div = document.createElement('div');
-            div.className = 'd-flex justify-content-between align-items-center border-bottom py-2 px-2';
+            div.className = 'd-flex justify-content-between align-items-center border-bottom py-2 px-2 item-edit-lista-ex';
+            div.dataset.titulo = (ex.title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             div.innerHTML = `
                 <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem;">
                     <input type="checkbox" class="custom-control-input chk-edit-lista-ex" id="edit_ex_${ex._id}" value="${ex._id}" ${isChecked ? 'checked' : ''}>
@@ -916,6 +934,42 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             containerExs.appendChild(div);
         });
+
+        atualizarContadorEdicao();
+
+        containerExs.querySelectorAll('.chk-edit-lista-ex').forEach(chk => {
+            chk.onchange = atualizarContadorEdicao;
+        });
+
+        if (inputBusca) {
+            inputBusca.oninput = () => {
+                const termo = (inputBusca.value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                const itens = containerExs.querySelectorAll('.item-edit-lista-ex');
+                let visiveis = 0;
+                itens.forEach(item => {
+                    const titulo = item.dataset.titulo || '';
+                    if (!termo || titulo.includes(termo)) {
+                        item.style.setProperty('display', 'flex', 'important');
+                        visiveis++;
+                    } else {
+                        item.style.setProperty('display', 'none', 'important');
+                    }
+                });
+
+                let avisoVazio = document.getElementById('aviso-busca-edit-lista');
+                if (visiveis === 0) {
+                    if (!avisoVazio) {
+                        avisoVazio = document.createElement('div');
+                        avisoVazio.id = 'aviso-busca-edit-lista';
+                        avisoVazio.className = 'text-center text-muted p-3 small';
+                        avisoVazio.innerHTML = '<i class="fas fa-search mr-1"></i> Nenhum exercício encontrado para a pesquisa.';
+                        containerExs.appendChild(avisoVazio);
+                    }
+                } else if (avisoVazio) {
+                    avisoVazio.remove();
+                }
+            };
+        }
 
         containerExs.querySelectorAll('.btn-ver-ex-modal').forEach(btn => {
             btn.onclick = (e) => {
@@ -1487,49 +1541,84 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    if (inputBuscaLista && containerListas) {
-        inputBuscaLista.addEventListener('input', () => {
-            const termo = inputBuscaLista.value.trim().toLowerCase();
-            const itensLista = containerListas.querySelectorAll('.list-group-item');
-            itensLista.forEach(item => {
-                const texto = item.textContent.toLowerCase();
-                item.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
-            });
-        });
+    function normalizarTextoBusca(txt) {
+        return (txt || '').toString().trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
-    if (inputBuscaExercicio && containerExercicios) {
-        inputBuscaExercicio.addEventListener('input', () => {
-            const termo = inputBuscaExercicio.value.trim().toLowerCase();
-            const itensExercicios = containerExercicios.querySelectorAll('.border-bottom');
-            itensExercicios.forEach(containerItem => {
-                const texto = containerItem.textContent.toLowerCase();
-                containerItem.style.display = texto.includes(termo) ? '' : 'none';
-            });
-        });
-    }
+    function configurarBuscaComFiltro(inputEl, containerEl, seletorItens, mensagemVazia, onFiltroConcluido) {
+        if (!inputEl || !containerEl) return;
 
-    if (inputBuscaBancoUniversal && containerBancoUniversal) {
-        inputBuscaBancoUniversal.addEventListener('input', () => {
-            const termo = inputBuscaBancoUniversal.value.trim().toLowerCase();
-            const itens = containerBancoUniversal.querySelectorAll('.list-group-item');
+        inputEl.addEventListener('input', () => {
+            const termo = normalizarTextoBusca(inputEl.value);
+            const itens = containerEl.querySelectorAll(seletorItens);
+            let visiveis = 0;
+
             itens.forEach(item => {
-                const texto = item.textContent.toLowerCase();
-                item.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
+                const texto = normalizarTextoBusca(item.textContent);
+                const bateu = !termo || texto.includes(termo);
+                item.style.setProperty('display', bateu ? 'flex' : 'none', 'important');
+                if (bateu) visiveis++;
             });
+
+            let avisoVazio = containerEl.querySelector('.aviso-busca-sem-resultado');
+            if (visiveis === 0 && itens.length > 0) {
+                if (!avisoVazio) {
+                    avisoVazio = document.createElement('div');
+                    avisoVazio.className = 'aviso-busca-sem-resultado text-center text-muted p-4 small w-100';
+                    avisoVazio.innerHTML = `<i class="fas fa-search mr-2"></i>${mensagemVazia || 'Nenhum resultado encontrado para a pesquisa.'}`;
+                    containerEl.appendChild(avisoVazio);
+                }
+            } else if (avisoVazio) {
+                avisoVazio.remove();
+            }
+
+            if (typeof onFiltroConcluido === 'function') {
+                onFiltroConcluido(visiveis, itens.length, termo);
+            }
         });
     }
 
-    if (inputBuscaBancoEx && containerBancoEx) {
-        inputBuscaBancoEx.addEventListener('input', () => {
-            const termo = inputBuscaBancoEx.value.trim().toLowerCase();
-            const itens = containerBancoEx.querySelectorAll('.border-bottom');
-            itens.forEach(item => {
-                const texto = item.textContent.toLowerCase();
-                containerItem.style.setProperty('display', texto.includes(termo) ? 'flex' : 'none', 'important');
-            });
-        });
-    }
+    // 1. Busca em "Minhas Listas"
+    configurarBuscaComFiltro(
+        inputBuscaLista,
+        containerListas,
+        '.list-group-item:not(.aviso-busca-sem-resultado)',
+        'Nenhuma lista encontrada para esta pesquisa.'
+    );
+
+    // 2. Busca na seleção de exercícios em "Criar Nova Lista"
+    configurarBuscaComFiltro(
+        inputBuscaExercicio,
+        containerExercicios,
+        '.border-bottom:not(.aviso-busca-sem-resultado)',
+        'Nenhum exercício encontrado para esta pesquisa.',
+        (visiveis, total, termo) => {
+            if (contadorEl) {
+                const selecionados = containerExercicios.querySelectorAll('.chk-exercicio:checked').length;
+                if (termo) {
+                    contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} selecionados (${visiveis} de ${total} exibidos)`;
+                } else {
+                    contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} ${selecionados === 1 ? 'exercício selecionado' : 'exercícios selecionados'}`;
+                }
+            }
+        }
+    );
+
+    // 3. Busca no "Banco de Listas da Comunidade"
+    configurarBuscaComFiltro(
+        inputBuscaBancoUniversal,
+        containerBancoUniversal,
+        '.list-group-item:not(.aviso-busca-sem-resultado)',
+        'Nenhuma lista da comunidade encontrada para esta pesquisa.'
+    );
+
+    // 4. Busca no "Banco de Exercícios da Comunidade"
+    configurarBuscaComFiltro(
+        inputBuscaBancoEx,
+        containerBancoEx,
+        '.border-bottom:not(.aviso-busca-sem-resultado)',
+        'Nenhum exercício da comunidade encontrado para esta pesquisa.'
+    );
 
     async function carregarMetricasTurma() {
         const activityIdMeta = document.querySelector('meta[name="activity-id"]');

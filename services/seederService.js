@@ -57,6 +57,15 @@ async function popularBanco() {
         }
 
         if (Array.isArray(dadosPadrao.listas)) {
+            const listasLegadas = await ExerciseList.find({ authorId: SISTEMA_AUTHOR_ID });
+            for (const lLeg of listasLegadas) {
+                const limpo = (lLeg.title || '').replace(/^\d+\s*-\s*/, '').trim();
+                if (limpo && limpo !== lLeg.title) {
+                    lLeg.title = limpo;
+                    await lLeg.save();
+                }
+            }
+
             for (const listaData of dadosPadrao.listas) {
                 const idsExercicios = (listaData.exercises || [])
                     .map(titulo => mapaExerciciosCriados[titulo])

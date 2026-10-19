@@ -5,7 +5,7 @@ const ActivityConfig = require('../models/ActivityConfig');
 const ExerciseList = require('../models/ExerciseList');
 const ActivityAttempt = require('../models/ActivityAttempt');
 
-async function renderTemplate(res, req, userName, activityId) { 
+async function renderTemplate(res, req, userName, activityId) {
     try {
         const isProf = req.session.isProfessor === true;
         const isPreview = req.query.mode === 'preview';
@@ -49,8 +49,8 @@ async function renderTemplate(res, req, userName, activityId) {
             exemploTexto = "Disponível após o início da atividade.";
         } else if (exercicioAtual && exercicioAtual.tests) {
             try {
-                const testes = typeof exercicioAtual.tests === 'string' 
-                    ? JSON.parse(exercicioAtual.tests) 
+                const testes = typeof exercicioAtual.tests === 'string'
+                    ? JSON.parse(exercicioAtual.tests)
                     : exercicioAtual.tests;
                 if (Array.isArray(testes) && testes.length > 0) {
                     const visiveis = testes.filter(t => t.isVisible === true);
@@ -60,7 +60,7 @@ async function renderTemplate(res, req, userName, activityId) {
                         return `${prefixo}Entrada(s): ${t.input || '(vazio)'} | Saída Esperada: ${t.output || ''}`;
                     }).join(' | ');
                 }
-            } catch (jsonErr) {}
+            } catch (jsonErr) { }
         }
 
         const tituloFinal = precisaIniciarTimer
@@ -111,9 +111,9 @@ async function setup(app) {
             clientId: process.env.LTI_CLIENT_ID,
             authenticationEndpoint: process.env.LTI_AUTH_ENDPOINT,
             accesstokenEndpoint: process.env.LTI_TOKEN_ENDPOINT,
-            authConfig: { 
-                method: 'JWK_SET', 
-                key: process.env.LTI_KEYSET_ENDPOINT 
+            authConfig: {
+                method: 'JWK_SET',
+                key: process.env.LTI_KEYSET_ENDPOINT
             }
         });
         console.log("✅ Plataforma registrada/verificada.");
@@ -122,6 +122,7 @@ async function setup(app) {
     }
 
     lti.whitelist(
+        { route: '/healthz', method: 'get' },
         { route: '/js/aluno.js', method: 'get' },
         { route: '/js/professor.js', method: 'get' },
         { route: '/favicon.ico', method: 'get' }
@@ -132,17 +133,17 @@ async function setup(app) {
     lti.onConnect(async (token, req, res) => {
         const roles = token.platformContext.roles || [];
 
-        const isProf = roles.some(role => 
-            role.toLowerCase().includes('instructor') || 
-            role.toLowerCase().includes('teacher') || 
+        const isProf = roles.some(role =>
+            role.toLowerCase().includes('instructor') ||
+            role.toLowerCase().includes('teacher') ||
             role.toLowerCase().includes('admin')
         );
 
-        const activityId = token.platformContext.resource.id; 
+        const activityId = token.platformContext.resource.id;
         const userName = token.userInfo?.name || token.userInfo?.given_name || 'Aluno';
 
         req.session.userId = token.user;
-        req.session.isProfessor = !!isProf; 
+        req.session.isProfessor = !!isProf;
         req.session.activityId = activityId;
         req.session.userName = userName;
 

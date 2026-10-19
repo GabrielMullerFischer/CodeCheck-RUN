@@ -34,6 +34,10 @@ async function start() {
 
         app.set('trust proxy', 1);
 
+        app.get('/healthz', (req, res) => {
+            res.status(200).json({ status: 'ok', uptime: process.uptime() });
+        });
+
         if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'chave-secreta-tcc') {
             console.warn("⚠️ [AVISO DE SEGURANÇA] SESSION_SECRET não configurada ou usando chave padrão. Configure uma chave forte em produção!");
         }
@@ -56,10 +60,6 @@ async function start() {
         app.use(express.static(path.join(__dirname, 'public')));
         app.use('/judge', alunoRoutes);
         app.use('/judge', professorRoutes);
-
-        app.get('/healthz', (req, res) => {
-            res.status(200).json({ status: 'ok', uptime: process.uptime() });
-        });
 
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
