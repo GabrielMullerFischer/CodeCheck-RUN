@@ -349,17 +349,26 @@ function executarComandoNoPod(podName, scriptBash, timeoutMs) {
         let stderr = '';
         let isDone = false;
         let wsConn = null;
+        let stdoutTamanhoBytes = 0;
+        let stderrTamanhoBytes = 0;
+        const MAX_BUFFER_OUTPUT_BYTES = 5 * 1024 * 1024; // Teto de 5 MB por execução para proteção de RAM
 
         const outStream = new stream.Writable({
             write(chunk, encoding, callback) {
-                stdout += chunk.toString('utf-8');
+                if (stdoutTamanhoBytes < MAX_BUFFER_OUTPUT_BYTES) {
+                    stdoutTamanhoBytes += chunk.length;
+                    stdout += chunk.toString('utf-8');
+                }
                 callback();
             }
         });
 
         const errStream = new stream.Writable({
             write(chunk, encoding, callback) {
-                stderr += chunk.toString('utf-8');
+                if (stderrTamanhoBytes < MAX_BUFFER_OUTPUT_BYTES) {
+                    stderrTamanhoBytes += chunk.length;
+                    stderr += chunk.toString('utf-8');
+                }
                 callback();
             }
         });
@@ -451,10 +460,10 @@ if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
     echo "STATUS:HARD_TIME_LIMIT"
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "STATUS:RUNTIME_ERROR"
-    echo "ERR_B64:$(base64 -w 0 < "$CTRL_DIR/err_${i}.txt" 2>/dev/null || echo '')"
+    echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
 else
     echo "STATUS:OK"
-    echo "GOT_B64:$(base64 -w 0 < "$CTRL_DIR/got_${i}.txt" 2>/dev/null || echo '')"
+    echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
 fi
 rm -f "$CTRL_DIR/in_${i}.txt" "$CTRL_DIR/got_${i}.txt" "$CTRL_DIR/err_${i}.txt" "$CTRL_DIR/time_${i}.txt"
 `;
@@ -540,7 +549,13 @@ async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now()
 
         const totalTestes = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
         const hardTimeoutSec = Math.min(Math.max(1, Math.ceil((timeoutAlunoMs * 3) / 1000)), 30);
-        const timeoutExecMs = (hardTimeoutSec * 1000 * totalTestes) + 20000;
+        
+        // Trava de segurança global:
+        // - Se o professor configurou tempo limite customizado: teto máximo de 2 minutos (120.000 ms)
+        // - Se não foi configurado (tempo padrão): teto máximo de 10 segundos (+ 5s margem de compilação = 15.000 ms)
+        const temLimiteCustomizado = timeoutAlunoMs && timeoutAlunoMs !== 10000;
+        const tetoMaximoExecucaoMs = temLimiteCustomizado ? 120000 : 15000;
+        const timeoutExecMs = Math.min((hardTimeoutSec * 1000 * totalTestes) + 5000, tetoMaximoExecucaoMs);
 
         const resultado = await executarComandoNoPod(podName, comando, timeoutExecMs);
         return (resultado.stdout || resultado.stderr || '').toString();

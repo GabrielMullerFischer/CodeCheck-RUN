@@ -10,15 +10,15 @@ const minioService = require('../services/minioService');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
+const MAX_TESTS_PER_EXERCISE = 1000;
+const MAX_TEST_IO_CHARS = 5000;
 
 function obterContextoAuth(req) {
     const auth = req.auth || req.session || {};
-    const isDevSemSessao = process.env.NODE_ENV === 'development' && !auth.userId;
-    const isProfessor = auth.isProfessor === true || isDevSemSessao;
+    const isProfessor = auth.isProfessor === true;
     return {
         auth,
         isProfessor,
-        isDevSemSessao,
         userId: auth.userId || null,
         userName: auth.userName || null,
         activityId: auth.activityId ? String(auth.activityId) : ''
@@ -194,20 +194,27 @@ router.get('/atividade/exercicios', async (req, res) => {
             lista: listaObj
         });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
-// Middleware de proteção: TODAS as rotas abaixo exigem privilégios de professor
+// Middleware de proteção: TODAS as rotas abaixo exigem privilégios de professor e sessão ativa (cookie/LTI)
 function verificarProfessor(req, res, next) {
     const ctx = obterContextoAuth(req);
-    if (ctx.isProfessor) {
-        return next();
+    if (!ctx.userId) {
+        return res.status(401).json({ 
+            success: false, 
+            error: "Acesso não autorizado: sessão não encontrada. Faça login pelo Moodle." 
+        });
     }
-    return res.status(403).json({ 
-        success: false, 
-        error: "Acesso não autorizado: rota restrita a professores." 
-    });
+    if (!ctx.isProfessor) {
+        return res.status(403).json({ 
+            success: false, 
+            error: "Acesso não autorizado: rota restrita a professores." 
+        });
+    }
+    return next();
 }
 
 
@@ -215,11 +222,17 @@ function processarTestesExercicio(tests) {
     if (!Array.isArray(tests)) return [];
     const processados = tests
         .filter(t => t && typeof t === 'object' && (('output' in t) || ('input' in t) || ('saida' in t) || ('entrada' in t)))
-        .map(t => ({
-            input: String(t.input !== undefined && t.input !== null ? t.input : (t.entrada || '')),
-            output: String(t.output !== undefined && t.output !== null ? t.output : (t.saida || '')),
-            isVisible: t.isVisible === true || t.isVisible === 'true'
-        }));
+        .map(t => {
+            let inp = String(t.input !== undefined && t.input !== null ? t.input : (t.entrada || ''));
+            let out = String(t.output !== undefined && t.output !== null ? t.output : (t.saida || ''));
+            if (inp.length > MAX_TEST_IO_CHARS) inp = inp.substring(0, MAX_TEST_IO_CHARS);
+            if (out.length > MAX_TEST_IO_CHARS) out = out.substring(0, MAX_TEST_IO_CHARS);
+            return {
+                input: inp,
+                output: out,
+                isVisible: t.isVisible === true || t.isVisible === 'true'
+            };
+        });
 
     const visiveisCount = processados.filter(t => t.isVisible).length;
     if (processados.length > 0 && visiveisCount === 0) {
@@ -239,6 +252,27 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
         const existe = await Exercise.findOne({ title: tituloFormatado, authorId, isArchived: { $ne: true } });
         if (existe) {
             return res.status(400).json({ success: false, error: "Você já possui um exercício cadastrado com este título." });
+        }
+
+        if (!Array.isArray(tests) || tests.length === 0) {
+            return res.status(400).json({ success: false, error: "Informe ao menos um caso de teste válido." });
+        }
+        if (tests.length > MAX_TESTS_PER_EXERCISE) {
+            return res.status(400).json({ 
+                success: false, 
+                error: `O número máximo de casos de teste por exercício é ${MAX_TESTS_PER_EXERCISE}.` 
+            });
+        }
+        const temExcedenteIO = tests.some(t => {
+            const inp = String(t?.input !== undefined && t?.input !== null ? t.input : (t?.entrada || ''));
+            const out = String(t?.output !== undefined && t?.output !== null ? t.output : (t?.saida || ''));
+            return inp.length > MAX_TEST_IO_CHARS || out.length > MAX_TEST_IO_CHARS;
+        });
+        if (temExcedenteIO) {
+            return res.status(400).json({
+                success: false,
+                error: `O tamanho máximo permitido por entrada ou saída de caso de teste é de ${MAX_TEST_IO_CHARS} caracteres.`
+            });
         }
 
         const testesFormatados = processarTestesExercicio(tests);
@@ -278,7 +312,8 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
         });
         res.json({ success: true, exercicio });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -298,6 +333,27 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
 
         if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
             return res.status(403).json({ success: false, error: "Sem permissão para alterar este exercício." });
+        }
+
+        if (!Array.isArray(tests) || tests.length === 0) {
+            return res.status(400).json({ success: false, error: "Informe ao menos um caso de teste válido." });
+        }
+        if (tests.length > MAX_TESTS_PER_EXERCISE) {
+            return res.status(400).json({ 
+                success: false, 
+                error: `O número máximo de casos de teste por exercício é ${MAX_TESTS_PER_EXERCISE}.` 
+            });
+        }
+        const temExcedenteIO = tests.some(t => {
+            const inp = String(t?.input !== undefined && t?.input !== null ? t.input : (t?.entrada || ''));
+            const out = String(t?.output !== undefined && t?.output !== null ? t.output : (t?.saida || ''));
+            return inp.length > MAX_TEST_IO_CHARS || out.length > MAX_TEST_IO_CHARS;
+        });
+        if (temExcedenteIO) {
+            return res.status(400).json({
+                success: false,
+                error: `O tamanho máximo permitido por entrada ou saída de caso de teste é de ${MAX_TEST_IO_CHARS} caracteres.`
+            });
         }
 
         const testesFormatados = processarTestesExercicio(tests);
@@ -335,7 +391,8 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
 
         res.json({ success: true, exercicio: ex });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -367,7 +424,8 @@ router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -414,7 +472,8 @@ router.post('/lista', verificarProfessor, async (req, res) => {
         });
         res.json({ success: true, lista });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -462,17 +521,22 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
 
             // Normaliza testes
             // Regra mandatória: 1º teste é visível (isVisible = true), demais são ocultos (isVisible = false)
+            // Aplica teto de segurança contra exaustão de pool e DoS
             const testesValidos = [];
             if (Array.isArray(rawTestes)) {
-                rawTestes.forEach((t, tIdx) => {
+                const rawTestesLimitados = rawTestes.slice(0, MAX_TESTS_PER_EXERCISE);
+                rawTestesLimitados.forEach((t, tIdx) => {
                     if (!t || typeof t !== 'object') return;
                     const temChave = ('output' in t) || ('saida' in t) || ('input' in t) || ('entrada' in t);
                     if (!temChave) return;
 
-                    const out = (t.output !== undefined && t.output !== null) ? String(t.output) : 
+                    let out = (t.output !== undefined && t.output !== null) ? String(t.output) : 
                                 ((t.saida !== undefined && t.saida !== null) ? String(t.saida) : '');
-                    const inp = (t.input !== undefined && t.input !== null) ? String(t.input) : 
+                    let inp = (t.input !== undefined && t.input !== null) ? String(t.input) : 
                                 ((t.entrada !== undefined && t.entrada !== null) ? String(t.entrada) : '');
+
+                    if (inp.length > MAX_TEST_IO_CHARS) inp = inp.substring(0, MAX_TEST_IO_CHARS);
+                    if (out.length > MAX_TEST_IO_CHARS) out = out.substring(0, MAX_TEST_IO_CHARS);
 
                     testesValidos.push({
                         input: inp,
@@ -550,7 +614,7 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
         });
     } catch (e) {
         console.error("Erro na criação de lista com IA:", e);
-        res.status(500).json({ success: false, error: e.message });
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao processar os exercícios via IA." });
     }
 });
 
@@ -602,7 +666,8 @@ router.put('/lista/:id', verificarProfessor, async (req, res) => {
 
         res.json({ success: true, lista });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -628,7 +693,8 @@ router.delete('/lista/:id', verificarProfessor, async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -694,7 +760,8 @@ router.post('/atividade/vincular', verificarProfessor, async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -735,7 +802,8 @@ router.post('/atividade/config', verificarProfessor, async (req, res) => {
 
         res.json({ success: true, config });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -782,7 +850,8 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
             defaultExecutionTimeLimitMs: DEFAULT_TIME_LIMIT_MS
         });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -954,7 +1023,7 @@ exercicios.forEach(ex => {
         });
     } catch (e) {
         console.error("Erro nas métricas:", e);
-        res.status(500).json({ success: false, error: e.message });
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar métricas da turma." });
     }
 });
 
@@ -1017,7 +1086,8 @@ router.post('/professor/exercicio/importar', verificarProfessor, async (req, res
 
         res.json({ success: true, exercicio: novoExercicio });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -1117,7 +1187,8 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
 
         res.json({ success: true, lista: novaLista });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 
@@ -1144,7 +1215,8 @@ router.post('/atividade/desvincular', verificarProfessor, async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
     }
 });
 

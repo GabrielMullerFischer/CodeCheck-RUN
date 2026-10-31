@@ -15,12 +15,10 @@ const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 10000;
 
 function obterContextoAuth(req) {
     const auth = req.auth || req.session || {};
-    const isDevSemSessao = process.env.NODE_ENV === 'development' && !auth.userId;
-    const isProfessor = auth.isProfessor === true || isDevSemSessao;
+    const isProfessor = auth.isProfessor === true;
     return {
         auth,
         isProfessor,
-        isDevSemSessao,
         userId: auth.userId || null,
         userName: auth.userName || null,
         activityId: auth.activityId ? String(auth.activityId) : ''
@@ -51,9 +49,6 @@ const submitLimiter = rateLimit({
 
 function isTestUser(userId, auth) {
     if (auth?.isProfessor === true) return true;
-    if (process.env.NODE_ENV === 'development' && !auth?.userId && (userId === 'preview_user' || userId === 'professor_test')) {
-        return true;
-    }
     return false;
 }
 
@@ -116,11 +111,11 @@ function gerarDicaDidatica(status, details, got) {
 // Consulta o status do cronômetro do aluno na atividade
 router.get('/atividade/timer-status', async (req, res) => {
     const ctx = obterContextoAuth(req);
-    if (!ctx.userId && !ctx.isProfessor) {
+    if (!ctx.userId) {
         return res.status(401).json({ success: false, error: "Não autorizado: faça login pelo Moodle." });
     }
 
-    const userId = ctx.isProfessor ? (ctx.userId || 'preview_user') : ctx.userId;
+    const userId = ctx.userId;
     const effectiveActivityId = ctx.isProfessor
         ? (ctx.activityId || req.query.activityId || 'preview')
         : ctx.activityId;
@@ -146,7 +141,8 @@ router.get('/atividade/timer-status', async (req, res) => {
             serverTime: Date.now()
         });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro timer-status]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao consultar o cronômetro." });
     }
 });
 
@@ -154,8 +150,8 @@ router.get('/atividade/timer-status', async (req, res) => {
 router.post('/atividade/iniciar-timer', async (req, res) => {
     const ctx = obterContextoAuth(req);
 
-    // Bloqueio de segurança em produção: exige autenticação ativa do Moodle
-    if (!ctx.userId && !ctx.isProfessor) {
+    // Bloqueio de segurança: exige autenticação ativa do Moodle
+    if (!ctx.userId) {
         return res.status(401).json({ success: false, error: "Não autorizado: faça login pelo Moodle." });
     }
 
@@ -194,7 +190,8 @@ router.post('/atividade/iniciar-timer', async (req, res) => {
             serverTime: Date.now()
         });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro timer-status]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao consultar o cronômetro." });
     }
 });
 
@@ -204,8 +201,8 @@ router.post('/submit', submitLimiter, async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessorReal = ctx.isProfessor;
 
-    // Bloqueio de segurança em produção: exige autenticação ativa do Moodle
-    if (!ctx.userId && !isProfessorReal) {
+    // Bloqueio de segurança: exige autenticação ativa do Moodle
+    if (!ctx.userId) {
         return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
     }
 
@@ -470,8 +467,8 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessor = ctx.isProfessor;
 
-    // Bloqueio de segurança em produção: exige autenticação ativa do Moodle
-    if (!ctx.userId && !isProfessor) {
+    // Bloqueio de segurança: exige autenticação ativa do Moodle
+    if (!ctx.userId) {
         return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
     }
 
@@ -565,7 +562,7 @@ router.get('/aluno/submissoes', async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessor = ctx.isProfessor;
 
-    if (!ctx.userId && !isProfessor) {
+    if (!ctx.userId) {
         return res.status(401).json({ success: false, error: "Não autorizado: faça login pelo Moodle." });
     }
 
@@ -615,7 +612,8 @@ router.get('/aluno/submissoes', async (req, res) => {
 
         res.json({ success: true, submissoes });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("❌ [Erro timer-status]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao consultar o cronômetro." });
     }
 });
 
@@ -625,7 +623,7 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessor = ctx.isProfessor;
 
-    if (!ctx.userId && !isProfessor) {
+    if (!ctx.userId) {
         return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
     }
 
@@ -726,7 +724,7 @@ router.get('/ranking', async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessorReal = ctx.isProfessor;
 
-    if (!ctx.userId && !isProfessorReal) {
+    if (!ctx.userId) {
         return res.status(401).json({ success: false, error: "Não autorizado: faça login pelo Moodle." });
     }
 
@@ -910,8 +908,8 @@ router.get('/ranking', async (req, res) => {
             rankingPorExercicio
         });
     } catch (e) {
-        console.error("Erro na rota /ranking:", e);
-        res.status(500).json({ success: false, error: e.message });
+        console.error("Erro na rota /ranking:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar o ranking." });
     }
 });
 

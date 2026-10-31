@@ -39,18 +39,43 @@ async function start() {
             res.status(200).json({ status: 'ok', uptime: process.uptime() });
         });
 
+        // Middleware de cabeçalhos de segurança HTTP (compatível com Moodle e Tailscale)
+        app.use((req, res, next) => {
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+            const platformUrl = process.env.LTI_PLATFORM_URL ? process.env.LTI_PLATFORM_URL.trim() : '';
+            const frameAncestors = [
+                "'self'",
+                "https://*.ts.net",
+                "https://*.ngrok-free.app",
+                "https://*.ngrok.io",
+                "https://*.ufpel.edu.br",
+                "http://localhost:*",
+                "https://localhost:*"
+            ];
+            if (platformUrl && !frameAncestors.includes(platformUrl)) {
+                frameAncestors.push(platformUrl);
+            }
+
+            res.setHeader('Content-Security-Policy', `frame-ancestors ${frameAncestors.join(' ')};`);
+            res.removeHeader('X-Frame-Options');
+            next();
+        });
+
         if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'chave-secreta-tcc') {
-            console.warn("⚠️ [AVISO DE SEGURANÇA] SESSION_SECRET não configurada ou usando chave padrão. Configure uma chave forte em produção!");
+            throw new Error("❌ [FATAL] SESSION_SECRET não configurada ou usando chave pública padrão ('chave-secreta-tcc'). Defina uma chave secreta forte no ambiente (.env ou Kubernetes Secret)!");
         }
 
         app.use(session({
-            secret: process.env.SESSION_SECRET || 'chave-secreta-tcc',
-            resave: true,
-            saveUninitialized: true,
+            secret: process.env.SESSION_SECRET,
+            resave: false,
+            saveUninitialized: false,
             cookie: {
                 secure: true,
                 sameSite: 'none',
-                httpOnly: true
+                httpOnly: true,
+                maxAge: 24 * 60 * 60 * 1000 // Expira em 24h para evitar acúmulo no MemoryStore
             }
         }));
 

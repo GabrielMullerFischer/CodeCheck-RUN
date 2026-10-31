@@ -134,7 +134,7 @@ spec:
       containers:
         - name: codecheck-server
           image: localhost:32000/codecheck-app:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
               name: http

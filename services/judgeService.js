@@ -275,10 +275,10 @@ if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
     echo "STATUS:HARD_TIME_LIMIT"
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "STATUS:RUNTIME_ERROR"
-    echo "ERR_B64:$(base64 -w 0 < "$CTRL_DIR/err_${i}.txt" 2>/dev/null || echo '')"
+    echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
 else
     echo "STATUS:OK"
-    echo "GOT_B64:$(base64 -w 0 < "$CTRL_DIR/got_${i}.txt" 2>/dev/null || echo '')"
+    echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
 fi
 rm -f "$CTRL_DIR/in_${i}.txt" "$CTRL_DIR/got_${i}.txt" "$CTRL_DIR/err_${i}.txt" "$CTRL_DIR/time_${i}.txt"
 `;
