@@ -259,8 +259,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function escapeHtml(str) {
-        if (!str) return '';
-        return str
+        if (str === null || str === undefined) return '';
+        return String(str)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
@@ -461,7 +461,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
-                <td>${aluno.userName}</td>
+                <td>${escapeHtml(aluno.userName)}</td>
                 <td class="text-right font-weight-bold text-secondary">${formatarTempoExecucao(aluno.executionTime)}</td>
             `;
             tbodyAlunoRankingEx.appendChild(tr);
@@ -917,7 +917,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         item.innerHTML = `
                             <div class="text-truncate mr-2" style="max-width: 140px;">
                                 <span class="mr-1">${medalhas[idx]}</span>
-                                <span class="${isEu ? 'text-primary' : 'text-dark'}">${aluno.userName} ${isEu ? '(Você)' : ''}</span>
+                                <span class="${isEu ? 'text-primary' : 'text-dark'}">${escapeHtml(aluno.userName)} ${isEu ? '(Você)' : ''}</span>
                             </div>
                             <div class="text-right text-nowrap">
                                 <span class="badge badge-info mr-1">${aluno.totalResolvidos} ex</span>
@@ -947,7 +947,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
                             <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
-                            <td>${aluno.userName}</td>
+                            <td>${escapeHtml(aluno.userName)}</td>
                             <td class="text-center"><span class="badge badge-info">${aluno.totalResolvidos}</span></td>
                             <td class="text-right text-muted">${aluno.totalResolvidos > 0 ? formatarTempoExecucao(aluno.tempoTotalMs) : '-'}</td>
                         `;
@@ -1213,7 +1213,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         code,
                         input,
                         exerciseId: exercicioAtual ? exercicioAtual._id : '',
-                        activityId: activityId || 'preview'
+                        activityId: activityId || 'preview',
+                        mode: urlParams.get('mode') || undefined
                     })
                 });
 
@@ -1227,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (data.didacticHint) {
                         cardDica = `
                             <div class="alert alert-warning py-1 small mb-1">
-                                <i class="fas fa-lightbulb mr-1"></i> ${data.didacticHint}
+                                <i class="fas fa-lightbulb mr-1"></i> ${escapeHtml(data.didacticHint)}
                             </div>
                         `;
                     }
@@ -1267,7 +1268,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         `;
                     }
                 } else {
-                    resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">${data.error || 'Erro no teste.'}</div>`;
+                    resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">${escapeHtml(data.error || 'Erro no teste.')}</div>`;
                 }
             } catch {
                 resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">Erro de conexão ao executar teste.</div>`;
@@ -1313,7 +1314,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         code,
                         activityId: activityId || 'preview',
                         listId,
-                        exerciseId: exercicioAtual._id
+                        exerciseId: exercicioAtual._id,
+                        mode: urlParams.get('mode') || undefined
                     })
                 });
 
@@ -1341,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (exercicioAtual) {
                         mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
                     }
-                    resultDiv.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Erro ao processar submissão.'}</div>`;
+                    resultDiv.innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(data.error || 'Erro ao processar submissão.')}</div>`;
 
                     if (exercicioAtual && mapaStatusQuestoes[String(exercicioAtual._id)] !== 'accepted') {
                         mapaStatusQuestoes[String(exercicioAtual._id)] = 'wrong';

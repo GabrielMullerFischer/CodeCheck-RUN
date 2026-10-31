@@ -10,6 +10,7 @@ const RUNNER_C = `
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <grp.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/types.h>
@@ -20,10 +21,10 @@ int main(int argc, char *argv[]) {
     if (pid < 0) return 1;
     if (pid == 0) {
         // Reduz privilégios estritamente para o usuário 'nobody' (UID/GID 65534)
-        setgid(65534);
-        setuid(65534);
+        setgroups(0, NULL);
+        if (setgid(65534) != 0 || setuid(65534) != 0) _exit(1);
         execv(argv[1], &argv[1]);
-        exit(1);
+        _exit(1);
     } else {
         int status;
         struct rusage usage;
@@ -70,8 +71,8 @@ echo "${B64_RUNNER}" | base64 -d > runner.c
 gcc -O2 runner.c -o /usr/local/bin/runner
 chmod 555 /usr/local/bin/runner
 cd / && rm -rf /tmp/runner_build
-mkdir -p /sandbox && chmod 777 /sandbox
-touch /tmp/runner_ready
+mkdir -p /sandbox && chmod 711 /sandbox
+touch /tmp/runner_v2_ready /tmp/runner_ready
 exec sleep infinity
 `;
     const b64Startup = Buffer.from(startupScript, 'utf-8').toString('base64');
@@ -424,33 +425,38 @@ function montarScriptJob(code, tests, timeoutAlunoMs, jobId) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
     const limitSec = timeoutAlunoMs / 1000;
     const hardTimeoutSec = Math.min(Math.max(1, Math.ceil(limitSec * 3)), 30);
+    const safeJobId = String(jobId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
 
     let scriptTestes = '';
     tests.forEach((t, i) => {
         const b64In = Buffer.from(t.input || '', 'utf-8').toString('base64');
         scriptTestes += `
 # Teste ${i}
-echo "${b64In}" | base64 -d > in_${i}.txt
+find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
+cd "$WORK_DIR"
+echo "${b64In}" | base64 -d > "$CTRL_DIR/in_${i}.txt"
 
 echo "---STEP---"
 echo "INDEX:${i}"
 
-rm -f time_${i}.txt
-timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner ./prog time_${i}.txt < in_${i}.txt > got_${i}.txt 2> err_${i}.txt
+rm -f "$CTRL_DIR/time_${i}.txt"
+timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_${i}.txt" < "$CTRL_DIR/in_${i}.txt" > "$CTRL_DIR/got_${i}.txt" 2> "$CTRL_DIR/err_${i}.txt"
 EXIT_CODE=$?
+pkill -9 -u 65534 2>/dev/null || true
 
-CPUTIME=$(cat time_${i}.txt 2>/dev/null || echo "0.000000")
+CPUTIME=$(cat "$CTRL_DIR/time_${i}.txt" 2>/dev/null || echo "0.000000")
 echo "TIME:$CPUTIME"
 
 if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
     echo "STATUS:HARD_TIME_LIMIT"
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "STATUS:RUNTIME_ERROR"
-    echo "ERR_B64:$(base64 -w 0 < err_${i}.txt 2>/dev/null || echo '')"
+    echo "ERR_B64:$(base64 -w 0 < "$CTRL_DIR/err_${i}.txt" 2>/dev/null || echo '')"
 else
     echo "STATUS:OK"
-    echo "GOT_B64:$(base64 -w 0 < got_${i}.txt 2>/dev/null || echo '')"
+    echo "GOT_B64:$(base64 -w 0 < "$CTRL_DIR/got_${i}.txt" 2>/dev/null || echo '')"
 fi
+rm -f "$CTRL_DIR/in_${i}.txt" "$CTRL_DIR/got_${i}.txt" "$CTRL_DIR/err_${i}.txt" "$CTRL_DIR/time_${i}.txt"
 `;
     });
 
@@ -461,39 +467,65 @@ export HTTP_PROXY="http://127.0.0.1:0"
 export HTTPS_PROXY="http://127.0.0.1:0"
 export all_proxy="http://127.0.0.1:0"
 
-JOB_DIR="/sandbox/job_${jobId}"
-mkdir -p "$JOB_DIR" && cd "$JOB_DIR"
-chmod 777 "$JOB_DIR"
+CTRL_DIR="/root/ctrl_${safeJobId}"
+BIN_DIR="/var/run/judge_${safeJobId}"
+WORK_DIR="/sandbox/job_${safeJobId}"
 
-trap 'cd / && rm -rf "$JOB_DIR"' EXIT
+limpar_ambiente() {
+    pkill -9 -u 65534 2>/dev/null || true
+    cd /
+    rm -rf "$CTRL_DIR" "$BIN_DIR" "$WORK_DIR"
+    find /tmp /var/tmp /dev/shm -mindepth 1 -user 65534 -exec rm -rf {} + 2>/dev/null || true
+}
+trap limpar_ambiente EXIT
+
+# Esteriliza processos e arquivos residuais antes de iniciar a submissão
+pkill -9 -u 65534 2>/dev/null || true
+find /tmp /var/tmp /dev/shm -mindepth 1 -user 65534 -exec rm -rf {} + 2>/dev/null || true
+
+mkdir -p /sandbox && chmod 711 /sandbox
+mkdir -p "$CTRL_DIR" && chmod 700 "$CTRL_DIR"
+mkdir -p "$BIN_DIR" && chmod 755 "$BIN_DIR"
+mkdir -p "$WORK_DIR" && chown 65534:65534 "$WORK_DIR" && chmod 700 "$WORK_DIR"
+
+# Garante que o binário do runner esteja presente e atualizado (inclusive em Warm Pods adotados)
+if [ ! -f /usr/local/bin/runner ] || [ ! -f /tmp/runner_v2_ready ]; then
+    echo "${B64_RUNNER}" | base64 -d > "$CTRL_DIR/runner.c"
+    gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
+    chmod 555 /usr/local/bin/runner
+    rm -f "$CTRL_DIR/runner.c"
+    touch /tmp/runner_v2_ready
+fi
+
+cd "$WORK_DIR"
+echo "${b64Code}" | base64 -d > main.c
+chown 65534:65534 main.c
+chmod 600 main.c
+
+set +e
+COMPILE_ERR=$(timeout -k 1s -s 9 10s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc main.c -o prog -lm' 2>&1)
+COMPILE_STATUS=$?
+
+if [ $COMPILE_STATUS -ne 0 ]; then
+    if [ $COMPILE_STATUS -eq 124 ] || [ $COMPILE_STATUS -eq 137 ]; then
+        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (10s). Verifique diretivas #include ou macros."
+    fi
+    echo "STATUS:COMPILATION_ERROR"
+    echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
+    exit 0
+fi
+
+mv "$WORK_DIR/prog" "$BIN_DIR/prog"
+chown 0:0 "$BIN_DIR/prog"
+chmod 555 "$BIN_DIR/prog"
+rm -f "$WORK_DIR/main.c"
 
 ulimit -u 50
 ulimit -f 50000
 
-# Fallback caso o binário do runner ainda não esteja presente
-if [ ! -f /usr/local/bin/runner ]; then
-    echo "${B64_RUNNER}" | base64 -d > /tmp/runner.c
-    gcc -O2 /tmp/runner.c -o /usr/local/bin/runner
-    chmod 555 /usr/local/bin/runner
-    rm -f /tmp/runner.c
-fi
-
-echo "${b64Code}" | base64 -d > main.c
-set +e
-COMPILE_ERR=$(gcc main.c -o prog -lm 2>&1)
-COMPILE_STATUS=$?
-
-if [ $COMPILE_STATUS -ne 0 ]; then
-    echo "STATUS:COMPILATION_ERROR"
-    echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
-    cd / && rm -rf "$JOB_DIR"
-    exit 0
-fi
-
 ${scriptTestes}
 
 echo "STATUS:ALL_PASSED"
-cd / && rm -rf "$JOB_DIR"
 `;
 }
 

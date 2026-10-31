@@ -175,6 +175,35 @@
             padding: 0 4px;
         }
 
+        .metric-circle-gauge {
+            width: 105px;
+            height: 105px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+            background: conic-gradient(#e9ecef 0%, #e9ecef 100%);
+            padding: 6px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            transition: background 0.25s linear;
+        }
+
+        .metric-circle-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #6c757d;
+            white-space: nowrap;
+            transition: color 0.3s ease;
+        }
+
         #toast-container {
             position: fixed;
             bottom: 24px;
@@ -201,22 +230,32 @@
             justify-content: space-between;
             animation: slideInToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             transition: opacity 0.25s ease, transform 0.25s ease;
+            background: rgba(33, 37, 41, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
         .toast-custom.toast-success {
-            background: rgba(40, 167, 69, 0.92);
+            background: rgba(40, 167, 69, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
         }
 
         .toast-custom.toast-danger {
-            background: rgba(220, 53, 69, 0.92);
+            background: rgba(220, 53, 69, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
         }
 
         .toast-custom.toast-warning {
-            background: rgba(255, 193, 7, 0.95);
+            background: rgba(255, 193, 7, 0.98);
             color: #212529;
             border: 1px solid rgba(0, 0, 0, 0.15);
+        }
+
+        .toast-custom.toast-info {
+            background: rgba(23, 162, 184, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
         }
 
         .nav-pill-btn {
@@ -442,8 +481,11 @@
                                         <div class="card-body p-3">
                                             <div class="row text-center">
                                                 <div class="col-6 border-right">
-                                                    <div class="metric-circle border-success text-success mb-2 mx-auto"
-                                                        id="circle-taxa-acerto">0%</div>
+                                                    <div class="metric-circle-gauge mb-2 mx-auto"
+                                                        id="gauge-taxa-acerto">
+                                                        <div class="metric-circle-inner" id="circle-taxa-acerto">0%
+                                                        </div>
+                                                    </div>
                                                     <span
                                                         class="small font-weight-bold text-muted text-uppercase d-block"
                                                         style="font-size: 0.72rem;">Taxa de Acertos</span>
@@ -566,7 +608,7 @@
                                 <li class="nav-item">
                                     <a class="nav-link font-weight-bold" id="pill-banco-universal" data-toggle="pill"
                                         href="#tab-banco-universal" role="tab">
-                                        <i class="fas fa-globe mr-1"></i> Banco Universal
+                                        <i class="fas fa-globe mr-1"></i> Banco Universal de Listas
                                     </a>
                                 </li>
                             </ul>
@@ -684,12 +726,42 @@
                         </div>
 
                         <div class="tab-pane" id="tab-nova" role="tabpanel">
+                            <div class="card p-3 mb-3 bg-white card-standard">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap"
+                                    style="gap: 12px;">
+                                    <div class="d-flex align-items-center flex-grow-1 flex-wrap" style="gap: 12px;">
+                                        <label class="font-weight-bold text-dark mb-0 text-nowrap"
+                                            for="nome-nova-lista">
+                                            Nome da Nova Lista:
+                                        </label>
+                                        <input type="text" id="nome-nova-lista" class="form-control"
+                                            style="max-width: 480px; border: 1px solid #dee2e6; border-radius: 8px;"
+                                            placeholder="Digite o nome da lista de exercícios...">
+                                        <div class="custom-control custom-checkbox ml-md-2">
+                                            <input type="checkbox" class="custom-control-input" id="chk-lista-privada">
+                                            <label
+                                                class="custom-control-label small cursor-pointer text-muted font-weight-bold"
+                                                for="chk-lista-privada">
+                                                <i class="fas fa-lock mr-1"></i> Tornar lista privada
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex justify-content-end align-items-center flex-wrap"
+                                        style="gap: 8px;">
+                                        <button type="button" class="btn btn-outline-primary font-weight-bold shadow-sm"
+                                            style="border-radius: 8px;" id="btnAbrirModalImportarListaIA">
+                                            <i class="fas fa-file-alt mr-1"></i> Criar Lista com Prompt
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <ul class="nav nav-pills nav-fill mb-3 nav-segmented" id="pills-tipo-exercicio"
                                 role="tablist">
                                 <li class="nav-item">
                                     <a class="nav-link active font-weight-bold" id="pill-meus-ex" data-toggle="pill"
                                         href="#tab-meus-exercicios" role="tab">
-                                        <i class="fas fa-user-edit mr-1"></i> Criar Lista
+                                        <i class="fas fa-user-check mr-1"></i> Meus Exercícios
                                     </a>
                                 </li>
                                 <li class="nav-item">
@@ -702,45 +774,14 @@
 
                             <div class="tab-content" id="pills-tipo-exercicio-content">
                                 <div class="tab-pane show active" id="tab-meus-exercicios" role="tabpanel">
-                                    <div class="card p-3 mb-3 bg-white card-standard">
-                                        <div class="d-flex align-items-center justify-content-between flex-wrap"
-                                            style="gap: 12px;">
-                                            <div class="d-flex align-items-center flex-grow-1 flex-wrap"
-                                                style="gap: 12px;">
-                                                <label class="font-weight-bold text-dark mb-0 text-nowrap"
-                                                    for="nome-nova-lista">
-                                                    Nome da Nova Lista:
-                                                </label>
-                                                <input type="text" id="nome-nova-lista" class="form-control"
-                                                    style="max-width: 480px; border: 1px solid #dee2e6; border-radius: 8px;"
-                                                    placeholder="Digite o nome da lista de exercícios...">
-                                                <div class="custom-control custom-checkbox ml-md-2">
-                                                    <input type="checkbox" class="custom-control-input"
-                                                        id="chk-lista-privada">
-                                                    <label
-                                                        class="custom-control-label small cursor-pointer text-muted font-weight-bold"
-                                                        for="chk-lista-privada">
-                                                        <i class="fas fa-lock mr-1"></i> Tornar lista privada
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <div class="text-right">
-                                                <button type="button"
-                                                    class="btn btn-outline-primary font-weight-bold shadow-sm"
-                                                    style="border-radius: 8px;" id="btnAbrirModalNovoExercicio">
-                                                    <i class="fas fa-plus-circle mr-1"></i> Adicionar Novo Exercício
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
                                     <div class="row mb-3 align-items-center">
-                                        <div class="col-md-8">
+                                        <div class="col-md-5">
                                             <h5 class="font-weight-bold text-secondary mb-0">Selecione os exercícios
                                                 para compor esta lista:</h5>
                                         </div>
-                                        <div class="col-md-4">
-                                            <div class="input-group standard-search-group">
+                                        <div class="col-md-7 d-flex justify-content-md-end align-items-center flex-wrap"
+                                            style="gap: 10px;">
+                                            <div class="input-group standard-search-group" style="max-width: 280px;">
                                                 <div class="input-group-prepend">
                                                     <span class="input-group-text bg-white"><i
                                                             class="fas fa-search text-muted"></i></span>
@@ -748,6 +789,11 @@
                                                 <input type="search" id="input-busca-exercicio" class="form-control"
                                                     placeholder="Pesquisar exercício...">
                                             </div>
+                                            <button type="button"
+                                                class="btn btn-outline-primary font-weight-bold shadow-sm"
+                                                style="border-radius: 8px;" id="btnAbrirModalNovoExercicio">
+                                                <i class="fas fa-plus-circle mr-1"></i> Adicionar Novo Exercício
+                                            </button>
                                         </div>
                                     </div>
                                     <div class="scrollable-list p-2 mb-3" id="container-exercicios-disponiveis"></div>
@@ -819,11 +865,13 @@
                     <div class="modal-body">
                         <input type="hidden" id="modal-exercicio-id" value="">
                         <div class="form-group">
-                            <label class="font-weight-bold">Título do Exercício:</label>
+                            <label class="font-weight-bold">Título do Exercício: <span
+                                    class="text-danger">*</span></label>
                             <input type="text" id="modal-titulo" class="form-control">
                         </div>
                         <div class="form-group">
-                            <label class="font-weight-bold">Descrição da atividade:</label>
+                            <label class="font-weight-bold">Descrição da atividade: <span
+                                    class="text-danger">*</span></label>
                             <textarea id="modal-desc" class="form-control" rows="3"
                                 placeholder="Explique o que o aluno precisa programar..."></textarea>
                         </div>
@@ -857,9 +905,66 @@
                                     id="num-testes-visiveis">1</span>/3)
                             </span>
                         </div>
-                        <div class="alert alert-info py-2 px-3 small border-0 mb-3">
+                        <div class="alert alert-info py-2 px-3 small border-0 mb-2">
                             <i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha.
                             Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).
+                        </div>
+
+                        <!-- Botão e painel de importação de testes com Prompt -->
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary font-weight-bold shadow-sm"
+                                    id="btnToggleImportarTestesIA" style="border-radius: 6px;">
+                                    <i class="fas fa-terminal mr-1"></i> Importar Testes com Prompt
+                                </button>
+                                <span class="small text-muted font-italic">Gere casos de teste a partir do título,
+                                    descrição e exemplos base</span>
+                            </div>
+
+                            <div id="box-importar-testes-ia" class="card border-primary shadow-sm mb-2"
+                                style="display: none; background-color: #f8fbfe; border-radius: 8px;">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="font-weight-bold text-primary mb-0" style="font-size: 0.95rem;">
+                                            <i class="fas fa-vial mr-1"></i> Importar Casos de Teste com Prompt
+                                        </h6>
+                                        <button type="button"
+                                            class="btn btn-xs btn-primary font-weight-bold shadow-sm px-2 py-1"
+                                            id="btnCopiarPromptTestesIA"
+                                            title="Copia o prompt dos testes gerado a partir do título, da descrição e dos casos de teste preenchidos">
+                                            <i class="fas fa-copy mr-1"></i> Copiar Prompt de Testes
+                                        </button>
+                                    </div>
+                                    <p class="small text-muted mb-2">
+                                        Preencha o <strong>Título</strong> e a <strong>Descrição</strong> do exercício
+                                        acima (obrigatórios) e clique em <em>Copiar Prompt de Testes</em>. Em seguida,
+                                        cole o resultado
+                                        abaixo para preencher os casos de teste.
+                                    </p>
+                                    <div class="alert alert-warning py-2 px-3 small mb-2" style="border-radius: 6px;">
+                                        <i class="fas fa-lightbulb mr-1"></i> <strong>Dica para saídas mais
+                                            precisas:</strong> Insira alguns casos de teste abaixo antes de copiar o
+                                        prompt para ter uma base (todos os casos de teste que você preencher entram
+                                        junto automaticamente no prompt).
+                                    </div>
+                                    <textarea id="txtImportarTestesJSON"
+                                        class="form-control form-control-sm font-monospace mb-2" rows="4"
+                                        placeholder='Cole aqui o resultado do prompt...'></textarea>
+                                    <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                        <small class="text-muted"><i class="fas fa-info-circle mr-1 text-primary"></i> O
+                                            1º teste será definido como <strong>exemplo visível</strong> e os demais
+                                            como <strong>testes ocultos</strong>.</small>
+                                        <div class="mt-1 mt-sm-0">
+                                            <button type="button" class="btn btn-secondary btn-sm mr-1"
+                                                id="btnFecharImportarTestesIA">Fechar</button>
+                                            <button type="button" class="btn btn-primary btn-sm font-weight-bold"
+                                                id="btnAplicarImportacaoTestes">
+                                                Preencher Casos de Teste
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div id="modal-container-testes">
@@ -898,6 +1003,85 @@
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
                         <button type="button" id="modalBtnSalvarEx" class="btn btn-primary font-weight-bold">Salvar
                             Exercício</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Criar Lista Completa com IA / JSON -->
+        <div class="modal fade" id="modalImportarListaIA" tabindex="-1" role="dialog" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+                <div class="modal-content"
+                    style="border-radius: 12px; overflow: hidden; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+                    <div class="modal-header bg-primary text-white py-3">
+                        <h5 class="modal-title font-weight-bold" id="modalImportarListaIATitulo">
+                            <i class="fas fa-file-alt mr-2"></i> Criar Lista com Prompt
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="card border-0 mb-3" style="background-color: #f0f7ff; border-radius: 8px;">
+                            <div class="card-body p-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="font-weight-bold text-primary mb-0">
+                                        <i class="fas fa-magic mr-1"></i> Passo 1: Copie o Prompt Modelo
+                                    </h6>
+                                    <button type="button" class="btn btn-sm btn-primary px-3 font-weight-bold shadow-sm"
+                                        id="btnCopiarPromptListaIA">
+                                        <i class="fas fa-copy mr-1"></i> Copiar Prompt Modelo
+                                    </button>
+                                </div>
+                                <p class="small text-muted mb-0">
+                                    Copie o prompt modelo abaixo, ajuste o tema e a quantidade de exercícios como
+                                    desejar, e cole a resposta gerada no campo a seguir.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="font-weight-bold text-dark">
+                                Nome da Lista: <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" id="inputImportarListaIATitulo" class="form-control"
+                                style="border-radius: 8px;" placeholder="Digite o nome da lista...">
+                            <small class="form-text text-muted">Se você informar o nome antes de copiar o prompt, ele já
+                                será incluído no template.</small>
+                        </div>
+
+                        <div class="form-group mb-2">
+                            <label class="font-weight-bold text-dark">
+                                Cole aqui a resposta do prompt: <span class="text-danger">*</span>
+                            </label>
+                            <textarea id="txtImportarListaJSON" class="form-control font-monospace" rows="9"
+                                style="border-radius: 8px; font-size: 0.85rem;"
+                                placeholder='Cole aqui a resposta gerada a partir do prompt com a estrutura dos exercícios e casos de teste...'></textarea>
+                        </div>
+
+                        <div class="alert alert-light border small text-muted mb-0 p-2" style="border-radius: 8px;">
+                            <div class="d-flex align-items-center mb-1">
+                                <i class="fas fa-info-circle text-primary mr-2"></i>
+                                <strong>Regras aplicadas automaticamente:</strong>
+                            </div>
+                            <ul class="mb-0 pl-4">
+                                <li><strong>Visibilidade:</strong> Lista e exercícios são criados como <em>Públicos por
+                                        padrão</em> (você pode alterar para privado a qualquer momento).</li>
+                                <li><strong>Tempo Limite:</strong> Definido como <em>padrão do sistema</em> para você
+                                    calibrar no modo aluno.</li>
+                                <li><strong>Casos de Teste:</strong> O 1º teste de cada exercício é configurado como
+                                    <em>exemplo visível</em> e os demais como <em>testes ocultos</em>.
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary font-weight-bold"
+                            data-dismiss="modal">Cancelar</button>
+                        <button type="button" id="btnConfirmarImportarListaIA"
+                            class="btn btn-primary font-weight-bold px-4 shadow-sm" style="border-radius: 8px;">
+                            Criar Lista
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1261,12 +1445,19 @@
                         </div>
                         <div id="modalVerListaConteudo"></div>
                     </div>
-                    <div class="modal-footer py-2 bg-light d-flex justify-content-between">
-                        <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Fechar</button>
-                        <button type="button" id="modalBtnImportarListaAberta"
-                            class="btn btn-sm btn-success font-weight-bold">
-                            <i class="fas fa-file-import mr-1"></i> Importar esta Lista
-                        </button>
+                    <div class="modal-footer py-2 bg-light d-flex justify-content-between align-items-center">
+                        <button type="button" class="btn btn-sm btn-secondary font-weight-bold px-3"
+                            data-dismiss="modal">Fechar</button>
+                        <div class="d-flex align-items-center" style="gap: 8px;">
+                            <button type="button" id="modalBtnTestarListaAberta"
+                                class="btn btn-sm btn-outline-info font-weight-bold shadow-sm">
+                                <i class="fas fa-play mr-1"></i> Testar no Modo Aluno
+                            </button>
+                            <button type="button" id="modalBtnImportarListaAberta"
+                                class="btn btn-sm btn-success font-weight-bold shadow-sm">
+                                <i class="fas fa-file-import mr-1"></i> Importar esta Lista
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1303,15 +1494,21 @@
                             <div id="modalVerExTeste" class="p-2 border rounded bg-white small"></div>
                         </div>
                     </div>
-                    <div class="modal-footer py-2 bg-light d-flex justify-content-between">
+                    <div class="modal-footer py-2 bg-light d-flex justify-content-between align-items-center">
                         <button type="button" id="btnFecharModalVerEx"
                             class="btn btn-sm btn-secondary font-weight-bold px-3" data-dismiss="modal">
                             Fechar
                         </button>
-                        <button type="button" id="modalBtnCopiarExAberto"
-                            class="btn btn-sm btn-success font-weight-bold">
-                            <i class="fas fa-file-import mr-1"></i> Importar
-                        </button>
+                        <div class="d-flex align-items-center" style="gap: 8px;">
+                            <button type="button" id="modalBtnTestarExAberto"
+                                class="btn btn-sm btn-outline-info font-weight-bold shadow-sm">
+                                <i class="fas fa-play mr-1"></i> Testar no Modo Aluno
+                            </button>
+                            <button type="button" id="modalBtnCopiarExAberto"
+                                class="btn btn-sm btn-success font-weight-bold shadow-sm">
+                                <i class="fas fa-file-import mr-1"></i> Importar
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -4,6 +4,7 @@ const http = require('http');
 const path = require('path');
 const session = require('express-session');
 const { connectDB } = require('./config/database');
+const { attachAuthContext } = require('./config/authContext');
 const ltiController = require('./controllers/ltiController');
 const { initMinio } = require('./services/minioService');
 const ColetorLixo = require('./services/coletorLixo');
@@ -54,6 +55,7 @@ async function start() {
         }));
 
         await ltiController.setup(app);
+        app.use(attachAuthContext);
 
         app.use(express.json({ limit: '1mb' }));
         app.use(express.urlencoded({ extended: true, limit: '1mb' }));

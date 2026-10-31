@@ -4,21 +4,38 @@ const lti = require('ltijs').Provider;
 const ActivityConfig = require('../models/ActivityConfig');
 const ExerciseList = require('../models/ExerciseList');
 const ActivityAttempt = require('../models/ActivityAttempt');
+const { construirAuthContext, extrairRolesIsProfessor } = require('../config/authContext');
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 async function renderTemplate(res, req, userName, activityId) {
     try {
-        const isProf = req.session.isProfessor === true;
-        const isPreview = req.query.mode === 'preview';
+        const auth = construirAuthContext(req, res);
+        const isProf = auth.isProfessor === true;
+        const isPreview = isProf && req.query.mode === 'preview';
         const arquivo = (!isProf || isPreview) ? 'aluno.html' : 'professor.html';
         const templatePath = path.resolve(__dirname, `../views/${arquivo}`);
-        const ltikVal = req.query.ltik || (res.locals && (res.locals.ltik || res.locals.token)) || '';
+        const ltikVal = (res.locals && res.locals.ltik) ? String(res.locals.ltik) : (auth.ltik || '');
 
         let exercicioAtual = null;
         let configAtividade = null;
 
-        if (req.query.listId) {
+        if (isProf && req.query.listId) {
             const listaPreview = await ExerciseList.findById(req.query.listId).populate('exercises');
-            if (listaPreview && listaPreview.exercises && listaPreview.exercises.length > 0) {
+            const podeAcessarLista = listaPreview && (
+                listaPreview.isPublic !== false ||
+                !auth.userId ||
+                String(listaPreview.authorId) === String(auth.userId)
+            );
+            if (podeAcessarLista && listaPreview.exercises && listaPreview.exercises.length > 0) {
                 exercicioAtual = listaPreview.exercises[0];
             }
         }
@@ -37,7 +54,7 @@ async function renderTemplate(res, req, userName, activityId) {
         // NÃO enviamos o enunciado ou o exemplo de teste no HTML inicial (evita leitura prévia via F12/Elements).
         let precisaIniciarTimer = false;
         if (!isProf && !isPreview && configAtividade && configAtividade.hasTimeLimit && activityId && activityId !== 'preview') {
-            const userId = req.session?.userId;
+            const userId = auth.userId;
             const attempt = await ActivityAttempt.findOne({ userId, activityId });
             if (!attempt) {
                 precisaIniciarTimer = true;
@@ -75,15 +92,15 @@ async function renderTemplate(res, req, userName, activityId) {
             if (err) return res.status(500).send("Erro ao carregar HTML.");
 
             let finalHtml = html
-                .replace(/{{LTIK_TOKEN}}/g, ltikVal)
-                .replace(/{{NOME_USUARIO}}/g, userName)
-                .replace(/{{NOME_QUESTAO}}/g, tituloFinal)
-                .replace(/{{DESCRICAO_QUESTAO}}/g, descFinal)
-                .replace(/{{TITULO_QUESTAO_VAL}}/g, tituloFinal)
-                .replace(/{{DESCRICAO_QUESTAO_VAL}}/g, descFinal)
+                .replace(/{{LTIK_TOKEN}}/g, escapeHtml(ltikVal))
+                .replace(/{{NOME_USUARIO}}/g, escapeHtml(userName))
+                .replace(/{{NOME_QUESTAO}}/g, escapeHtml(tituloFinal))
+                .replace(/{{DESCRICAO_QUESTAO}}/g, escapeHtml(descFinal))
+                .replace(/{{TITULO_QUESTAO_VAL}}/g, escapeHtml(tituloFinal))
+                .replace(/{{DESCRICAO_QUESTAO_VAL}}/g, escapeHtml(descFinal))
                 .replace(/{{IS_PROFESSOR_VAL}}/g, isProf ? 'true' : 'false')
-                .replace(/{{ACTIVITY_ID}}/g, activityId)
-                .replace(/{{EXEMPLO_QUESTAO}}/g, exemploTexto);
+                .replace(/{{ACTIVITY_ID}}/g, escapeHtml(activityId))
+                .replace(/{{EXEMPLO_QUESTAO}}/g, escapeHtml(exemploTexto));
 
             res.send(finalHtml);
         });
@@ -132,25 +149,21 @@ async function setup(app) {
 
     lti.onConnect(async (token, req, res) => {
         const roles = token.platformContext.roles || [];
+        const isProf = extrairRolesIsProfessor(roles);
 
-        const isProf = roles.some(role =>
-            role.toLowerCase().includes('instructor') ||
-            role.toLowerCase().includes('teacher') ||
-            role.toLowerCase().includes('admin')
-        );
-
-        const activityId = token.platformContext.resource.id;
-        const userName = token.userInfo?.name || token.userInfo?.given_name || 'Aluno';
+        const activityId = token.platformContext?.resource?.id || '';
+        const userName = token.userInfo?.name || token.userInfo?.given_name || (isProf ? 'Professor' : 'Aluno');
 
         req.session.userId = token.user;
         req.session.isProfessor = !!isProf;
         req.session.activityId = activityId;
         req.session.userName = userName;
+        req.auth = construirAuthContext(req, res);
 
-        console.log(`[LOGIN] ${token.userInfo.name} logado como ${isProf ? 'Professor' : 'Aluno'}`);
+        console.log(`[LOGIN] ${userName} logado como ${isProf ? 'Professor' : 'Aluno'}`);
 
-        req.session.save((err) => {
-            renderTemplate(res, req, token.userInfo.name, activityId);
+        req.session.save(() => {
+            renderTemplate(res, req, userName, activityId);
         });
     });
 }

@@ -27,20 +27,29 @@ async function initMinio() {
     }
 }
 
-function isTestUser(userId, session, body) {
-    return (
-        userId === 'preview_user' ||
-        userId === 'professor_test' ||
-        session?.isProfessor === true ||
-        body?.mode === 'preview' ||
-        body?.userId === 'professor_test'
-    );
+function validarSegmentoCaminho(valor, nomeCampo = 'identificador') {
+    const str = String(valor || '').trim();
+    if (!str || /[\/\\]|\.\./.test(str)) {
+        throw new Error(`Segmento inválido para armazenamento (${nomeCampo}).`);
+    }
+    return str;
+}
+
+function isTestUser(userId, session) {
+    if (session?.isProfessor === true) return true;
+    if (!session?.userId && (userId === 'preview_user' || userId === 'professor_test')) {
+        return true;
+    }
+    return false;
 }
 
 // Rascunhos isolados por exercício
 async function salvarRascunho(userId, activityId, exerciseId, code, session = null) {
     if (isTestUser(userId, session)) return null;
-    const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
+    const uSafe = validarSegmentoCaminho(userId, 'userId');
+    const aSafe = validarSegmentoCaminho(activityId, 'activityId');
+    const eSafe = validarSegmentoCaminho(exerciseId, 'exerciseId');
+    const objectName = `drafts/${uSafe}/${aSafe}/${eSafe}.c`;
     const buffer = Buffer.from(code, 'utf-8');
     await minioClient.putObject(BUCKET_NAME, objectName, buffer);
     return objectName;
@@ -49,7 +58,10 @@ async function salvarRascunho(userId, activityId, exerciseId, code, session = nu
 // Lê rascunho isolado por exercício
 async function lerRascunho(userId, activityId, exerciseId, session = null) {
     if (isTestUser(userId, session)) return null;
-    const objectName = `drafts/${userId}/${activityId}/${exerciseId}.c`;
+    const uSafe = validarSegmentoCaminho(userId, 'userId');
+    const aSafe = validarSegmentoCaminho(activityId, 'activityId');
+    const eSafe = validarSegmentoCaminho(exerciseId, 'exerciseId');
+    const objectName = `drafts/${uSafe}/${aSafe}/${eSafe}.c`;
     const stream = await minioClient.getObject(BUCKET_NAME, objectName);
     return new Promise((resolve, reject) => {
         let data = '';
@@ -71,7 +83,10 @@ async function salvarArquivo(caminho, conteudo) {
 // Histórico de submissões mantidas por exercício do aluno (as 10 últimas no total, protegendo sempre o código mais rápido)
 async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code, caminhoProtegido = null, session = null) {
     if (isTestUser(userId, session)) return 'preview';
-    const prefixo = `historico/${activityId}/${exerciseId}/${userId}/`;
+    const uSafe = validarSegmentoCaminho(userId, 'userId');
+    const aSafe = validarSegmentoCaminho(activityId, 'activityId');
+    const eSafe = validarSegmentoCaminho(exerciseId, 'exerciseId');
+    const prefixo = `historico/${aSafe}/${eSafe}/${uSafe}/`;
 
     const objetos = [];
     const stream = minioClient.listObjectsV2(BUCKET_NAME, prefixo, true);
@@ -141,7 +156,10 @@ async function lerArquivoPorPath(caminho) {
         err.code = 'PreviewIgnored';
         throw err;
     }
-    const objectName = caminho.replace(/^\/+/, '');
+    const objectName = String(caminho).replace(/^\/+/, '');
+    if (!objectName || objectName.includes('..') || objectName.includes('\\')) {
+        throw new Error("Caminho de objeto inválido.");
+    }
 
     const lerDoBucket = (bucket) => {
         return new Promise((resolve, reject) => {
@@ -181,9 +199,10 @@ async function removerArquivo(objectName) {
 async function limparArquivosAtividade(activityId) {
     if (!activityId || activityId === 'preview') return;
     try {
+        const aSafe = validarSegmentoCaminho(activityId, 'activityId');
         const objetosParaRemover = [];
 
-        const streamHist = minioClient.listObjectsV2(BUCKET_NAME, `historico/${activityId}/`, true);
+        const streamHist = minioClient.listObjectsV2(BUCKET_NAME, `historico/${aSafe}/`, true);
         await new Promise((resolve) => {
             streamHist.on('data', obj => { if (obj && obj.name) objetosParaRemover.push(obj.name); });
             streamHist.on('end', resolve);
@@ -193,8 +212,11 @@ async function limparArquivosAtividade(activityId) {
         const streamDrafts = minioClient.listObjectsV2(BUCKET_NAME, 'drafts/', true);
         await new Promise((resolve) => {
             streamDrafts.on('data', obj => {
-                if (obj && obj.name && obj.name.includes(`/${activityId}/`)) {
-                    objetosParaRemover.push(obj.name);
+                if (obj && obj.name) {
+                    const partes = obj.name.split('/');
+                    if (partes.length === 4 && partes[0] === 'drafts' && partes[2] === aSafe) {
+                        objetosParaRemover.push(obj.name);
+                    }
                 }
             });
             streamDrafts.on('end', resolve);

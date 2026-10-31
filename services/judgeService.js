@@ -86,35 +86,21 @@ function normalize(s) {
 
 function prepararTestesOrdenados(array) {
     if (!Array.isArray(array) || array.length === 0) return [];
-    const comOrigIdx = array.map((t, idx) => {
+    const embaralhados = array.map((t, idx) => {
         const obj = (t && typeof t.toObject === 'function') ? t.toObject() : { ...t };
         obj.originalIndex = idx;
         return obj;
     });
 
-    const hasExplicitVisible = comOrigIdx.some(t => t.isVisible === true);
-    const visiveis = [];
-    const fechados = [];
-
-    comOrigIdx.forEach((t, idx) => {
-        const ehVisivel = hasExplicitVisible ? (t.isVisible === true) : (idx === 0);
-        if (ehVisivel) {
-            visiveis.push(t);
-        } else {
-            fechados.push(t);
-        }
-    });
-
-    // Embaralha apenas os testes fechados/secretos para manter anti-trapaça
-    for (let i = fechados.length - 1; i > 0; i--) {
+    // Embaralha toda a bateria de casos de teste uniformemente (Fisher-Yates)
+    for (let i = embaralhados.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        const temp = fechados[i];
-        fechados[i] = fechados[j];
-        fechados[j] = temp;
+        const temp = embaralhados[i];
+        embaralhados[i] = embaralhados[j];
+        embaralhados[j] = temp;
     }
 
-    // Casos de teste visíveis (exemplos na tela) SEMPRE rodam primeiro!
-    return [...visiveis, ...fechados];
+    return embaralhados;
 }
 
 async function runTests(code, tests, containerName, timeLimitMs) {
@@ -254,52 +240,14 @@ function gerarScriptSandbox(code, tests, timeLimitMs) {
     const limitSec = timeLimitMs / 1000;
     const hardTimeoutSec = Math.min(Math.max(1, Math.ceil(limitSec * 3)), 30);
 
-    const runnerC = `
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/resource.h>
-#include <sys/types.h>
-
-int main(int argc, char *argv[]) {
-    if (argc < 3) return 1;
-    pid_t pid = fork();
-    if (pid < 0) return 1;
-    if (pid == 0) {
-        // Reduz privilégios estritamente para o usuário 'nobody' (UID/GID 65534)
-        setgid(65534);
-        setuid(65534);
-        execv(argv[1], &argv[1]);
-        exit(1);
-    } else {
-        int status;
-        struct rusage usage;
-        if (wait4(pid, &status, 0, &usage) < 0) return 1;
-        
-        double user_time = usage.ru_utime.tv_sec + (usage.ru_utime.tv_usec / 1000000.0);
-        double sys_time  = usage.ru_stime.tv_sec + (usage.ru_stime.tv_usec / 1000000.0);
-        
-        FILE *f = fopen(argv[2], "w");
-        if (f) {
-            fprintf(f, "%.6f\\n", user_time + sys_time);
-            fclose(f);
-        }
-        
-        if (WIFEXITED(status)) return WEXITSTATUS(status);
-        if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-        return 1;
-    }
-}
-`;
-    const b64Runner = Buffer.from(runnerC, 'utf-8').toString('base64');
+    const b64Runner = warmPoolService.B64_RUNNER;
 
     let scriptTestes = `
 if [ ! -f /usr/local/bin/runner ]; then
-    echo "${b64Runner}" | base64 -d > /tmp/runner.c
-    gcc -O2 /tmp/runner.c -o /usr/local/bin/runner
+    echo "${b64Runner}" | base64 -d > "$CTRL_DIR/runner.c"
+    gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
     chmod 555 /usr/local/bin/runner
-    rm -f /tmp/runner.c
+    rm -f "$CTRL_DIR/runner.c"
 fi
 `;
 
@@ -308,27 +256,31 @@ fi
 
         scriptTestes += `
 # Teste ${i}
-echo "${b64In}" | base64 -d > in_${i}.txt
+find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
+cd "$WORK_DIR"
+echo "${b64In}" | base64 -d > "$CTRL_DIR/in_${i}.txt"
 
 echo "---STEP---"
 echo "INDEX:${i}"
 
-rm -f time_${i}.txt
-timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner ./prog time_${i}.txt < in_${i}.txt > got_${i}.txt 2> err_${i}.txt
+rm -f "$CTRL_DIR/time_${i}.txt"
+timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_${i}.txt" < "$CTRL_DIR/in_${i}.txt" > "$CTRL_DIR/got_${i}.txt" 2> "$CTRL_DIR/err_${i}.txt"
 EXIT_CODE=$?
+pkill -9 -u 65534 2>/dev/null || true
 
-CPUTIME=$(cat time_${i}.txt 2>/dev/null || echo "0.000000")
+CPUTIME=$(cat "$CTRL_DIR/time_${i}.txt" 2>/dev/null || echo "0.000000")
 echo "TIME:$CPUTIME"
 
 if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
     echo "STATUS:HARD_TIME_LIMIT"
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "STATUS:RUNTIME_ERROR"
-    echo "ERR_B64:$(base64 -w 0 < err_${i}.txt 2>/dev/null || echo '')"
+    echo "ERR_B64:$(base64 -w 0 < "$CTRL_DIR/err_${i}.txt" 2>/dev/null || echo '')"
 else
     echo "STATUS:OK"
-    echo "GOT_B64:$(base64 -w 0 < got_${i}.txt 2>/dev/null || echo '')"
+    echo "GOT_B64:$(base64 -w 0 < "$CTRL_DIR/got_${i}.txt" 2>/dev/null || echo '')"
 fi
+rm -f "$CTRL_DIR/in_${i}.txt" "$CTRL_DIR/got_${i}.txt" "$CTRL_DIR/err_${i}.txt" "$CTRL_DIR/time_${i}.txt"
 `;
     });
 
@@ -339,21 +291,40 @@ export HTTP_PROXY="http://127.0.0.1:0"
 export HTTPS_PROXY="http://127.0.0.1:0"
 export all_proxy="http://127.0.0.1:0"
 
-mkdir -p /sandbox && cd /sandbox
-chmod 777 /sandbox
-ulimit -u 50
-ulimit -f 50000
+CTRL_DIR="/root/ctrl_ephemeral"
+BIN_DIR="/var/run/judge_ephemeral"
+WORK_DIR="/sandbox/work"
 
+mkdir -p /sandbox && chmod 711 /sandbox
+mkdir -p "$CTRL_DIR" && chmod 700 "$CTRL_DIR"
+mkdir -p "$BIN_DIR" && chmod 755 "$BIN_DIR"
+mkdir -p "$WORK_DIR" && chown 65534:65534 "$WORK_DIR" && chmod 700 "$WORK_DIR"
+
+cd "$WORK_DIR"
 echo "${b64Code}" | base64 -d > main.c
+chown 65534:65534 main.c
+chmod 600 main.c
+
 set +e
-COMPILE_ERR=$(gcc main.c -o prog -lm 2>&1)
+COMPILE_ERR=$(timeout -k 1s -s 9 10s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc main.c -o prog -lm' 2>&1)
 COMPILE_STATUS=$?
 
 if [ $COMPILE_STATUS -ne 0 ]; then
+    if [ $COMPILE_STATUS -eq 124 ] || [ $COMPILE_STATUS -eq 137 ]; then
+        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (10s). Verifique diretivas #include ou macros."
+    fi
     echo "STATUS:COMPILATION_ERROR"
     echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
     exit 0
 fi
+
+mv "$WORK_DIR/prog" "$BIN_DIR/prog"
+chown 0:0 "$BIN_DIR/prog"
+chmod 555 "$BIN_DIR/prog"
+rm -f "$WORK_DIR/main.c"
+
+ulimit -u 50
+ulimit -f 50000
 
 ${scriptTestes}
 echo "STATUS:ALL_PASSED"

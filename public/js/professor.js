@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnPreview = document.getElementById('btnPreview');
     const btnDesvincularAtividade = document.getElementById('btnDesvincularAtividade');
     const circleTaxaAcerto = document.getElementById('circle-taxa-acerto');
+    const gaugeTaxaAcerto = document.getElementById('gauge-taxa-acerto');
     const circleTempoMedio = document.getElementById('circle-tempo-medio');
 
     const selectProfExRanking = document.getElementById('select-prof-ex-ranking');
@@ -51,6 +52,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const chkDefinirTempo = document.getElementById('chk-definir-tempo-limite');
     const boxCampoTempo = document.getElementById('box-campo-tempo-limite');
     const labelMaxTempo = document.getElementById('label-max-tempo-limite');
+
+    const btnAbrirModalImportarListaIA = document.getElementById('btnAbrirModalImportarListaIA');
+    const btnCopiarPromptListaIA = document.getElementById('btnCopiarPromptListaIA');
+    const btnConfirmarImportarListaIA = document.getElementById('btnConfirmarImportarListaIA');
+    const inputImportarListaIATitulo = document.getElementById('inputImportarListaIATitulo');
+    const txtImportarListaJSON = document.getElementById('txtImportarListaJSON');
+
+    const btnToggleImportarTestesIA = document.getElementById('btnToggleImportarTestesIA');
+    const boxImportarTestesIA = document.getElementById('box-importar-testes-ia');
+    const btnCopiarPromptTestesIA = document.getElementById('btnCopiarPromptTestesIA');
+    const btnAplicarImportacaoTestes = document.getElementById('btnAplicarImportacaoTestes');
+    const btnFecharImportarTestesIA = document.getElementById('btnFecharImportarTestesIA');
+    const txtImportarTestesJSON = document.getElementById('txtImportarTestesJSON');
 
     const modalBtnSalvarEdicaoLista = document.getElementById('modalBtnSalvarEdicaoLista');
 
@@ -190,7 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const icones = {
             success: 'fa-check-circle',
             danger: 'fa-times-circle',
-            warning: 'fa-exclamation-triangle'
+            warning: 'fa-exclamation-triangle',
+            info: 'fa-info-circle'
         };
 
         const toast = document.createElement('div');
@@ -198,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.innerHTML = `
             <div class="d-flex align-items-center">
                 <i class="fas ${icones[tipo] || 'fa-info-circle'} mr-2" style="font-size: 1.15rem;"></i>
-                <span>${mensagem}</span>
+                <span>${escapeHtml(mensagem)}</span>
             </div>
             <button type="button" style="background: none; border: none; color: inherit; opacity: 0.65; font-size: 1.3rem; cursor: pointer; line-height: 1; padding-left: 14px;">&times;</button>
         `;
@@ -273,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function abrirModalUnificado(ex, showImportButton, isRetornoParaLista) {
-        document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${ex.title}`;
+        document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${escapeHtml(ex.title)}`;
         document.getElementById('modalVerExDescricao').innerText = ex.description || 'Sem descrição cadastrada.';
         document.getElementById('modalVerExTempoLimite').innerText = ex.timeLimit ? `${ex.timeLimit} ms` : 'Sem Limite';
 
@@ -284,11 +299,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="row">
                     <div class="col-md-6 mb-1 mb-md-0">
                         <strong class="d-block text-muted">Entrada:</strong>
-                        <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.input ? t.input : '<em>(Vazio)</em>'}</pre>
+                        <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.input ? escapeHtml(t.input) : '<em>(Vazio)</em>'}</pre>
                     </div>
                     <div class="col-md-6">
                         <strong class="d-block text-muted">Saída Esperada:</strong>
-                        <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.output ? t.output : '<em>(Vazio)</em>'}</pre>
+                        <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.output ? escapeHtml(t.output) : '<em>(Vazio)</em>'}</pre>
                     </div>
                 </div>
             `;
@@ -303,6 +318,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 btnFechar.innerText = 'Fechar';
             }
+        }
+
+        const btnTestar = document.getElementById('modalBtnTestarExAberto');
+        if (btnTestar) {
+            btnTestar.onclick = () => {
+                modalOrigemRetorno = null;
+                $('#modalVerExercicioIndividual').modal('hide');
+                abrirVisualizadorAluno(`exerciseId=${ex._id}`);
+            };
         }
 
         const btnImportar = document.getElementById('modalBtnCopiarExAberto');
@@ -490,30 +514,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         listaOrdenada.forEach(ex => {
             const isPub = ex.isPublic !== false;
+            const exIdSafe = escapeHtml(ex._id);
             const div = document.createElement('div');
             div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
             div.innerHTML = `
                 <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
-                    <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${ex._id}" value="${ex._id}">
-                    <label class="custom-control-label cursor-pointer ml-1" for="ex_${ex._id}">
-                        <strong style="font-size: 1.02rem;">${ex.title}</strong>
-                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
+                    <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${exIdSafe}" value="${exIdSafe}">
+                    <label class="custom-control-label cursor-pointer ml-1" for="ex_${exIdSafe}">
+                        <strong style="font-size: 1.02rem;">${escapeHtml(ex.title)}</strong>
+                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
                     </label>
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
                     ${isPub
                     ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Público</span>'
                     : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
-                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-meu-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
+                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-meu-ex shadow-sm" data-exid="${exIdSafe}" title="Ver enunciado e detalhes">
                         <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-ex shadow-sm" data-exid="${ex._id}" title="Testar no Modo Aluno">
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-ex shadow-sm" data-exid="${exIdSafe}" title="Testar no Modo Aluno">
                         <i class="fas fa-play"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-ex shadow-sm" data-exid="${ex._id}" title="Editar este exercício">
+                    <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-ex shadow-sm" data-exid="${exIdSafe}" title="Editar este exercício">
                         <i class="fas fa-pencil-alt"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-ex shadow-sm" data-exid="${ex._id}" title="Excluir este exercício">
+                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-ex shadow-sm" data-exid="${exIdSafe}" title="Excluir este exercício">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -552,29 +577,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         listaOrdenada.forEach(ex => {
             const isOficial = ex.authorId === 'codecheck_oficial';
-            const isPub = ex.isPublic !== false;
+            const exIdSafe = escapeHtml(ex._id);
             const div = document.createElement('div');
             div.className = `list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3 ${isOficial ? 'bg-white' : ''}`;
             div.innerHTML = `
                 <div class="text-truncate mr-2">
-                    <strong class="text-dark" style="font-size: 1.02rem;">${ex.title}</strong>
-                    ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${ex.timeLimit} ms</span>` : ''}
+                    <strong class="text-dark" style="font-size: 1.02rem;">${escapeHtml(ex.title)}</strong>
+                    ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
                     ${isOficial
                     ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
-                    : `<small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${ex.authorName || 'Professor'}</small>`
+                    : `<small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${escapeHtml(ex.authorName || 'Professor')}</small>`
                 }
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
-                    ${isPub
-                    ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Público</span>'
-                    : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privado</span>'}
-                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-ex shadow-sm" data-exid="${ex._id}" title="Ver enunciado e detalhes">
+                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-ex shadow-sm" data-exid="${exIdSafe}" title="Ver enunciado e detalhes">
                         <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-ex-comunidade shadow-sm" data-exid="${ex._id}" title="Testar no Modo Aluno">
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-ex-comunidade shadow-sm" data-exid="${exIdSafe}" title="Testar no Modo Aluno">
                         <i class="fas fa-play"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-success btn-action-round btn-importar-ex shadow-sm" data-exid="${ex._id}" title="Importar para Meus Exercícios">
+                    <button type="button" class="btn btn-outline-success btn-action-round btn-importar-ex shadow-sm" data-exid="${exIdSafe}" title="Importar para Meus Exercícios">
                         <i class="fas fa-file-import"></i>
                     </button>
                 </div>
@@ -614,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.requiresNewTitle) {
                 exIdPendenteRenomear = exerciseId;
                 if (msgConflitoEx) {
-                    msgConflitoEx.innerHTML = `Você já possui um exercício chamado <strong>"${data.currentTitle}"</strong> em Meus Exercícios. Digite um novo nome para esta cópia:`;
+                    msgConflitoEx.innerHTML = `Você já possui um exercício chamado <strong>"${escapeHtml(data.currentTitle)}"</strong> em Meus Exercícios. Digite um novo nome para esta cópia:`;
                 }
                 if (inputNomeExConflito) {
                     inputNomeExConflito.value = `${data.currentTitle} - Cópia`;
@@ -664,14 +686,15 @@ document.addEventListener('DOMContentLoaded', () => {
         listasOrdenadas.forEach(lista => {
             const isVinculada = idListaAtivaVinculada && (String(lista._id) === String(idListaAtivaVinculada));
             const isPub = lista.isPublic !== false;
+            const listIdSafe = escapeHtml(lista._id);
             const div = document.createElement('div');
             div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
 
             div.innerHTML = `
                 <div class="custom-control custom-radio mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
-                    <input type="radio" id="lista_${lista._id}" name="listaSelecionada" class="custom-control-input" value="${lista._id}" ${isVinculada ? 'checked' : ''}>
-                    <label class="custom-control-label font-weight-bold" for="lista_${lista._id}">
-                        <span style="font-size: 1.02rem;">${lista.title}</span>
+                    <input type="radio" id="lista_${listIdSafe}" name="listaSelecionada" class="custom-control-input" value="${listIdSafe}" ${isVinculada ? 'checked' : ''}>
+                    <label class="custom-control-label font-weight-bold" for="lista_${listIdSafe}">
+                        <span style="font-size: 1.02rem;">${escapeHtml(lista.title)}</span>
                         <span class="badge badge-light border text-muted ml-2">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
                         ${isVinculada ? '<span class="badge badge-success ml-2 font-weight-bold"><i class="fas fa-check-circle mr-1"></i>Ativa</span>' : ''}
                     </label>
@@ -680,13 +703,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${isPub
                     ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>'
                     : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
-                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-minha-lista shadow-sm" data-listid="${lista._id}" title="Testar lista no Modo Aluno">
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-minha-lista shadow-sm" data-listid="${listIdSafe}" title="Testar lista no Modo Aluno">
                         <i class="fas fa-play"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-minha-lista shadow-sm" data-listid="${lista._id}" title="Editar esta lista">
+                    <button type="button" class="btn btn-outline-primary btn-action-round mr-1 btn-editar-minha-lista shadow-sm" data-listid="${listIdSafe}" title="Editar esta lista">
                         <i class="fas fa-pencil-alt"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-minha-lista shadow-sm" data-listid="${lista._id}" title="Excluir esta lista">
+                    <button type="button" class="btn btn-outline-danger btn-action-round btn-excluir-minha-lista shadow-sm" data-listid="${listIdSafe}" title="Excluir esta lista">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -737,8 +760,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const div = document.createElement('div');
                         div.className = 'card p-2 bg-light border';
                         div.innerHTML = `
-                            <span class="small text-secondary mb-1">Exercício: <strong>${ex.title}</strong></span>
-                            <input type="text" class="form-control form-control-sm font-weight-bold input-conflito-ex" data-exid="${ex.id}" value="${ex.title} - Cópia">
+                            <span class="small text-secondary mb-1">Exercício: <strong>${escapeHtml(ex.title)}</strong></span>
+                            <input type="text" class="form-control form-control-sm font-weight-bold input-conflito-ex" data-exid="${escapeHtml(ex.id)}" value="${escapeHtml(ex.title)} - Cópia">
                         `;
                         containerConflitosExercicios.appendChild(div);
                     });
@@ -804,26 +827,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         listasOrdenadas.forEach(lista => {
             const isOficial = lista.authorId === 'codecheck_oficial';
-            const isPub = lista.isPublic !== false;
+            const listIdSafe = escapeHtml(lista._id);
             const div = document.createElement('div');
             div.className = `list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3 ${isOficial ? 'bg-white' : ''}`;
             div.innerHTML = `
                 <div class="text-truncate mr-2">
-                    <strong class="text-dark" style="font-size: 1.02rem;">${lista.title}</strong>
+                    <strong class="text-dark" style="font-size: 1.02rem;">${escapeHtml(lista.title)}</strong>
                     <span class="badge badge-light border text-muted ml-2">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
                     ${isOficial
                     ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
-                    : `<small class="text-muted ml-3"><i class="fas fa-user-edit mr-1"></i>${lista.authorName || 'Professor'}</small>`
+                    : `<small class="text-muted ml-3"><i class="fas fa-user-edit mr-1"></i>${escapeHtml(lista.authorName || 'Professor')}</small>`
                 }
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
-                    ${isPub
-                    ? '<span class="badge badge-info mr-3 font-weight-bold p-2"><i class="fas fa-globe mr-1"></i>Pública</span>'
-                    : '<span class="badge badge-privada mr-3 font-weight-bold p-2"><i class="fas fa-lock mr-1"></i>Privada</span>'}
-                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-lista shadow-sm" data-listid="${lista._id}" title="Ver exercícios da lista">
+                    <button type="button" class="btn btn-outline-secondary btn-action-round mr-1 btn-ver-lista shadow-sm" data-listid="${listIdSafe}" title="Ver exercícios da lista">
                         <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-success btn-action-round btn-importar-lista shadow-sm" data-listid="${lista._id}" title="Importar para Minhas Listas">
+                    <button type="button" class="btn btn-outline-info btn-action-round mr-1 btn-testar-lista-comunidade shadow-sm" data-listid="${listIdSafe}" title="Testar lista no Modo Aluno">
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-action-round btn-importar-lista shadow-sm" data-listid="${listIdSafe}" title="Importar para Minhas Listas">
                         <i class="fas fa-file-import"></i>
                     </button>
                 </div>
@@ -833,6 +856,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         containerBancoUniversal.querySelectorAll('.btn-ver-lista').forEach(btn => {
             btn.onclick = () => abrirModalVerListaComunidade(btn.dataset.listid);
+        });
+
+        containerBancoUniversal.querySelectorAll('.btn-testar-lista-comunidade').forEach(btn => {
+            btn.onclick = () => abrirVisualizadorAluno(`listId=${btn.dataset.listid}`);
         });
 
         containerBancoUniversal.querySelectorAll('.btn-importar-lista').forEach(btn => {
@@ -851,7 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lista = (window.listasComunidadeCache || []).find(l => String(l._id) === String(listId));
         if (!lista) return;
 
-        document.getElementById('modalVerListaTitulo').innerHTML = `<i class="fas fa-list-alt text-primary mr-2"></i> ${lista.title}`;
+        document.getElementById('modalVerListaTitulo').innerHTML = `<i class="fas fa-list-alt text-primary mr-2"></i> ${escapeHtml(lista.title)}`;
         document.getElementById('modalVerListaAutor').innerText = lista.authorName || 'Professor';
         document.getElementById('modalVerListaQtd').innerText = `${lista.exercises ? lista.exercises.length : 0} exercícios`;
 
@@ -862,19 +889,40 @@ document.addEventListener('DOMContentLoaded', () => {
             containerConteudo.innerHTML = '<p class="text-muted text-center py-3">Esta lista não possui exercícios cadastrados.</p>';
         } else {
             lista.exercises.forEach((ex, idx) => {
+                const exIdSafe = escapeHtml(ex._id);
                 const card = document.createElement('div');
                 card.className = 'card mb-2 border shadow-sm';
                 card.innerHTML = `
                     <div class="card-header bg-white py-2 font-weight-bold text-dark d-flex justify-content-between align-items-center">
-                        <span><strong>#${idx + 1}</strong> - ${ex.title}</span>
-                        ${ex.timeLimit ? `<span class="badge badge-light border">${ex.timeLimit} ms</span>` : ''}
+                        <span><strong>#${idx + 1}</strong> - ${escapeHtml(ex.title)}</span>
+                        <div class="d-flex align-items-center">
+                            ${ex.timeLimit ? `<span class="badge badge-light border mr-2">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
+                            <button type="button" class="btn btn-xs btn-outline-info font-weight-bold btn-testar-ex-modal shadow-sm" data-exid="${exIdSafe}" title="Testar este exercício">
+                                <i class="fas fa-play mr-1"></i> Testar
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body p-2 bg-light">
-                        <p class="mb-0 text-secondary small" style="white-space: pre-line;">${ex.description || 'Sem enunciado cadastrado.'}</p>
+                        <p class="mb-0 text-secondary small" style="white-space: pre-line;">${escapeHtml(ex.description || 'Sem enunciado cadastrado.')}</p>
                     </div>
                 `;
                 containerConteudo.appendChild(card);
             });
+
+            containerConteudo.querySelectorAll('.btn-testar-ex-modal').forEach(btn => {
+                btn.onclick = () => {
+                    $('#modalVerExerciciosLista').modal('hide');
+                    abrirVisualizadorAluno(`exerciseId=${btn.dataset.exid}`);
+                };
+            });
+        }
+
+        const btnTestarModal = document.getElementById('modalBtnTestarListaAberta');
+        if (btnTestarModal) {
+            btnTestarModal.onclick = () => {
+                $('#modalVerExerciciosLista').modal('hide');
+                abrirVisualizadorAluno(`listId=${lista._id}`);
+            };
         }
 
         const btnImportarModal = document.getElementById('modalBtnImportarListaAberta');
@@ -917,18 +965,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         todosExs.forEach(ex => {
             const isChecked = idsNaLista.includes(String(ex._id));
+            const exIdSafe = escapeHtml(ex._id);
             const div = document.createElement('div');
             div.className = 'd-flex justify-content-between align-items-center border-bottom py-2 px-2 item-edit-lista-ex';
             div.dataset.titulo = (ex.title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             div.innerHTML = `
                 <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem;">
-                    <input type="checkbox" class="custom-control-input chk-edit-lista-ex" id="edit_ex_${ex._id}" value="${ex._id}" ${isChecked ? 'checked' : ''}>
-                    <label class="custom-control-label cursor-pointer ml-1" for="edit_ex_${ex._id}">
-                        <strong>${ex.title}</strong>
-                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1 font-weight-normal">${ex.timeLimit} ms</span>` : ''}
+                    <input type="checkbox" class="custom-control-input chk-edit-lista-ex" id="edit_ex_${exIdSafe}" value="${exIdSafe}" ${isChecked ? 'checked' : ''}>
+                    <label class="custom-control-label cursor-pointer ml-1" for="edit_ex_${exIdSafe}">
+                        <strong>${escapeHtml(ex.title)}</strong>
+                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1 font-weight-normal">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
                     </label>
                 </div>
-                <button type="button" class="btn btn-outline-secondary btn-action-round btn-ver-ex-modal shadow-sm" data-exid="${ex._id}" title="Ver enunciado do exercício" style="width: 32px; height: 32px; font-size: 0.95rem;">
+                <button type="button" class="btn btn-outline-secondary btn-action-round btn-ver-ex-modal shadow-sm" data-exid="${exIdSafe}" title="Ver enunciado do exercício" style="width: 32px; height: 32px; font-size: 0.95rem;">
                     <i class="fas fa-eye"></i>
                 </button>
             `;
@@ -1362,14 +1411,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const input = item.querySelector('.input-val').value;
                 const output = item.querySelector('.output-val').value;
                 const isVisible = item.querySelector('.chk-teste-visivel')?.checked || false;
-                if (output.trim() !== '') {
-                    if (isVisible) countVisiveis++;
-                    tests.push({ input, output, isVisible });
-                }
+                if (isVisible) countVisiveis++;
+                tests.push({ input, output, isVisible });
             });
 
             if (tests.length === 0) {
-                mostrarToast("Adicione pelo menos um caso de teste com saída esperada.", "warning");
+                mostrarToast("Adicione pelo menos um caso de teste para o exercício.", "warning");
                 return;
             }
 
@@ -1475,6 +1522,384 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnSalvarNovaLista.innerText = "Salvar Nova Lista";
             }
         };
+    }
+
+    // =========================================================================
+    // IMPORTAÇÃO DE TESTES E LISTAS VIA IA / JSON
+    // =========================================================================
+
+    function extrairJSONLeniente(texto) {
+        if (!texto || typeof texto !== 'string') return null;
+        let limpo = texto.trim();
+        const matchBloco = limpo.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        if (matchBloco && matchBloco[1]) {
+            limpo = matchBloco[1].trim();
+        }
+        const primeiroColchete = limpo.indexOf('[');
+        const primeiraChave = limpo.indexOf('{');
+        let inicio = -1;
+        let fim = -1;
+        if (primeiroColchete !== -1 && (primeiraChave === -1 || primeiroColchete < primeiraChave)) {
+            inicio = primeiroColchete;
+            fim = limpo.lastIndexOf(']');
+        } else if (primeiraChave !== -1) {
+            inicio = primeiraChave;
+            fim = limpo.lastIndexOf('}');
+        }
+        if (inicio !== -1 && fim !== -1 && fim >= inicio) {
+            limpo = limpo.substring(inicio, fim + 1);
+        }
+        return JSON.parse(limpo);
+    }
+
+    async function copiarParaAreaTransferencia(texto, mensagemSucesso = "Copiado para a área de transferência!") {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(texto);
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = texto;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            mostrarToast(mensagemSucesso, 'success');
+        } catch (e) {
+            console.error("Erro ao copiar para clipboard:", e);
+            mostrarToast("Não foi possível copiar automaticamente. Selecione e copie manualmente.", "warning");
+        }
+    }
+
+    function gerarPromptTestesIA() {
+        const titulo = document.getElementById('modal-titulo')?.value.trim();
+        const desc = document.getElementById('modal-desc')?.value.trim();
+
+        if (!titulo) {
+            mostrarToast("O Título do exercício é obrigatório para copiar o prompt.", "warning");
+            document.getElementById('modal-titulo')?.focus();
+            return null;
+        }
+
+        if (!desc) {
+            mostrarToast("A Descrição da atividade é obrigatória para copiar o prompt.", "warning");
+            document.getElementById('modal-desc')?.focus();
+            return null;
+        }
+
+        // Puxa todos os casos de teste já preenchidos pelo professor para servirem de base no prompt
+        const testesBase = [];
+        document.querySelectorAll('#modal-container-testes .teste-item').forEach((item) => {
+            const inp = item.querySelector('.input-val')?.value || '';
+            const out = item.querySelector('.output-val')?.value || '';
+            if (inp.trim() !== '' || out.trim() !== '') {
+                testesBase.push({
+                    entrada: inp,
+                    saida: out
+                });
+            }
+        });
+
+        let secaoTestesBase = '';
+        let instrucaoTestesBase = '';
+        if (testesBase.length > 0) {
+            secaoTestesBase = `\nCasos de Teste Base (adicionados pelo professor como exemplo de entrada e saída):\n${JSON.stringify(testesBase, null, 2)}\n`;
+            instrucaoTestesBase = `\n5. Utilize os Casos de Teste Base fornecidos acima como referência obrigatória para o padrão de formatação de entrada e saída esperada, mantendo-os como os primeiros casos do array JSON.`;
+        }
+
+        const texto = `Você é um assistente especialista em criação de casos de teste para programação competitiva e juízes online (CodeCheck).
+Gere exatamente 50 casos de teste rigorosos (cobrindo entradas normais, casos extremos/edge cases, limites e valores inesperados) exclusivamente para o seguinte exercício de programação:
+
+Título do Exercício:
+${titulo}
+
+Descrição da Atividade:
+${desc}
+${secaoTestesBase}
+IMPORTANTE:
+1. Gere exatamente 50 casos de teste no total.
+2. Retorne APENAS um array JSON no formato abaixo, sem nenhum texto explicativo antes ou depois:
+[
+  {
+    "entrada": "...",
+    "saida": "..."
+  }
+]
+3. A separação de múltiplos valores de entrada ou linhas deve ser feita por quebra de linha (\\n).
+4. Não adicione textos nem explicações fora do array JSON.${instrucaoTestesBase}`;
+
+        return {
+            texto,
+            qtdTestesBase: testesBase.length
+        };
+    }
+
+    function gerarPromptListaIA() {
+        const nomeLista = document.getElementById('inputImportarListaIATitulo')?.value.trim();
+        const tema = nomeLista || "[Defina o tema ou nome da lista]";
+
+        return `Você é um professor universitário e criador de questões de programação para juiz online (CodeCheck).
+Crie uma lista de exercícios de programação para a disciplina.
+
+Instruções da Lista:
+- Tema ou Nome da Lista: ${tema}
+- Quantidade de Exercícios: [Defina a quantidade de exercícios desejada]
+- Quantidade de Testes por Exercício: padrão de exatamente 50 casos de teste por exercício.
+- Dificuldade: Progressiva.
+
+Para CADA exercício, forneça:
+1. Título do exercício
+2. Descrição detalhada da atividade (especificando claramente o formato da entrada e da saída esperada)
+3. Exatamente 50 casos de teste rigorosos (cobrindo entradas normais, casos extremos e limites)
+
+IMPORTANTE:
+Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou depois:
+{
+  "titulo": "${nomeLista || "Nome da Lista"}",
+  "exercicios": [
+    {
+      "titulo": "Título do Exercício 1",
+      "descricao": "Descrição detalhada da atividade...",
+      "testes": [
+        { "entrada": "valor1\\nvalor2", "saida": "resultado_esperado" },
+        { "entrada": "valor3\\nvalor4", "saida": "resultado_esperado" }
+      ]
+    }
+  ]
+}`;
+    }
+
+    function aplicarImportacaoTestes(jsonStr) {
+        if (!jsonStr || !jsonStr.trim()) {
+            mostrarToast("Cole o resultado do prompt antes de preencher os testes.", "warning");
+            return;
+        }
+
+        let parsed;
+        try {
+            parsed = extrairJSONLeniente(jsonStr);
+        } catch (e) {
+            mostrarToast("Erro ao interpretar o formato dos testes. Verifique a estrutura e tente novamente.", "danger");
+            return;
+        }
+
+        const rawList = Array.isArray(parsed) ? parsed : (parsed.testes || parsed.tests || []);
+        if (!Array.isArray(rawList) || rawList.length === 0) {
+            mostrarToast("Nenhum caso de teste encontrado no texto fornecido.", "warning");
+            return;
+        }
+
+        const testesValidos = [];
+        rawList.forEach((t) => {
+            if (!t || typeof t !== 'object') return;
+            const temPropriedade = ('output' in t) || ('saida' in t) || ('input' in t) || ('entrada' in t);
+            if (!temPropriedade) return;
+
+            const out = (t.output !== undefined && t.output !== null) ? String(t.output) :
+                ((t.saida !== undefined && t.saida !== null) ? String(t.saida) : '');
+            const inp = (t.input !== undefined && t.input !== null) ? String(t.input) :
+                ((t.entrada !== undefined && t.entrada !== null) ? String(t.entrada) : '');
+
+            testesValidos.push({ input: inp, output: out });
+        });
+
+        if (testesValidos.length === 0) {
+            mostrarToast("Nenhum caso de teste encontrado no texto fornecido.", "warning");
+            return;
+        }
+
+        if (modalContainerTestes) {
+            modalContainerTestes.innerHTML = '';
+            testesValidos.forEach((t, idx) => {
+                // Regra mandatória: 1º teste é visível (true) e os subsequentes são falsos (false)
+                const isVisivel = (idx === 0);
+                const div = criarItemTesteHTML(idx + 1, t.input, t.output, isVisivel);
+                modalContainerTestes.appendChild(div);
+            });
+            atualizarContadorTestesVisiveis();
+            renumerarTestes();
+        }
+
+        if (boxImportarTestesIA) boxImportarTestesIA.style.display = 'none';
+        if (txtImportarTestesJSON) txtImportarTestesJSON.value = '';
+
+        mostrarToast(`${testesValidos.length} casos de teste preenchidos com sucesso!`, "success");
+    }
+
+    async function confirmarImportarListaIA() {
+        const jsonStr = txtImportarListaJSON?.value.trim();
+        if (!jsonStr) {
+            mostrarToast("Cole a resposta do prompt antes de criar a lista.", "warning");
+            return;
+        }
+
+        let parsed;
+        try {
+            parsed = extrairJSONLeniente(jsonStr);
+        } catch (e) {
+            mostrarToast("Erro ao interpretar a estrutura da lista. Verifique e tente novamente.", "danger");
+            return;
+        }
+
+        let titulo = inputImportarListaIATitulo?.value.trim();
+        let exercicios = [];
+
+        if (Array.isArray(parsed)) {
+            exercicios = parsed;
+        } else if (typeof parsed === 'object' && parsed !== null) {
+            const tituloDoJSON = (parsed.titulo || parsed.title || '').trim();
+            if (!titulo && tituloDoJSON && !tituloDoJSON.toLowerCase().startsWith('digite aqui')) {
+                titulo = tituloDoJSON;
+                if (inputImportarListaIATitulo) inputImportarListaIATitulo.value = titulo;
+            }
+            exercicios = parsed.exercicios || parsed.exercises || [];
+        }
+
+        if (!titulo) {
+            mostrarToast("Informe o nome da lista antes de continuar.", "warning");
+            if (inputImportarListaIATitulo) inputImportarListaIATitulo.focus();
+            return;
+        }
+
+        if (!Array.isArray(exercicios) || exercicios.length === 0) {
+            mostrarToast("Nenhum exercício encontrado na resposta colada.", "warning");
+            return;
+        }
+
+        if (btnConfirmarImportarListaIA) {
+            btnConfirmarImportarListaIA.disabled = true;
+            btnConfirmarImportarListaIA.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Criando Lista e Exercícios...';
+        }
+
+        try {
+            const payload = {
+                title: titulo,
+                exercises: exercicios,
+                isPrivate: false // Pública por padrão, conforme solicitado
+            };
+
+            const res = await fetch(`/judge/lista-ia` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                if (window.$) $('#modalImportarListaIA').modal('hide');
+                if (txtImportarListaJSON) txtImportarListaJSON.value = '';
+                if (inputImportarListaIATitulo) inputImportarListaIATitulo.value = '';
+
+                mostrarToast(`Lista "${data.lista.title}" criada com sucesso com ${data.totalExercicios} exercícios!`, "success");
+
+                await carregarEstadoInicial();
+
+                if (data.lista && data.lista._id) {
+                    const radioNova = document.querySelector(`input[name="listaSelecionada"][value="${data.lista._id}"]`);
+                    if (radioNova) {
+                        radioNova.checked = true;
+                        radioNova.dispatchEvent(new Event('change', { bubbles: true }));
+                        radioNova.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+
+                if (window.$ && tabListasLink) {
+                    $(tabListasLink).tab('show');
+                }
+            } else {
+                mostrarToast(data.error || "Erro ao criar lista com prompt.", "danger");
+            }
+        } catch (err) {
+            console.error("Erro na requisição lista-ia:", err);
+            mostrarToast("Erro de conexão ao criar lista.", "danger");
+        } finally {
+            if (btnConfirmarImportarListaIA) {
+                btnConfirmarImportarListaIA.disabled = false;
+                btnConfirmarImportarListaIA.innerHTML = 'Criar Lista';
+            }
+        }
+    }
+
+    if (btnToggleImportarTestesIA && boxImportarTestesIA) {
+        btnToggleImportarTestesIA.onclick = () => {
+            const estaVisivel = boxImportarTestesIA.style.display !== 'none';
+            boxImportarTestesIA.style.display = estaVisivel ? 'none' : 'block';
+            if (!estaVisivel) {
+                const titulo = document.getElementById('modal-titulo')?.value.trim();
+                const desc = document.getElementById('modal-desc')?.value.trim();
+                if (!titulo || !desc) {
+                    mostrarToast("Dica: Preencha o Título e a Descrição (obrigatórios) e, para saídas mais precisas, insira alguns casos de teste abaixo para servir de base.", "info", 5000);
+                }
+                if (txtImportarTestesJSON) {
+                    txtImportarTestesJSON.focus();
+                }
+            }
+        };
+    }
+
+    if (btnFecharImportarTestesIA && boxImportarTestesIA) {
+        btnFecharImportarTestesIA.onclick = () => {
+            boxImportarTestesIA.style.display = 'none';
+        };
+    }
+
+    if (btnCopiarPromptTestesIA) {
+        btnCopiarPromptTestesIA.onclick = () => {
+            const resultadoPrompt = gerarPromptTestesIA();
+            if (resultadoPrompt) {
+                const msg = resultadoPrompt.qtdTestesBase > 0
+                    ? `Prompt copiado com título, descrição e ${resultadoPrompt.qtdTestesBase} ${resultadoPrompt.qtdTestesBase === 1 ? 'caso de teste' : 'casos de teste'} como base!`
+                    : "Prompt copiado com o título e a descrição do exercício!";
+                copiarParaAreaTransferencia(resultadoPrompt.texto, msg);
+            }
+        };
+    }
+
+    if (btnAplicarImportacaoTestes) {
+        btnAplicarImportacaoTestes.onclick = () => {
+            aplicarImportacaoTestes(txtImportarTestesJSON?.value);
+        };
+    }
+
+    if (btnAbrirModalImportarListaIA) {
+        btnAbrirModalImportarListaIA.onclick = () => {
+            if (window.$) $('#modalImportarListaIA').modal('show');
+        };
+    }
+
+    if (btnCopiarPromptListaIA) {
+        btnCopiarPromptListaIA.onclick = () => {
+            copiarParaAreaTransferencia(gerarPromptListaIA(), "Prompt para criar lista copiado!");
+        };
+    }
+
+    if (btnConfirmarImportarListaIA) {
+        btnConfirmarImportarListaIA.onclick = confirmarImportarListaIA;
+    }
+
+    if (txtImportarListaJSON) {
+        txtImportarListaJSON.addEventListener('input', () => {
+            if (inputImportarListaIATitulo && !inputImportarListaIATitulo.value.trim()) {
+                try {
+                    const p = extrairJSONLeniente(txtImportarListaJSON.value);
+                    const t = (p && (p.titulo || p.title)) ? (p.titulo || p.title).trim() : '';
+                    if (t && !t.toLowerCase().startsWith('digite aqui')) {
+                        inputImportarListaIATitulo.value = t;
+                    }
+                } catch (e) { }
+            }
+        });
+    }
+
+    if (window.$) {
+        $('#modalImportarListaIA').on('hidden.bs.modal', () => {
+            if (txtImportarListaJSON) txtImportarListaJSON.value = '';
+            if (inputImportarListaIATitulo) inputImportarListaIATitulo.value = '';
+        });
     }
 
     if (btnVincularLista) {
@@ -1620,6 +2045,66 @@ document.addEventListener('DOMContentLoaded', () => {
         'Nenhum exercício da comunidade encontrado para esta pesquisa.'
     );
 
+    let animTaxaAcertoFrame = null;
+
+    function renderizarTaxaAcertoAnimada(taxaAlvo) {
+        const alvo = Math.max(0, Math.min(100, Math.round(Number(taxaAlvo) || 0)));
+        const circle = circleTaxaAcerto || document.getElementById('circle-taxa-acerto');
+        const gauge = gaugeTaxaAcerto || document.getElementById('gauge-taxa-acerto');
+        if (!circle) return;
+
+        // Determina a cor com base na faixa:
+        // < 40%: Vermelho (#dc3545)
+        // 40% a 69%: Laranja (#fd7e14)
+        // >= 70%: Verde (#28a745)
+        function obterCorTaxa(pct) {
+            if (pct >= 70) return '#28a745';
+            if (pct >= 40) return '#fd7e14';
+            return '#dc3545';
+        }
+
+        const corFinal = obterCorTaxa(alvo);
+
+        if (!gauge) {
+            circle.style.color = corFinal;
+            circle.innerText = `${alvo}%`;
+            return;
+        }
+
+        if (animTaxaAcertoFrame) {
+            cancelAnimationFrame(animTaxaAcertoFrame);
+            animTaxaAcertoFrame = null;
+        }
+
+        const textoAtual = (circle.innerText || '').replace(/[^0-9]/g, '');
+        const valorInicial = textoAtual ? parseInt(textoAtual, 10) : 0;
+        const duracaoMs = 750;
+        const inicio = performance.now();
+
+        function animar(agora) {
+            const decorrido = agora - inicio;
+            const progresso = Math.min(1, decorrido / duracaoMs);
+            const ease = 1 - Math.pow(1 - progresso, 3); // out-cubic
+            const valorAtual = Math.round(valorInicial + (alvo - valorInicial) * ease);
+            const corAtual = obterCorTaxa(valorAtual);
+
+            gauge.style.background = `conic-gradient(${corAtual} 0% ${valorAtual}%, #e9ecef ${valorAtual}% 100%)`;
+            circle.style.color = corAtual;
+            circle.innerText = `${valorAtual}%`;
+
+            if (progresso < 1) {
+                animTaxaAcertoFrame = requestAnimationFrame(animar);
+            } else {
+                gauge.style.background = `conic-gradient(${corFinal} 0% ${alvo}%, #e9ecef ${alvo}% 100%)`;
+                circle.style.color = corFinal;
+                circle.innerText = `${alvo}%`;
+                animTaxaAcertoFrame = null;
+            }
+        }
+
+        animTaxaAcertoFrame = requestAnimationFrame(animar);
+    }
+
     async function carregarMetricasTurma() {
         const activityIdMeta = document.querySelector('meta[name="activity-id"]');
         const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
@@ -1634,9 +2119,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (!data.success) {
-                if (circleTaxaAcerto) circleTaxaAcerto.innerText = '0%';
+                renderizarTaxaAcertoAnimada(0);
                 if (circleTempoMedio) circleTempoMedio.innerText = '-';
-                if (tbodyAlunosProgresso) tbodyAlunosProgresso.innerHTML = `<tr><td colspan="4" class="text-center text-warning py-3">${data.message || 'Erro ao carregar dados.'}</td></tr>`;
+                if (tbodyAlunosProgresso) tbodyAlunosProgresso.innerHTML = `<tr><td colspan="4" class="text-center text-warning py-3">${escapeHtml(data.message || 'Erro ao carregar dados.')}</td></tr>`;
                 return;
             }
 
@@ -1645,9 +2130,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rankingPorExercicioCarregado = data.rankingPorExercicio || {};
             totalExerciciosAtividade = data.totalExercicios || metricasGlobaisExercicios.length || 0;
 
-            if (circleTaxaAcerto) {
-                circleTaxaAcerto.innerText = `${typeof data.taxaGeralAcertos === 'number' ? data.taxaGeralAcertos : 0}%`;
-            }
+            renderizarTaxaAcertoAnimada(typeof data.taxaGeralAcertos === 'number' ? data.taxaGeralAcertos : 0);
             if (circleTempoMedio) {
                 circleTempoMedio.innerText = data.tempoMedioMs > 0 ? formatarTempo(data.tempoMedioMs) : '-';
             }
@@ -1668,7 +2151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         tr.innerHTML = `
                             <td>
-                                <strong>${aluno.userName}</strong>
+                                <strong>${escapeHtml(aluno.userName)}</strong>
                             </td>
                             <td class="text-center">
                                 <span class="badge ${badgeCor} font-weight-bold px-2 py-1" style="font-size: 0.85rem;">
@@ -1679,7 +2162,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ${aluno.totalTentativas} envios
                             </td>
                             <td class="text-right pr-4">
-                                <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${aluno.userId}" title="Inspecionar código do aluno">
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-abrir-dossie py-0 px-2 font-weight-bold" data-userid="${escapeHtml(aluno.userId)}" title="Inspecionar código do aluno">
                                     <i class="fas fa-eye mr-1"></i> Ver Submissões
                                 </button>
                             </td>
@@ -1702,7 +2185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
                             <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
-                            <td><strong>${aluno.userName}</strong></td>
+                            <td><strong>${escapeHtml(aluno.userName)}</strong></td>
                             <td class="text-center font-weight-bold text-primary">${aluno.totalResolvidos}</td>
                             <td class="text-right text-muted">${aluno.totalResolvidos > 0 ? formatarTempo(aluno.tempoTotalMs) : '-'}</td>
                         `;
@@ -1754,7 +2237,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="font-weight-bold">${idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : idx + 1))}</td>
-                <td><strong>${aluno.userName}</strong></td>
+                <td><strong>${escapeHtml(aluno.userName)}</strong></td>
                 <td class="text-right font-weight-bold text-secondary">${formatarTempo(aluno.executionTime)}</td>
             `;
             tbodyProfRankingEx.appendChild(tr);
@@ -1770,7 +2253,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!alunoSelecionado) return;
 
         document.getElementById('modalAlunoTitulo').innerHTML = `
-            <i class="fas fa-user-graduate mr-2 text-primary"></i> Submissões de: <strong>${alunoSelecionado.userName}</strong>
+            <i class="fas fa-user-graduate mr-2 text-primary"></i> Submissões de: <strong>${escapeHtml(alunoSelecionado.userName)}</strong>
         `;
 
         listaExerciciosModal = metricasGlobaisExercicios || [];
@@ -2170,7 +2653,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const statusBadge = sub.isAccepted
                         ? `<span class="badge badge-success font-weight-bold"><i class="fas fa-check-circle mr-1"></i>Accepted</span>`
-                        : `<span class="badge badge-danger font-weight-bold"><i class="fas fa-times-circle mr-1"></i>${sub.status || 'Erro'}</span>`;
+                        : `<span class="badge badge-danger font-weight-bold"><i class="fas fa-times-circle mr-1"></i>${escapeHtml(sub.status || 'Erro')}</span>`;
 
                     const tempoFormat = sub.isAccepted
                         ? `<span class="d-inline-flex align-items-center justify-content-center">${isMelhor ? '<i class="fas fa-star text-warning mr-1" title="Melhor Tempo do Aluno"></i>' : ''}<strong>${formatarTempo(sub.executionTime)}</strong></span>`
@@ -2182,7 +2665,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td class="text-center align-middle text-muted small">${dataFormat}</td>
                         <td class="text-center align-middle">
                             <button type="button" class="btn btn-xs ${sub.isAccepted ? 'btn-outline-primary' : 'btn-outline-danger'} py-1 px-2 btn-carregar-codigo font-weight-bold" 
-                                    data-codepath="${sub.codePath}" data-ex="${sub.exerciseId}" data-title="${exAtual.title}" data-subid="${sub._id}">
+                                    data-codepath="${escapeHtml(sub.codePath)}" data-ex="${escapeHtml(sub.exerciseId)}" data-title="${escapeHtml(exAtual.title)}" data-subid="${escapeHtml(sub._id)}">
                                 <i class="fas fa-eye mr-1"></i> Inspecionar
                             </button>
                         </td>
@@ -2245,6 +2728,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkPrivado) chkPrivado.checked = false;
         if (chkDefinirTempoEl) chkDefinirTempoEl.checked = false;
         if (boxCampoTempoEl) boxCampoTempoEl.style.display = 'none';
+
+        if (boxImportarTestesIA) boxImportarTestesIA.style.display = 'none';
+        if (txtImportarTestesJSON) txtImportarTestesJSON.value = '';
 
         if (containerTestes) {
             containerTestes.innerHTML = '';

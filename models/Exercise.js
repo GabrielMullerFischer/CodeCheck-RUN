@@ -9,8 +9,8 @@ const ExerciseSchema = new mongoose.Schema({
     timeLimit: { type: Number, default: 1000 },
     isArchived: { type: Boolean, default: false },
     tests: [{
-        input: { type: String, required: true },
-        output: { type: String, required: true },
+        input: { type: String, default: '' },
+        output: { type: String, default: '' },
         isVisible: { type: Boolean, default: false }
     }],
     createdAt: { type: Date, default: Date.now }
