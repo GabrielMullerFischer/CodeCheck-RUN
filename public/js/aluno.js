@@ -268,6 +268,89 @@ document.addEventListener('DOMContentLoaded', async () => {
             .replace(/'/g, "&#039;");
     }
 
+    function formatarEntradaComNumeracao(rawInput, comAlinhamento = true) {
+        if (!rawInput || !String(rawInput).trim() || rawInput === '(sem entrada)') {
+            return {
+                html: `<div class="d-flex align-items-stretch">
+                    ${comAlinhamento ? '<div class="io-gutter-placeholder"></div>' : ''}
+                    <div class="flex-grow-1" style="min-width: 0;">
+                        <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">(sem entrada)</pre>
+                    </div>
+                </div>`,
+                totalLeituras: 0
+            };
+        }
+
+        const texto = String(rawInput).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n$/, '');
+        const linhas = texto.split('\n');
+
+        const gutterHtml = linhas.map((_, idx) => {
+            const num = idx + 1;
+            return `<span class="io-gutter-num" title="Entrada #${num} (${num}ª leitura)">${num}</span>`;
+        }).join('');
+
+        const html = `
+            <div class="io-numbered-wrapper">
+                <div class="io-gutter" aria-hidden="true" title="Ordem das leituras de entrada (stdin)">
+                    ${gutterHtml}
+                </div>
+                <div class="io-box-container">
+                    <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${escapeHtml(texto)}</pre>
+                </div>
+            </div>
+        `;
+
+        return {
+            html,
+            totalLeituras: linhas.length
+        };
+    }
+
+    function formatarSaidaComNumeracao(rawOutput, classeCor = 'text-dark') {
+        const textoOriginal = (rawOutput !== null && rawOutput !== undefined) ? String(rawOutput) : '';
+        if (!textoOriginal.trim()) {
+            return {
+                html: `
+                    <div class="d-flex align-items-stretch">
+                        <div class="io-gutter-placeholder"></div>
+                        <div class="flex-grow-1" style="min-width: 0;">
+                            <pre class="p-2 border rounded ${classeCor} pre-io mb-0 font-monospace">${escapeHtml(textoOriginal || '(vazio)')}</pre>
+                        </div>
+                    </div>
+                `,
+                totalLinhas: 0
+            };
+        }
+
+        const texto = textoOriginal.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n$/, '');
+        const linhas = texto.split('\n');
+
+        const gutterHtml = linhas.map((_, idx) => {
+            const num = idx + 1;
+            return `<span class="io-gutter-num" title="Linha de saída #${num} (${num}ª linha impressa)">${num}</span>`;
+        }).join('');
+
+        const html = `
+            <div class="io-numbered-wrapper">
+                <div class="io-gutter" aria-hidden="true" title="Ordem das linhas de saída (stdout)">
+                    ${gutterHtml}
+                </div>
+                <div class="io-box-container">
+                    <pre class="p-2 border rounded ${classeCor} pre-io mb-0 font-monospace">${escapeHtml(texto)}</pre>
+                </div>
+            </div>
+        `;
+
+        return {
+            html,
+            totalLinhas: linhas.length
+        };
+    }
+
+    function formatarSaidaComAlinhamento(rawOutput, classeCor = 'text-dark') {
+        return formatarSaidaComNumeracao(rawOutput, classeCor).html;
+    }
+
     function formatarTempoExecucao(ms) {
         if (ms === null || ms === undefined || ms === '') return '-';
         const num = Number(ms);
@@ -308,7 +391,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let badgePorcentagem = '';
         if (total > 0) {
-            badgePorcentagem = `<span class="badge ${data.status === 'Accepted' ? 'badge-success' : 'badge-light border text-danger'} font-weight-bold" style="font-size: 0.85rem;"><i class="fas fa-chart-pie mr-1"></i>${pct}% Correto </span>`;
+            let badgeClass = 'badge-danger';
+            if (data.status === 'Accepted') {
+                badgeClass = 'badge-success text-white';
+            } else if (passed > 0) {
+                badgeClass = 'badge-warning text-dark border';
+            }
+            badgePorcentagem = `<span class="badge ${badgeClass} font-weight-bold" style="font-size: 0.85rem;"><i class="fas fa-chart-pie mr-1"></i>${pct}% Correto </span>`;
         }
 
         const tempoFormatado = formatarTempoExecucao(data.executionTime);
@@ -361,6 +450,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         } else if (data.status === 'Wrong Answer') {
             removerDestaqueErro();
+            const entradaInfo = formatarEntradaComNumeracao(data.input);
+            const suaSaidaInfo = formatarSaidaComNumeracao(data.got || '', 'text-danger');
+            const esperadaInfo = formatarSaidaComNumeracao(data.expected, 'text-success');
+
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
                     ${cardDica}
@@ -369,48 +462,73 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ${badgePorcentagem}
                     </div>
                     <div class="small mt-2">
-                        <div class="mb-1"><strong>Entrada:</strong></div>
-                        <pre class="p-2 border rounded text-dark pre-io">${escapeHtml(data.input) || '(sem entrada)'}</pre>
-                        <div class="mb-1 mt-2"><strong>Sua saída:</strong></div>
-                        <pre class="p-2 border rounded text-danger pre-io">${escapeHtml(data.got) || '(vazio)'}</pre>
-                        <div class="mb-1 mt-2"><strong>Saída Esperada:</strong></div>
-                        <pre class="p-2 border rounded text-success pre-io">${escapeHtml(data.expected)}</pre>
+                        <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
+                            <strong>Entrada:</strong>
+                            ${entradaInfo.totalLeituras > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${entradaInfo.totalLeituras} ${entradaInfo.totalLeituras === 1 ? 'leitura' : 'leituras'}</span>` : ''}
+                        </div>
+                        ${entradaInfo.html}
+                        <div class="d-flex align-items-center mb-1 mt-2" style="padding-left: 24px;">
+                            <strong>Sua saída:</strong>
+                            ${suaSaidaInfo.totalLinhas > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${suaSaidaInfo.totalLinhas} ${suaSaidaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>` : ''}
+                        </div>
+                        ${suaSaidaInfo.html}
+                        <div class="d-flex align-items-center mb-1 mt-2" style="padding-left: 24px;">
+                            <strong>Saída Esperada:</strong>
+                            ${esperadaInfo.totalLinhas > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${esperadaInfo.totalLinhas} ${esperadaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>` : ''}
+                        </div>
+                        ${esperadaInfo.html}
                     </div>
                 </div>
             `;
         } else if (data.status === 'Time Limit') {
             removerDestaqueErro();
-            const ehLaranja = !!data.isSlowMatch;
-            const alertClass = ehLaranja ? 'alert-warning' : 'alert-danger';
-            const titulo = ehLaranja ? 'Tempo limite excedido (Lógica correta)' : 'Tempo limite excedido.';
-            const subTexto = ehLaranja
-                ? (data.message || 'A saída coincide com o esperado, porém o tempo limite do exercício foi atingido. Tente otimizar seu algoritmo!')
-                : 'Verifique se há laços infinitos ou se a condição de parada do laço está correta.';
-
             resultDiv.innerHTML = `
-                <div class="alert ${alertClass} py-2">
+                <div class="alert alert-danger py-2">
                     ${cardDica}
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <strong>${titulo}</strong>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <strong>Tempo Limite Excedido</strong>
                         ${badgePorcentagem}
                     </div>
-                    <div class="small mt-1 text-dark">${escapeHtml(subTexto)}</div>
                 </div>
             `;
         } else {
             removerDestaqueErro();
             let detalheMsg = data.details || data.message || 'Erro durante a execução.';
-            if (detalheMsg.includes('HTTP-Code') || detalheMsg.includes('apiVersion') || detalheMsg.includes('{"kind"') || detalheMsg.includes('Kubernetes')) {
+            const ehErroInfra = detalheMsg.includes('HTTP-Code') || detalheMsg.includes('apiVersion') || detalheMsg.includes('{"kind"') || detalheMsg.includes('Kubernetes') || detalheMsg.includes('indisponível');
+            if (ehErroInfra) {
                 detalheMsg = 'O ambiente de compilação está temporariamente indisponível ou reiniciando no servidor. Tente novamente em instantes.';
             }
+            const temCasoTeste = !ehErroInfra && (data.input !== undefined || data.expected !== undefined);
+            const entradaInfo = temCasoTeste ? formatarEntradaComNumeracao(data.input) : null;
+            const suaSaidaInfo = temCasoTeste ? formatarSaidaComNumeracao(data.got || '', 'text-danger') : null;
+            const esperadaInfo = temCasoTeste ? formatarSaidaComNumeracao(data.expected, 'text-success') : null;
+
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
                     ${cardDica}
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <strong>${escapeHtml(data.status)}:</strong>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>${escapeHtml(data.status === 'Runtime Error' ? 'Erro de Execução' : data.status)}</strong>
                         ${badgePorcentagem}
                     </div>
-                    <div>${escapeHtml(detalheMsg)}</div>
+                    ${!temCasoTeste ? `<div>${escapeHtml(detalheMsg)}</div>` : `
+                    <div class="small mt-2">
+                        <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
+                            <strong>Entrada:</strong>
+                            ${entradaInfo.totalLeituras > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${entradaInfo.totalLeituras} ${entradaInfo.totalLeituras === 1 ? 'leitura' : 'leituras'}</span>` : ''}
+                        </div>
+                        ${entradaInfo.html}
+                        <div class="d-flex align-items-center mb-1 mt-2" style="padding-left: 24px;">
+                            <strong>Sua saída:</strong>
+                            ${suaSaidaInfo.totalLinhas > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${suaSaidaInfo.totalLinhas} ${suaSaidaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>` : ''}
+                        </div>
+                        ${suaSaidaInfo.html}
+                        <div class="d-flex align-items-center mb-1 mt-2" style="padding-left: 24px;">
+                            <strong>Saída Esperada:</strong>
+                            ${esperadaInfo.totalLinhas > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${esperadaInfo.totalLinhas} ${esperadaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>` : ''}
+                        </div>
+                        ${esperadaInfo.html}
+                    </div>
+                    `}
                 </div>
             `;
         }
@@ -1113,19 +1231,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (descEl) descEl.innerText = ex.description;
 
         if (valTempoLimite && infoTempoLimite) {
-            if (ex.timeLimit) {
-                valTempoLimite.innerText = `${ex.timeLimit} ms`;
-                infoTempoLimite.style.display = 'inline-block';
-            } else {
-                infoTempoLimite.style.display = 'none';
-            }
+            const limiteMs = (ex.timeLimit && Number(ex.timeLimit) > 0) ? Number(ex.timeLimit) : 5000;
+            valTempoLimite.innerText = `${limiteMs} ms`;
+            infoTempoLimite.style.display = 'inline-block';
         }
 
         if (containerExemplos) {
             containerExemplos.innerHTML = '';
             const testesExibiveis = Array.isArray(ex.tests) ? ex.tests.filter(t => t.isVisible !== false) : [];
-            const testesParaMostrar = testesExibiveis.length > 0 
-                ? testesExibiveis.slice(0, 3) 
+            const testesParaMostrar = testesExibiveis.length > 0
+                ? testesExibiveis.slice(0, 3)
                 : (ex.tests && ex.tests.length > 0 ? [ex.tests[0]] : []);
 
             if (testesParaMostrar.length === 0) {
@@ -1137,23 +1252,45 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ? `<div class="d-flex justify-content-between align-items-center mb-1"><span class="badge badge-light border text-muted font-weight-bold" style="font-size: 0.75rem;">Exemplo #${i + 1}</span></div>`
                         : '';
                     const divisor = (i > 0) ? '<hr class="my-3 border-dashed">' : '';
+                    const entradaInfo = formatarEntradaComNumeracao(t.input);
+                    const saidaInfo = formatarSaidaComNumeracao(t.output);
+                    const badgeLeituras = entradaInfo.totalLeituras > 0
+                        ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem; opacity: 0.85;">${entradaInfo.totalLeituras} ${entradaInfo.totalLeituras === 1 ? 'leitura' : 'leituras'}</span>`
+                        : '';
+                    const badgeLinhasSaida = saidaInfo.totalLinhas > 0
+                        ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem; opacity: 0.85;">${saidaInfo.totalLinhas} ${saidaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>`
+                        : '';
                     htmlExemplos += `
                         ${divisor}
                         ${badgeExemplo}
                         <div class="mb-2">
-                            <label class="small font-weight-bold text-muted text-uppercase mb-1 d-block" style="font-size: 0.72rem;">
-                                Entrada:
-                            </label>
-                            <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${escapeHtml(t.input || '(sem entrada)')}</pre>
+                            <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
+                                <label class="small font-weight-bold text-muted text-uppercase mb-0" style="font-size: 0.72rem;">
+                                    Entrada:
+                                </label>
+                                ${badgeLeituras}
+                            </div>
+                            ${entradaInfo.html}
                         </div>
                         <div>
-                            <label class="small font-weight-bold text-muted text-uppercase mb-1 d-block" style="font-size: 0.72rem;">
-                                Saída Esperada:
-                            </label>
-                            <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${escapeHtml(t.output || '')}</pre>
+                            <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
+                                <label class="small font-weight-bold text-muted text-uppercase mb-0" style="font-size: 0.72rem;">
+                                    Saída Esperada:
+                                </label>
+                                ${badgeLinhasSaida}
+                            </div>
+                            ${saidaInfo.html}
                         </div>
                     `;
                 });
+
+                htmlExemplos += `
+                    <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.73rem; line-height: 1.45;">
+                        <i class="fas fa-info-circle text-info mr-1"></i>
+                        <strong>Atenção:</strong> As saídas do programa correspondem aos comandos de print. Elas devem seguir <strong>exatamente</strong> o formato do exemplo (atente-se a maiúsculas/minúsculas, espaços e quebras de linha).
+                    </div>
+                `;
+
                 containerExemplos.innerHTML = htmlExemplos;
             }
         }

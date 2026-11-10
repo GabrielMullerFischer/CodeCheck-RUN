@@ -1,4 +1,5 @@
 const { k8sApi, namespace } = require('../config/kubernetes');
+const zlib = require('zlib');
 const warmPoolService = require('./warmPoolService');
 
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 6;
@@ -92,7 +93,7 @@ function prepararTestesOrdenados(array) {
         return obj;
     });
 
-    // Embaralha toda a bateria de casos de teste uniformemente (Fisher-Yates)
+    // Embaralha a bateria de casos de teste (Fisher-Yates) para evitar que alunos decorem a ordem
     for (let i = embaralhados.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         const temp = embaralhados[i];
@@ -110,8 +111,8 @@ async function runTests(code, tests, containerName, timeLimitMs) {
     await adquirirVagaNaFila();
     try {
         const testesOrdenados = prepararTestesOrdenados(tests);
-        const limiteCompiladorMs = Number(process.env.COMPILE_TIMEOUT) || 10000;
-        const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : limiteCompiladorMs;
+        const padraoTempoLimiteMs = Number(process.env.DEFAULT_TIME_LIMIT_MS || process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS) || 5000;
+        const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : padraoTempoLimiteMs;
 
         // 1. Tenta executar no Warm Pod Pool (respostas < 0.5s)
         try {
@@ -143,7 +144,7 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
     const image = process.env.K8S_IMAGE || 'gcc:latest';
 
     const runnerScript = gerarScriptSandbox(code, tests, timeoutAlunoMs);
-    const b64Runner = Buffer.from(runnerScript, 'utf-8').toString('base64');
+    const b64GzRunner = zlib.gzipSync(Buffer.from(runnerScript, 'utf-8')).toString('base64');
 
     const podManifest = {
         apiVersion: 'v1',
@@ -160,6 +161,11 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
         spec: {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
+            ...(process.env.K8S_WORKER_NODE ? {
+                nodeSelector: {
+                    'kubernetes.io/hostname': process.env.K8S_WORKER_NODE
+                }
+            } : {}),
             dnsPolicy: 'None',
             dnsConfig: {
                 nameservers: ['127.0.0.1']
@@ -170,7 +176,7 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
                     image: image,
                     imagePullPolicy: process.env.K8S_IMAGE_PULL_POLICY || 'IfNotPresent',
                     command: ['/bin/bash', '-c'],
-                    args: [`echo "${b64Runner}" | base64 -d | /bin/bash`],
+                    args: [`echo "${b64GzRunner}" | base64 -d | gzip -d | /bin/bash`],
                     resources: {
                         requests: { cpu: cpuReq, memory: memReq },
                         limits: { cpu: cpuLim, memory: memLim }
@@ -194,17 +200,15 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
             }
         }
 
-        const totalTestes = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
-        const hardTimeoutSec = Math.min(Math.max(1, Math.ceil((timeoutAlunoMs * 3) / 1000)), 30);
-        const tempoEsperaNodeMs = (hardTimeoutSec * 1000 * totalTestes) + 25000;
-        
+        const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+        const tempoEsperaNodeMs = compileTimeoutMs + timeoutAlunoMs + 25000;
+
         const outputBruto = await aguardarPodFinalizar(podName, targetNs, tempoEsperaNodeMs);
         return processarResultadoSandbox(outputBruto, tests, timeoutAlunoMs);
     } catch (err) {
         if (err.message && err.message.includes('Tempo esgotado aguardando execução do Pod')) {
             return {
                 status: 'Time Limit',
-                message: 'Tempo limite de execução excedido!',
                 executionTime: timeoutAlunoMs,
                 percentage: 0,
                 passedCount: 0,
@@ -231,57 +235,89 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
             } catch {
                 await k8sApi.deleteNamespacedPod(podName, targetNs, undefined, undefined, 0);
             }
-        } catch {}
+        } catch { }
     }
 }
 
 function gerarScriptSandbox(code, tests, timeLimitMs) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
     const limitSec = timeLimitMs / 1000;
-    const hardTimeoutSec = Math.min(Math.max(1, Math.ceil(limitSec * 3)), 30);
+    const totalTests = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
+    const firstTimeoutSec = totalTests === 1
+        ? Math.max(1, Number(limitSec.toFixed(2)))
+        : Math.max(1, Number((limitSec * 0.85).toFixed(2)));
+    const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+    const compileTimeoutSec = Math.max(1, Math.ceil(compileTimeoutMs / 1000));
 
     const b64Runner = warmPoolService.B64_RUNNER;
 
     let scriptTestes = `
+START_TIME_MS=$(date +%s%3N)
+HAD_TIMEOUT=0
+TIMEOUT_COUNT=0
 if [ ! -f /usr/local/bin/runner ]; then
     echo "${b64Runner}" | base64 -d > "$CTRL_DIR/runner.c"
     gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
     chmod 555 /usr/local/bin/runner
     rm -f "$CTRL_DIR/runner.c"
 fi
+
+run_step() {
+    local i="$1"
+    local b64In="$2"
+    echo "---STEP---"
+    echo "INDEX:$i"
+
+    NOW_MS=$(date +%s%3N)
+    ELAPSED_TOTAL=$(( NOW_MS - START_TIME_MS ))
+    if [ $ELAPSED_TOTAL -ge ${timeLimitMs} ]; then
+        HAD_TIMEOUT=1
+    fi
+
+    if [ $TIMEOUT_COUNT -ge 3 ]; then
+        echo "TIME:0.000000"
+        echo "STATUS:HARD_TIME_LIMIT"
+        echo "GOT_B64:"
+    else
+        if [ $HAD_TIMEOUT -eq 1 ]; then
+            STEP_TIMEOUT="0.15s"
+        else
+            STEP_TIMEOUT="${firstTimeoutSec}s"
+        fi
+
+        find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
+        cd "$WORK_DIR"
+        echo "$b64In" | base64 -d > "$CTRL_DIR/in_$i.txt"
+
+        rm -f "$CTRL_DIR/time_$i.txt"
+        timeout -k 0.2s -s 9 $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_$i.txt" < "$CTRL_DIR/in_$i.txt" > "$CTRL_DIR/got_$i.txt" 2> "$CTRL_DIR/err_$i.txt"
+        EXIT_CODE=$?
+        pkill -9 -u 65534 2>/dev/null || true
+
+        CPUTIME=$(cat "$CTRL_DIR/time_$i.txt" 2>/dev/null || echo "0.000000")
+        echo "TIME:$CPUTIME"
+
+        if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
+            HAD_TIMEOUT=1
+            TIMEOUT_COUNT=$(( TIMEOUT_COUNT + 1 ))
+            echo "STATUS:HARD_TIME_LIMIT"
+            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+        elif [ $EXIT_CODE -ne 0 ]; then
+            echo "STATUS:RUNTIME_ERROR"
+            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+        else
+            echo "STATUS:OK"
+            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+        fi
+        rm -f "$CTRL_DIR/in_$i.txt" "$CTRL_DIR/got_$i.txt" "$CTRL_DIR/err_$i.txt" "$CTRL_DIR/time_$i.txt"
+    fi
+}
 `;
 
     tests.forEach((t, i) => {
         const b64In = Buffer.from(t.input || '', 'utf-8').toString('base64');
-
-        scriptTestes += `
-# Teste ${i}
-find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
-cd "$WORK_DIR"
-echo "${b64In}" | base64 -d > "$CTRL_DIR/in_${i}.txt"
-
-echo "---STEP---"
-echo "INDEX:${i}"
-
-rm -f "$CTRL_DIR/time_${i}.txt"
-timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_${i}.txt" < "$CTRL_DIR/in_${i}.txt" > "$CTRL_DIR/got_${i}.txt" 2> "$CTRL_DIR/err_${i}.txt"
-EXIT_CODE=$?
-pkill -9 -u 65534 2>/dev/null || true
-
-CPUTIME=$(cat "$CTRL_DIR/time_${i}.txt" 2>/dev/null || echo "0.000000")
-echo "TIME:$CPUTIME"
-
-if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
-    echo "STATUS:HARD_TIME_LIMIT"
-elif [ $EXIT_CODE -ne 0 ]; then
-    echo "STATUS:RUNTIME_ERROR"
-    echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
-else
-    echo "STATUS:OK"
-    echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
-fi
-rm -f "$CTRL_DIR/in_${i}.txt" "$CTRL_DIR/got_${i}.txt" "$CTRL_DIR/err_${i}.txt" "$CTRL_DIR/time_${i}.txt"
-`;
+        scriptTestes += `run_step ${i} "${b64In}"\n`;
     });
 
     return `#!/usr/bin/env bash
@@ -306,16 +342,19 @@ chown 65534:65534 main.c
 chmod 600 main.c
 
 set +e
-COMPILE_ERR=$(timeout -k 1s -s 9 10s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc main.c -o prog -lm' 2>&1)
+COMPILE_ERR=$(timeout -k 1s -s 9 ${compileTimeoutSec}s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc -Wall main.c -o prog -lm' 2>&1)
 COMPILE_STATUS=$?
 
 if [ $COMPILE_STATUS -ne 0 ]; then
     if [ $COMPILE_STATUS -eq 124 ] || [ $COMPILE_STATUS -eq 137 ]; then
-        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (10s). Verifique diretivas #include ou macros."
+        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (${compileTimeoutSec}s). Verifique diretivas #include ou macros."
     fi
     echo "STATUS:COMPILATION_ERROR"
     echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
     exit 0
+fi
+if [ -n "$COMPILE_ERR" ]; then
+    echo "WARN_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
 fi
 
 mv "$WORK_DIR/prog" "$BIN_DIR/prog"
@@ -357,7 +396,7 @@ async function aguardarPodFinalizar(podName, ns, timeoutMs) {
                 }
                 return (logsRes?.body || logsRes).toString();
             }
-        } catch {}
+        } catch { }
         await new Promise(r => setTimeout(r, 200));
     }
     throw new Error(`Tempo esgotado aguardando execução do Pod no Kubernetes (ultrapassou ${maxWaitMs / 1000}s).`);
@@ -375,6 +414,9 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
         const details = match ? Buffer.from(match[1], 'base64').toString('utf-8') : 'Erro de compilação.';
         return { status: 'Compilation Error', details, executionTime: 0, percentage: 0, passedCount: 0, totalCount };
     }
+
+    const warnMatch = rawOutput.match(/WARN_B64:([A-Za-z0-9+/=]*)/);
+    const warnings = warnMatch && warnMatch[1] ? Buffer.from(warnMatch[1], 'base64').toString('utf-8') : '';
 
     const steps = rawOutput.split('---STEP---').slice(1);
     let maxTime = 0;
@@ -410,9 +452,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
             if (!primeiroErro) {
                 primeiroErro = {
                     status: 'Time Limit',
-                    message: 'Tempo limite de execução excedido!',
-                    executionTime: durMs,
-                    testIndex: origIdx
+                    executionTime: durMs > 0 ? durMs : timeoutAlunoMs
                 };
             }
         } else if (stepStatus === 'RUNTIME_ERROR') {
@@ -422,6 +462,9 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
                 primeiroErro = {
                     status: 'Runtime Error',
                     details,
+                    input: testItem.input || '',
+                    got: got,
+                    expected: expected,
                     executionTime: durMs,
                     testIndex: origIdx
                 };
@@ -430,7 +473,6 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
             if (!primeiroErro) {
                 primeiroErro = {
                     status: 'Wrong Answer',
-                    message: 'A saída não corresponde!',
                     input: testItem.input || '',
                     got: got,
                     expected: expected,
@@ -443,10 +485,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
                 if (!primeiroErro) {
                     primeiroErro = {
                         status: 'Time Limit',
-                        message: `A saída está correta, mas demorou ${durMs} ms (o limite do exercício é ${timeoutAlunoMs} ms). Tente otimizar seu algoritmo!`,
-                        executionTime: durMs,
-                        testIndex: origIdx,
-                        isSlowMatch: true
+                        executionTime: durMs
                     };
                 }
             } else {
@@ -459,7 +498,14 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
     const tempoTotalMs = somaTotalSegundos * 1000;
     const somaTotalTemposMs = tempoTotalMs < 10 ? Number(tempoTotalMs.toFixed(2)) : (tempoTotalMs < 100 ? Number(tempoTotalMs.toFixed(1)) : Math.round(tempoTotalMs));
 
-    if (passedCount === totalCount && totalCount > 0) {
+    if (somaTotalTemposMs > timeoutAlunoMs && !primeiroErro) {
+        primeiroErro = {
+            status: 'Time Limit',
+            executionTime: somaTotalTemposMs
+        };
+    }
+
+    if (passedCount === totalCount && totalCount > 0 && !primeiroErro) {
         return {
             status: 'Accepted',
             message: 'Correto!',
@@ -474,6 +520,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
     if (primeiroErro) {
         return {
             ...primeiroErro,
+            warnings,
             executionTime: somaTotalTemposMs,
             percentage,
             passedCount,
@@ -484,6 +531,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
     return {
         status: 'Runtime Error',
         details: 'Erro na execução dos testes.',
+        warnings,
         executionTime: somaTotalTemposMs,
         percentage,
         passedCount,
@@ -495,6 +543,7 @@ module.exports = {
     runTests,
     isAlreadyRunning,
     liberarTravaUsuario,
+    processarResultadoSandbox,
     inicializarPool: warmPoolService.inicializarPool,
     obterStatusPool: warmPoolService.obterStatusPool
 };

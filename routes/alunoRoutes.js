@@ -11,7 +11,7 @@ const Submission = require('../models/Submission');
 const ActivityAttempt = require('../models/ActivityAttempt');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
-const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT, 10) || 10000;
+const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_TIME_LIMIT_MS || process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 5000;
 
 function obterContextoAuth(req) {
     const auth = req.auth || req.session || {};
@@ -75,19 +75,29 @@ function sanitizarMensagemErroServidor(msg) {
     return msg;
 }
 
-function gerarDicaDidatica(status, details, got) {
-    const txt = `${details || ''} ${got || ''}`;
+function gerarDicaDidatica(status, details, got, warnings) {
+    if (status === 'Accepted') return null;
+    const txt = `${details || ''} ${warnings || ''} ${got || ''}`;
 
     if (/SIGSEGV|segmentation fault|core dumped/i.test(txt)) {
+        if (/format '%[^']+' expects argument of type '[^']* \*', but argument \d+ has type/i.test(txt)) {
+            return "Falha de segmentação por falta do '&' no scanf: Você esqueceu de colocar o operador '&' antes do nome da variável no scanf (ex: use scanf(\"%d\", &x);).";
+        }
         return "Falha de segmentação (Segmentation Fault): Seu código tentou acessar um endereço de memória inválido. Verifique se não ultrapassou o tamanho de um vetor (índice fora dos limites), se não usou ponteiro não inicializado ou se não esqueceu o '&' no scanf.";
     }
     if (/SIGFPE|floating point exception/i.test(txt)) {
         return "Erro aritmético de execução: Provavelmente ocorreu uma divisão por zero (x / 0) ou resto de divisão por zero (x % 0). Verifique os valores do divisor.";
     }
+    if (/SIGABRT|aborted|stack smashing/i.test(txt)) {
+        return "Execução abortada (SIGABRT): Possível escrita fora dos limites de um vetor/string na memória. Verifique o tamanho dos seus vetores.";
+    }
+    if (/Tempo limite de compilacao excedido/i.test(txt)) {
+        return "Tempo limite de compilação excedido: O compilador demorou mais que o permitido para compilar seu código. Verifique diretivas #include ou macros.";
+    }
     if (/expected ';' before/i.test(txt)) {
         return "Ponto e vírgula (;) ausente: O compilador esperava um ';' antes deste trecho ou na linha imediatamente anterior.";
     }
-    if (/expected '\)' before|expected '}' before|expected '\]' before/i.test(txt)) {
+    if (/expected '\)' before|expected '}' before|expected '\]' before|expected declaration or statement at end of input/i.test(txt)) {
         return "Fechamento ausente: Verifique se todos os parênteses '()', colchetes '[]' ou chaves '{}' abertos foram devidamente fechados.";
     }
     if (/undeclared \(first use in this function\)/i.test(txt)) {
@@ -96,11 +106,20 @@ function gerarDicaDidatica(status, details, got) {
     if (/undefined reference to `?main'?/i.test(txt)) {
         return "Função main ausente: Todo programa em C precisa de uma função principal 'int main() { ... }' para ser executado.";
     }
+    if (/undefined reference to/i.test(txt)) {
+        return "Função não reconhecida: Verifique se digitou corretamente o nome das funções (ex: 'printf' em vez de 'print', 'scanf' em vez de 'scan') ou se incluiu a biblioteca necessária.";
+    }
+    if (/format '%[^']+' expects argument of type '[^']* \*', but argument \d+ has type/i.test(txt)) {
+        return "Faltou o '&' no scanf: Para armazenar o valor lido em uma variável comum no scanf, é necessário colocar o '&' antes do nome da variável (ex: scanf(\"%d\", &variavel);).";
+    }
     if (/format '%[a-zA-Z]+' expects argument of type/i.test(txt)) {
         return "Incompatibilidade no printf/scanf: O tipo especificado no marcador (ex: %d, %f, %s) não corresponde ao tipo da variável informada.";
     }
     if (/suggest parentheses around assignment used as truth value/i.test(txt)) {
-        return "Possível erro de lógica no 'if': Você usou '=' (atribuição) em vez de '==' (comparação de igualdade).";
+        return "Possível erro de lógica na condição: Você usou '=' (atribuição) em vez de '==' (comparação de igualdade) dentro de um 'if' ou 'while'.";
+    }
+    if (/is used uninitialized|may be used uninitialized/i.test(txt)) {
+        return "Variável não inicializada: Uma variável está sendo usada em cálculos ou condições antes de receber um valor inicial (ex: soma = 0;), contendo lixo de memória.";
     }
     if (status === 'Time Limit') {
         return "Tempo limite excedido: Seu programa demorou mais que o permitido para responder. Verifique se não há laços infinitos ou se a condição de parada do laço está correta.";
@@ -300,7 +319,7 @@ router.post('/submit', submitLimiter, async (req, res) => {
 
         const idExercicioFinal = exercicioAlvo._id;
 
-        let timeLimit = COMPILE_TIMEOUT_MS;
+        let timeLimit = DEFAULT_TIME_LIMIT_MS;
         if (exercicioAlvo.timeLimit && Number(exercicioAlvo.timeLimit) > 0) {
             timeLimit = Number(exercicioAlvo.timeLimit);
         }
@@ -380,13 +399,20 @@ router.post('/submit', submitLimiter, async (req, res) => {
 
         const tempoGastoMs = resultado.executionTime || 0;
         const isAccepted = resultado.status === 'Accepted';
-        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
+        const isTimeLimit = resultado.status === 'Time Limit';
+        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings);
 
         let respostaResultado = {
             ...resultado,
             executionTime: tempoGastoMs,
             didacticHint: dicaDidatica
         };
+        if (isTimeLimit) {
+            delete respostaResultado.input;
+            delete respostaResultado.got;
+            delete respostaResultado.expected;
+            delete respostaResultado.testIndex;
+        }
 
         if (isModoTeste) {
             // Professor em teste/preview: exibe feedback na tela do navegador,
@@ -424,20 +450,23 @@ router.post('/submit', submitLimiter, async (req, res) => {
         );
 
         const caminhoLog = caminhoMinio.replace(/\.c$/, '.json');
-        const logPayload = JSON.stringify({
+        const logObj = {
             status: resultado.status,
             details: resultado.details || '',
-            input: resultado.input || '',
-            got: resultado.got || '',
-            expected: resultado.expected || '',
-            executionTime: isAccepted ? tempoGastoMs : null,
+            executionTime: tempoGastoMs,
             percentage: typeof resultado.percentage === 'number' ? resultado.percentage : 0,
             passedCount: resultado.passedCount || 0,
             totalCount: resultado.totalCount || 0,
-            isSlowMatch: !!resultado.isSlowMatch,
             message: resultado.message || '',
             didacticHint: dicaDidatica
-        });
+        };
+        if (!isTimeLimit) {
+            logObj.input = resultado.input || '';
+            logObj.got = resultado.got || '';
+            logObj.expected = resultado.expected || '';
+            logObj.testIndex = typeof resultado.testIndex === 'number' ? resultado.testIndex : null;
+        }
+        const logPayload = JSON.stringify(logObj);
         await minioService.salvarArquivo(caminhoLog, logPayload);
 
         await Submission.create({
@@ -512,7 +541,7 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
             }
         }
 
-        let timeLimit = COMPILE_TIMEOUT_MS;
+        let timeLimit = DEFAULT_TIME_LIMIT_MS;
         if (exerciseId && ehObjectIdValido(String(exerciseId))) {
             const ex = await Exercise.findById(exerciseId).lean();
             if (ex && ex.timeLimit && Number(ex.timeLimit) > 0) {
@@ -539,8 +568,8 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
         }
 
         const tempoGastoMs = resultado.executionTime || 0;
-        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got);
         const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
+        const dicaDidatica = isSuccess ? null : gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings);
 
         res.json({
             success: true,
@@ -672,6 +701,11 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
                 details: sub.compilationDetails || '',
                 didacticHint: null
             };
+        } else if (logResultado.status === 'Time Limit') {
+            delete logResultado.input;
+            delete logResultado.got;
+            delete logResultado.expected;
+            delete logResultado.testIndex;
         }
 
         res.json({

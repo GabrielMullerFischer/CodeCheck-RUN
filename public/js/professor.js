@@ -2,6 +2,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const ltiToken = urlParams.get('ltik') || document.querySelector('meta[name="ltik"]')?.content || '';
 
+    function comLtik(url) {
+        if (!ltiToken) return url;
+        const sep = url.includes('?') ? '&' : '?';
+        return `${url}${sep}ltik=${encodeURIComponent(ltiToken)}`;
+    }
+
     const setupProfessor = document.getElementById('setup-professor');
     const areaPreview = document.getElementById('area-preview');
     const iframeAluno = document.getElementById('iframe-aluno');
@@ -89,6 +95,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnConfirmarNovoNomeEx = document.getElementById('btnConfirmarNovoNomeExercicio');
     const msgConflitoEx = document.getElementById('msgConflitoExercicio');
     let exIdPendenteRenomear = null;
+
+    let exerciciosSelecionadosNovaLista = [];
+    let exerciciosEdicaoOrdem = [];
 
     const textareaInspecao = document.getElementById('modalInspecionarEditor');
     const selectTemaProf = document.getElementById('select-tema-editor-prof');
@@ -290,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function abrirModalUnificado(ex, showImportButton, isRetornoParaLista) {
         document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${escapeHtml(ex.title)}`;
         document.getElementById('modalVerExDescricao').innerText = ex.description || 'Sem descrição cadastrada.';
-        document.getElementById('modalVerExTempoLimite').innerText = ex.timeLimit ? `${ex.timeLimit} ms` : 'Sem Limite';
+        document.getElementById('modalVerExTempoLimite').innerText = `${ex.timeLimit || 5000} ms`;
 
         const containerTeste = document.getElementById('modalVerExTeste');
         if (ex.tests && ex.tests.length > 0) {
@@ -396,13 +405,52 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function atualizarBadgesCriarLista() {
+        if (!containerExercicios) return;
+        const itens = containerExercicios.querySelectorAll('.item-exercicio-criacao');
+        itens.forEach(item => {
+            const exId = item.dataset.exid;
+            const badge = item.querySelector('.badge-ordem-selecao');
+            const chk = item.querySelector('.chk-exercicio');
+            const idx = exerciciosSelecionadosNovaLista.indexOf(exId);
+            if (idx !== -1) {
+                const num = idx + 1;
+                if (badge) {
+                    badge.classList.add('selecionado');
+                    badge.innerText = num;
+                    badge.setAttribute('title', `${num}º exercício na lista (clique para remover)`);
+                }
+                if (chk) chk.checked = true;
+            } else {
+                if (badge) {
+                    badge.classList.remove('selecionado');
+                    badge.innerText = '';
+                    badge.setAttribute('title', 'Clique para adicionar à lista');
+                }
+                if (chk) chk.checked = false;
+            }
+        });
+        atualizarContador();
+    }
+
+    function alternarSelecaoExercicioNovaLista(exId) {
+        const idStr = String(exId);
+        const idx = exerciciosSelecionadosNovaLista.indexOf(idStr);
+        if (idx !== -1) {
+            exerciciosSelecionadosNovaLista.splice(idx, 1);
+        } else {
+            exerciciosSelecionadosNovaLista.push(idStr);
+        }
+        atualizarBadgesCriarLista();
+    }
+
     function atualizarContador() {
-        const selecionados = containerExercicios ? containerExercicios.querySelectorAll('.chk-exercicio:checked').length : 0;
-        const total = containerExercicios ? containerExercicios.querySelectorAll('.chk-exercicio').length : 0;
+        const selecionados = exerciciosSelecionadosNovaLista.length;
+        const total = containerExercicios ? containerExercicios.querySelectorAll('.item-exercicio-criacao').length : 0;
         const termo = inputBuscaExercicio && inputBuscaExercicio.value.trim();
         if (contadorEl) {
             if (termo) {
-                const visiveis = containerExercicios.querySelectorAll('.border-bottom:not([style*="display: none"])').length;
+                const visiveis = containerExercicios.querySelectorAll('.item-exercicio-criacao:not([style*="display: none"])').length;
                 contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} selecionados (${visiveis} de ${total} exibidos)`;
             } else {
                 contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} ${selecionados === 1 ? 'exercício selecionado' : 'exercícios selecionados'}`;
@@ -421,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const activityIdMeta = document.querySelector('meta[name="activity-id"]');
         const activityId = activityIdMeta ? activityIdMeta.content.trim() : '';
         try {
-            const res = await fetch(`/judge/professor/dados?activityId=${activityId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const res = await fetch(comLtik(`/judge/professor/dados?activityId=${encodeURIComponent(activityId)}`));
             const data = await res.json();
             if (!res.ok || !data.success) return;
 
@@ -503,10 +551,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!containerExercicios) return;
         containerExercicios.innerHTML = '';
         if (meusEx.length === 0) {
+            exerciciosSelecionadosNovaLista = [];
             containerExercicios.innerHTML = '<p class="text-muted p-2 mb-0">Nenhum exercício cadastrado ainda.</p>';
             atualizarContador();
             return;
         }
+
+        // Mantém apenas os exercícios selecionados que ainda existem
+        exerciciosSelecionadosNovaLista = exerciciosSelecionadosNovaLista.filter(id =>
+            meusEx.some(e => String(e._id) === String(id))
+        );
 
         const listaOrdenada = [...meusEx].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
@@ -516,13 +570,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const isPub = ex.isPublic !== false;
             const exIdSafe = escapeHtml(ex._id);
             const div = document.createElement('div');
-            div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
+            div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3 item-exercicio-criacao';
+            div.dataset.exid = String(ex._id);
             div.innerHTML = `
-                <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
-                    <input type="checkbox" class="custom-control-input chk-exercicio" id="ex_${exIdSafe}" value="${exIdSafe}">
-                    <label class="custom-control-label cursor-pointer ml-1" for="ex_${exIdSafe}">
+                <div class="d-flex align-items-center mr-2 cursor-pointer btn-toggle-selecao-ex" data-exid="${exIdSafe}" style="flex-grow: 1; min-width: 0; user-select: none; overflow: visible; padding: 2px 0;">
+                    <input type="checkbox" class="chk-exercicio d-none" id="ex_${exIdSafe}" value="${exIdSafe}">
+                    <span class="badge-ordem-selecao" id="badge_ex_${exIdSafe}" title="Clique para adicionar à lista"></span>
+                    <label class="cursor-pointer mb-0 text-truncate ml-1" style="cursor: pointer; min-width: 0;">
                         <strong style="font-size: 1.02rem;">${escapeHtml(ex.title)}</strong>
-                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
+                        <span class="badge badge-light border ml-1 font-weight-normal">${escapeHtml(ex.timeLimit || 5000)} ms</span>
                     </label>
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
@@ -546,6 +602,13 @@ document.addEventListener('DOMContentLoaded', () => {
             containerExercicios.appendChild(div);
         });
 
+        containerExercicios.querySelectorAll('.btn-toggle-selecao-ex').forEach(item => {
+            item.onclick = (e) => {
+                e.preventDefault();
+                alternarSelecaoExercicioNovaLista(item.dataset.exid);
+            };
+        });
+
         containerExercicios.querySelectorAll('.btn-ver-meu-ex').forEach(btn => {
             btn.onclick = () => exibirDetalhesExercicioModal(btn.dataset.exid, false);
         });
@@ -559,7 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.onclick = () => solicitarExclusaoExercicio(btn.dataset.exid);
         });
 
-        atualizarContador();
+        atualizarBadgesCriarLista();
     }
 
     function renderizarBancoExercicios(bancoEx) {
@@ -583,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
             div.innerHTML = `
                 <div class="text-truncate mr-2">
                     <strong class="text-dark" style="font-size: 1.02rem;">${escapeHtml(ex.title)}</strong>
-                    ${ex.timeLimit ? `<span class="badge badge-light border ml-1">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
+                    <span class="badge badge-light border ml-1">${escapeHtml(ex.timeLimit || 5000)} ms</span>
                     ${isOficial
                     ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
                     : `<small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${escapeHtml(ex.authorName || 'Professor')}</small>`
@@ -626,7 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function executarImportacaoExercicio(exerciseId, customTitle = null) {
         try {
-            const res = await fetch(`/judge/professor/exercicio/importar` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+            const res = await fetch(comLtik('/judge/professor/exercicio/importar'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ exerciseId, customTitle })
@@ -735,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function executarImportacaoLista(listId, customTitle = null, exerciseTitles = null) {
         try {
-            const res = await fetch(`/judge/professor/lista/importar` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+            const res = await fetch(comLtik('/judge/professor/lista/importar'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ listId, customTitle, exerciseTitles })
@@ -896,7 +959,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="card-header bg-white py-2 font-weight-bold text-dark d-flex justify-content-between align-items-center">
                         <span><strong>#${idx + 1}</strong> - ${escapeHtml(ex.title)}</span>
                         <div class="d-flex align-items-center">
-                            ${ex.timeLimit ? `<span class="badge badge-light border mr-2">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
+                            <span class="badge badge-light border mr-2">${escapeHtml(ex.timeLimit || 5000)} ms</span>
                             <button type="button" class="btn btn-xs btn-outline-info font-weight-bold btn-testar-ex-modal shadow-sm" data-exid="${exIdSafe}" title="Testar este exercício">
                                 <i class="fas fa-play mr-1"></i> Testar
                             </button>
@@ -952,29 +1015,56 @@ document.addEventListener('DOMContentLoaded', () => {
         const contadorEl = document.getElementById('modal-edit-lista-contador');
         if (inputBusca) inputBusca.value = '';
 
-        const idsNaLista = (lista.exercises || []).map(e => String(e._id || e));
+        // Preserva e reflete a ordem sequencial dos exercícios salvos na lista
+        exerciciosEdicaoOrdem = (lista.exercises || []).map(e => String(e._id || e));
+
         const todosExs = [...(window.todosMeusExerciciosCache || [])].sort((a, b) =>
             (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
         );
 
-        function atualizarContadorEdicao() {
-            if (!contadorEl) return;
-            const selecionados = containerExs.querySelectorAll('.chk-edit-lista-ex:checked').length;
-            contadorEl.innerHTML = `<i class="fas fa-check-square mr-1 text-primary"></i> ${selecionados} de ${todosExs.length} selecionados`;
+        function atualizarBadgesEdicaoLista() {
+            if (contadorEl) {
+                const totalSel = exerciciosEdicaoOrdem.length;
+                contadorEl.innerHTML = `<i class="fas fa-check-square mr-1 text-primary"></i> ${totalSel} de ${todosExs.length} selecionados`;
+            }
+
+            containerExs.querySelectorAll('.item-edit-lista-ex').forEach(item => {
+                const id = item.dataset.exid;
+                const badge = item.querySelector('.badge-ordem-selecao');
+                const chk = item.querySelector('.chk-edit-lista-ex');
+                const idx = exerciciosEdicaoOrdem.indexOf(id);
+                if (idx !== -1) {
+                    const num = idx + 1;
+                    if (badge) {
+                        badge.classList.add('selecionado');
+                        badge.innerText = num;
+                        badge.setAttribute('title', `${num}º exercício na lista (clique para remover)`);
+                    }
+                    if (chk) chk.checked = true;
+                } else {
+                    if (badge) {
+                        badge.classList.remove('selecionado');
+                        badge.innerText = '';
+                        badge.setAttribute('title', 'Clique para adicionar à lista');
+                    }
+                    if (chk) chk.checked = false;
+                }
+            });
         }
 
         todosExs.forEach(ex => {
-            const isChecked = idsNaLista.includes(String(ex._id));
             const exIdSafe = escapeHtml(ex._id);
             const div = document.createElement('div');
             div.className = 'd-flex justify-content-between align-items-center border-bottom py-2 px-2 item-edit-lista-ex';
+            div.dataset.exid = String(ex._id);
             div.dataset.titulo = (ex.title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             div.innerHTML = `
-                <div class="custom-control custom-checkbox text-truncate mr-2" style="overflow: visible; padding-left: 1.85rem;">
-                    <input type="checkbox" class="custom-control-input chk-edit-lista-ex" id="edit_ex_${exIdSafe}" value="${exIdSafe}" ${isChecked ? 'checked' : ''}>
-                    <label class="custom-control-label cursor-pointer ml-1" for="edit_ex_${exIdSafe}">
+                <div class="d-flex align-items-center mr-2 cursor-pointer btn-toggle-edit-ex" data-exid="${exIdSafe}" style="flex-grow: 1; min-width: 0; user-select: none; overflow: visible; padding: 2px 0;">
+                    <input type="checkbox" class="chk-edit-lista-ex d-none" id="edit_ex_${exIdSafe}" value="${exIdSafe}">
+                    <span class="badge-ordem-selecao" id="badge_edit_${exIdSafe}" title="Clique para adicionar à lista"></span>
+                    <label class="cursor-pointer mb-0 text-truncate ml-1" style="cursor: pointer; min-width: 0;">
                         <strong>${escapeHtml(ex.title)}</strong>
-                        ${ex.timeLimit ? `<span class="badge badge-light border ml-1 font-weight-normal">${escapeHtml(ex.timeLimit)} ms</span>` : ''}
+                        <span class="badge badge-light border ml-1 font-weight-normal">${escapeHtml(ex.timeLimit || 5000)} ms</span>
                     </label>
                 </div>
                 <button type="button" class="btn btn-outline-secondary btn-action-round btn-ver-ex-modal shadow-sm" data-exid="${exIdSafe}" title="Ver enunciado do exercício" style="width: 32px; height: 32px; font-size: 0.95rem;">
@@ -984,11 +1074,21 @@ document.addEventListener('DOMContentLoaded', () => {
             containerExs.appendChild(div);
         });
 
-        atualizarContadorEdicao();
-
-        containerExs.querySelectorAll('.chk-edit-lista-ex').forEach(chk => {
-            chk.onchange = atualizarContadorEdicao;
+        containerExs.querySelectorAll('.btn-toggle-edit-ex').forEach(item => {
+            item.onclick = (e) => {
+                e.preventDefault();
+                const idStr = String(item.dataset.exid);
+                const idx = exerciciosEdicaoOrdem.indexOf(idStr);
+                if (idx !== -1) {
+                    exerciciosEdicaoOrdem.splice(idx, 1);
+                } else {
+                    exerciciosEdicaoOrdem.push(idStr);
+                }
+                atualizarBadgesEdicaoLista();
+            };
         });
+
+        atualizarBadgesEdicaoLista();
 
         if (inputBusca) {
             inputBusca.oninput = () => {
@@ -1035,7 +1135,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const listId = document.getElementById('modal-edit-lista-id').value;
             const title = document.getElementById('modal-edit-lista-titulo').value.trim();
             const isPrivate = document.getElementById('modal-edit-lista-privada').checked;
-            const exercises = Array.from(document.querySelectorAll('.chk-edit-lista-ex:checked')).map(c => c.value);
+            const exercises = [...exerciciosEdicaoOrdem];
 
             if (!title) {
                 mostrarToast("Informe um nome para a lista.", "warning");
@@ -1050,16 +1150,21 @@ document.addEventListener('DOMContentLoaded', () => {
             modalBtnSalvarEdicaoLista.innerText = "Salvando...";
 
             try {
-                const res = await fetch(`/judge/lista/${listId}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                const res = await fetch(comLtik(`/judge/lista/${listId}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, exercises, isPrivate })
                 });
-                const data = await res.json();
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch (_) {
+                    data = { error: await res.text() };
+                }
                 if (res.ok && data.success) {
                     $('#modalEditarLista').modal('hide');
                     mostrarToast("Lista atualizada com sucesso!", "success");
-                    await carregarEstadoInicial();
+                    await carregarEstadoInicial(false);
                 } else {
                     mostrarToast(data.error || "Erro ao atualizar lista.", "danger");
                 }
@@ -1084,13 +1189,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirmou) return;
 
         try {
-            const res = await fetch(`/judge/lista/${listId}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+            const res = await fetch(comLtik(`/judge/lista/${listId}`), {
                 method: 'DELETE'
             });
-            const data = await res.json();
+            let data = {};
+            try {
+                data = await res.json();
+            } catch (_) {
+                data = { error: await res.text() };
+            }
             if (res.ok && data.success) {
                 mostrarToast("Lista excluída com sucesso!", "success");
-                await carregarEstadoInicial();
+                await carregarEstadoInicial(false);
             } else {
                 mostrarToast(data.error || "Erro ao excluir lista.", "danger");
             }
@@ -1111,14 +1221,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modal-desc').value = ex.description;
         document.getElementById('modal-exercicio-privado').checked = (ex.isPublic === false);
 
-        if (ex.timeLimit) {
+        if (ex.timeLimit && Number(ex.timeLimit) !== 5000) {
             document.getElementById('chk-definir-tempo-limite').checked = true;
             document.getElementById('box-campo-tempo-limite').style.display = 'block';
             document.getElementById('modal-tempo-limite').value = ex.timeLimit;
         } else {
             document.getElementById('chk-definir-tempo-limite').checked = false;
             document.getElementById('box-campo-tempo-limite').style.display = 'none';
-            document.getElementById('modal-tempo-limite').value = '1000';
+            document.getElementById('modal-tempo-limite').value = '5000';
         }
 
         const containerTestes = document.getElementById('modal-container-testes');
@@ -1139,45 +1249,39 @@ document.addEventListener('DOMContentLoaded', () => {
         $('#modalNovoExercicio').modal('show');
     }
 
-    function solicitarExclusaoExercicio(exerciseId) {
-        idExercicioParaExcluir = exerciseId;
+    async function solicitarExclusaoExercicio(exerciseId) {
         const ex = (window.todosMeusExerciciosCache || []).find(e => String(e._id) === String(exerciseId));
-        const labelNome = document.getElementById('labelNomeExcluirExercicio');
-        if (labelNome) {
-            labelNome.innerText = `Exercício: ${ex ? ex.title : '-'}`;
-        }
-        $('#modalConfirmExcluirExercicio').modal('show');
-    }
+        const tituloEx = ex ? ex.title : 'este exercício';
 
-    async function executarExclusaoExercicio(removeFromAllLists) {
-        if (!idExercicioParaExcluir) return;
+        const confirmou = await confirmarAcao({
+            titulo: 'Excluir Exercício',
+            mensagem: `Deseja realmente excluir o exercício "${tituloEx}"?\n\nEle será removido do seu banco e desvinculado de listas.`,
+            textoConfirmar: 'Excluir Exercício',
+            corConfirmar: 'btn-danger',
+            icone: 'fa-trash-alt text-danger'
+        });
+
+        if (!confirmou) return;
+
         try {
-            const res = await fetch(`/judge/exercicio/${idExercicioParaExcluir}?removeFromAllLists=${removeFromAllLists}` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+            const res = await fetch(comLtik(`/judge/exercicio/${exerciseId}?removeFromAllLists=true`), {
                 method: 'DELETE'
             });
-            const data = await res.json();
+            let data = {};
+            try {
+                data = await res.json();
+            } catch (_) {
+                data = { error: await res.text() };
+            }
             if (res.ok && data.success) {
-                $('#modalConfirmExcluirExercicio').modal('hide');
-                mostrarToast(removeFromAllLists ? "Exercício excluído completamente de todas as listas e do banco!" : "Exercício removido do seu banco pessoal.", "success");
-                await carregarEstadoInicial();
+                mostrarToast("Exercício excluído com sucesso!", "success");
+                await carregarEstadoInicial(false);
             } else {
                 mostrarToast(data.error || "Erro ao excluir exercício.", "danger");
             }
         } catch (e) {
             mostrarToast("Erro de conexão ao excluir exercício.", "danger");
-        } finally {
-            idExercicioParaExcluir = null;
         }
-    }
-
-    const btnExcluirApenasMeuBanco = document.getElementById('btnExcluirApenasMeuBanco');
-    if (btnExcluirApenasMeuBanco) {
-        btnExcluirApenasMeuBanco.onclick = () => executarExclusaoExercicio(false);
-    }
-
-    const btnExcluirDeTodasAsListas = document.getElementById('btnExcluirDeTodasAsListas');
-    if (btnExcluirDeTodasAsListas) {
-        btnExcluirDeTodasAsListas.onclick = () => executarExclusaoExercicio(true);
     }
 
     if (btnEditarAtividadeAtiva) {
@@ -1214,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btnSalvarConfigAtividadeModal.innerText = "Salvando...";
 
             try {
-                const res = await fetch(`/judge/atividade/config` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                const res = await fetch(comLtik('/judge/atividade/config'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1226,7 +1330,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 });
 
-                const data = await res.json();
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch (_) {
+                    data = { error: await res.text() };
+                }
                 if (res.ok && data.success) {
                     $('#modalEditarAtividade').modal('hide');
                     mostrarToast("Regras da atividade salvas com sucesso!", "success");
@@ -1386,7 +1495,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isPrivate = document.getElementById('modal-exercicio-privado')?.checked || false;
             const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
 
-            let timeLimit = null;
+            let timeLimit = 5000;
             if (chkDefinirTempoEl && chkDefinirTempoEl.checked) {
                 const val = parseInt(document.getElementById('modal-tempo-limite')?.value, 10);
                 if (isNaN(val) || val < 100) {
@@ -1437,12 +1546,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const method = editId ? 'PUT' : 'POST';
 
             try {
-                const res = await fetch(url + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                const res = await fetch(comLtik(url), {
                     method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, description, tests, isPrivate, timeLimit })
                 });
-                const data = await res.json();
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch (_) {
+                    data = { error: await res.text() };
+                }
 
                 if (res.ok && data.success) {
                     $('#modalNovoExercicio').modal('hide');
@@ -1483,7 +1597,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnSalvarNovaLista) {
         btnSalvarNovaLista.onclick = async () => {
             const title = nomeNovaLista?.value.trim();
-            const selecionados = Array.from(document.querySelectorAll('#container-exercicios-disponiveis .chk-exercicio:checked')).map(c => c.value);
+            const selecionados = [...exerciciosSelecionadosNovaLista];
             const isPrivate = document.getElementById('chk-lista-privada')?.checked || false;
 
             if (!title) {
@@ -1497,20 +1611,25 @@ document.addEventListener('DOMContentLoaded', () => {
             btnSalvarNovaLista.disabled = true;
             btnSalvarNovaLista.innerText = "Salvando Lista...";
             try {
-                const res = await fetch(`/judge/lista` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                const res = await fetch(comLtik('/judge/lista'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, exercises: selecionados, isPrivate })
                 });
-                const data = await res.json();
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch (_) {
+                    data = { error: await res.text() };
+                }
                 if (res.ok && data.success) {
                     mostrarToast("Lista criada com sucesso!", "success");
                     nomeNovaLista.value = '';
                     const chkListaPrivada = document.getElementById('chk-lista-privada');
                     if (chkListaPrivada) chkListaPrivada.checked = false;
-                    document.querySelectorAll('#container-exercicios-disponiveis .chk-exercicio').forEach(c => c.checked = false);
-                    atualizarContador();
-                    await carregarEstadoInicial();
+                    exerciciosSelecionadosNovaLista = [];
+                    atualizarBadgesCriarLista();
+                    await carregarEstadoInicial(false);
                     if (window.$ && tabListasLink) $(tabListasLink).tab('show');
                 } else {
                     mostrarToast(data.error || "Não autorizado", "danger");
@@ -1523,10 +1642,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
     }
-
-    // =========================================================================
-    // IMPORTAÇÃO DE TESTES E LISTAS VIA IA / JSON
-    // =========================================================================
 
     function extrairJSONLeniente(texto) {
         if (!texto || typeof texto !== 'string') return null;
@@ -1781,13 +1896,18 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                 isPrivate: false // Pública por padrão, conforme solicitado
             };
 
-            const res = await fetch(`/judge/lista-ia` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+            const res = await fetch(comLtik('/judge/lista-ia'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
-            const data = await res.json();
+            let data = {};
+            try {
+                data = await res.json();
+            } catch (_) {
+                data = { error: await res.text() };
+            }
 
             if (res.ok && data.success) {
                 if (window.$) $('#modalImportarListaIA').modal('hide');
@@ -1921,7 +2041,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                 btnVincularLista.disabled = true;
                 btnVincularLista.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Submetendo...';
                 try {
-                    const res = await fetch(`/judge/atividade/vincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    const res = await fetch(comLtik('/judge/atividade/vincular'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1934,7 +2054,12 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                             force: forcar
                         })
                     });
-                    const data = await res.json();
+                    let data = {};
+                    try {
+                        data = await res.json();
+                    } catch (_) {
+                        data = { error: await res.text() };
+                    }
                     if (data.requiresConfirmation) {
                         const confirmou = await confirmarAcao({
                             titulo: 'Substituição de Lista Ativa',
@@ -2018,14 +2143,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
         '.border-bottom:not(.aviso-busca-sem-resultado)',
         'Nenhum exercício encontrado para esta pesquisa.',
         (visiveis, total, termo) => {
-            if (contadorEl) {
-                const selecionados = containerExercicios.querySelectorAll('.chk-exercicio:checked').length;
-                if (termo) {
-                    contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} selecionados (${visiveis} de ${total} exibidos)`;
-                } else {
-                    contadorEl.innerHTML = `<i class="fas fa-check-square mr-1"></i> ${selecionados} ${selecionados === 1 ? 'exercício selecionado' : 'exercícios selecionados'}`;
-                }
-            }
+            atualizarContador();
         }
     );
 
@@ -2115,7 +2233,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
         }
 
         try {
-            const res = await fetch(`/judge/professor/turma-metricas?activityId=${activityId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
+            const res = await fetch(comLtik(`/judge/professor/turma-metricas?activityId=${encodeURIComponent(activityId)}`));
             const data = await res.json();
 
             if (!data.success) {
@@ -2276,7 +2394,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                 btnRecompilar.disabled = true;
 
                 try {
-                    const res = await fetch('/judge/submit' + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                    const res = await fetch(comLtik('/judge/submit'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -2331,10 +2449,12 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
         const pct = typeof data.percentage === 'number' ? data.percentage : (data.status === 'Accepted' ? 100 : 0);
         const passed = typeof data.passedCount === 'number' ? data.passedCount : (data.status === 'Accepted' ? data.totalCount : 0);
         const total = typeof data.totalCount === 'number' ? data.totalCount : 0;
+        const testNum = (typeof data.testIndex === 'number') ? (data.testIndex + 1) : null;
 
         let badgeTestes = '';
         if (total > 0) {
-            badgeTestes = `<span class="badge ${data.status === 'Accepted' ? 'badge-success' : 'badge-danger'} px-2 py-1 font-weight-bold ml-1">${pct}% (${passed}/${total} testes)</span>`;
+            let badgeClass = data.status === 'Accepted' ? 'badge-success' : (passed > 0 ? 'badge-warning text-dark' : 'badge-danger');
+            badgeTestes = `<span class="badge ${badgeClass} px-2 py-1 font-weight-bold ml-1">${pct}% (${passed}/${total} testes)</span>`;
         }
 
         if (data.status === 'Accepted') {
@@ -2393,7 +2513,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
         } else if (data.status === 'Time Limit') {
             divResultado.innerHTML = `
                 <div class="alert alert-danger py-2 px-3 mb-0 shadow-sm border">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <i class="fas fa-clock text-danger mr-2"></i>
                             <strong>Tempo Limite Excedido (Time Limit)</strong>
@@ -2401,10 +2521,10 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                         <div>${badgeTestes}</div>
                     </div>
                     ${cardDica}
-                    <div class="small mt-1 text-dark">${escapeHtml(data.message || 'O código excedeu o tempo limite configurado para execução.')}</div>
                 </div>
             `;
         } else {
+            const temCasoTeste = data.input !== undefined || data.expected !== undefined;
             divResultado.innerHTML = `
                 <div class="alert alert-danger py-2 px-3 mb-0 shadow-sm border">
                     <div class="d-flex justify-content-between align-items-center mb-1">
@@ -2415,7 +2535,16 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                         <div>${badgeTestes}</div>
                     </div>
                     ${cardDica}
-                    ${data.details ? `<pre class="bg-dark text-white p-2 mt-2 rounded small pre-io mb-0" style="max-height: 180px; overflow-y: auto;">${escapeHtml(data.details)}</pre>` : ''}
+                    ${temCasoTeste ? `
+                    <div class="small mt-2">
+                        <div class="mb-1 text-dark"><strong>Entrada do Teste:</strong></div>
+                        <pre class="p-2 border rounded bg-white text-dark pre-io mb-1" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.input || '(sem entrada)')}</pre>
+                        <div class="mb-1 text-dark"><strong>Saída do Aluno:</strong></div>
+                        <pre class="p-2 border rounded bg-white text-danger pre-io mb-1" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.got || '(vazio)')}</pre>
+                        <div class="mb-1 text-dark"><strong>Saída Esperada:</strong></div>
+                        <pre class="p-2 border rounded bg-white text-success pre-io mb-0" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.expected || '')}</pre>
+                    </div>
+                    ` : (data.details ? `<pre class="bg-dark text-white p-2 mt-2 rounded small pre-io mb-0" style="max-height: 180px; overflow-y: auto;">${escapeHtml(data.details)}</pre>` : '')}
                 </div>
             `;
         }
@@ -2441,7 +2570,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
         submissaoAtivaParaCompilar = { exerciseId: exId, codePath, submissionId: subId };
 
         try {
-            const res = await fetch(`/judge/professor/submissao-codigo` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+            const res = await fetch(comLtik('/judge/professor/submissao-codigo'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ codePath, submissionId: subId })
@@ -2759,7 +2888,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
             btnDesvincularAtividade.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Removendo...';
 
             try {
-                const res = await fetch(`/judge/atividade/desvincular` + (ltiToken ? `?ltik=${ltiToken}` : ''), {
+                const res = await fetch(comLtik('/judge/atividade/desvincular'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ activityId })

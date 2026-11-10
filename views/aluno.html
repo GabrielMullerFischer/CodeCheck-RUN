@@ -86,10 +86,64 @@
         .pre-io {
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 0.88rem;
+            line-height: 1.45;
             white-space: pre-wrap;
             word-break: break-all;
             margin-bottom: 0;
             background-color: #f8f9fa;
+        }
+        .io-numbered-wrapper {
+            display: flex;
+            align-items: stretch;
+            position: relative;
+            width: 100%;
+        }
+        .io-gutter {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            padding-right: 6px;
+            min-width: 24px;
+            flex-shrink: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            opacity: 0.35;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.88rem;
+            line-height: 1.45;
+            color: #495057;
+            text-align: right;
+            transition: opacity 0.2s ease;
+        }
+        .io-numbered-wrapper:hover .io-gutter {
+            opacity: 0.75;
+        }
+        .io-gutter-num {
+            height: 1.45em;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            cursor: help;
+            transition: color 0.15s ease, font-weight 0.15s ease;
+        }
+        .io-gutter-num:hover {
+            color: #00539b;
+            font-weight: bold;
+        }
+        .io-box-container {
+            flex: 1;
+            min-width: 0;
+        }
+        .io-box-container .pre-io {
+            white-space: pre;
+            overflow-x: auto;
+            word-break: normal;
+        }
+        .io-gutter-placeholder {
+            min-width: 24px;
+            flex-shrink: 0;
         }
         .theme-floating-pill {
             position: absolute;
@@ -235,8 +289,8 @@
                     <div class="card-body p-4">
                         <div class="d-flex justify-content-between align-items-start mb-2" style="gap: 16px;">
                             <h4 class="text-primary font-weight-bold mb-0" id="nome-questao" style="flex: 1 1 auto; word-break: break-word; min-width: 0;">{{NOME_QUESTAO}}</h4>
-                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold shadow-sm" style="display: none; font-size: 0.85rem; flex-shrink: 0; white-space: nowrap;">
-                                <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">-</span>
+                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold shadow-sm" style="display: inline-block; font-size: 0.85rem; flex-shrink: 0; white-space: nowrap;">
+                                <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">5000 ms</span>
                             </span>
                         </div>
                         <p class="text-secondary" id="descricao-questao" style="white-space: pre-line;">{{DESCRICAO_QUESTAO}}</p>
@@ -513,6 +567,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
 
-    <script src="/js/aluno.js"></script>
+    <script src="/js/aluno.js?v=20261105_1"></script>
 </body>
 </html>

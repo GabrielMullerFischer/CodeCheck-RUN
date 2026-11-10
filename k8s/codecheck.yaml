@@ -131,10 +131,16 @@ spec:
       serviceAccountName: codecheck-sa
       nodeSelector:
         kubernetes.io/hostname: ubuntu05
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.15.113.1
+          - 8.8.8.8
+          - 1.1.1.1
       containers:
         - name: codecheck-server
           image: localhost:32000/codecheck-app:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http

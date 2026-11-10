@@ -46,16 +46,20 @@ else
   docker push "$GCC_IMAGE" >/dev/null 2>&1 || true
 fi
 
-# 4. Sincronizar Secret no namespace dedicado
+# 4. Sincronizar Secret no namespace dedicado (modo Cluster Multi-Node: sem K8S_WORKER_NODE fixo)
 echo "[5/7] Sincronizando Secret 'codecheck-env' no namespace '${NAMESPACE}'..."
 CLEAN_ENV=$(mktemp)
 grep -E '^[A-Za-z0-9_]+=' "$ENV_FILE" | awk -F= '{if (!seen[$1]++) { k=$1; sub(/^[^=]*=/, ""); gsub(/^[\x27"]|[\x27"]$/, ""); print k "=" $0 }}' > "$CLEAN_ENV"
-# Garante que dentro do cluster multi-node o K8S_IMAGE aponte para o registry local
-if grep -q "^K8S_IMAGE=" "$CLEAN_ENV"; then
-  sed -i "s|^K8S_IMAGE=.*|K8S_IMAGE=${GCC_IMAGE}|" "$CLEAN_ENV" 2>/dev/null || true
-else
-  echo "K8S_IMAGE=${GCC_IMAGE}" >> "$CLEAN_ENV"
-fi
+
+grep -v -E '^(K8S_NAMESPACE|K8S_IMAGE|K8S_IMAGE_PULL_POLICY|K8S_WORKER_NODE)=' "$CLEAN_ENV" > "${CLEAN_ENV}.tmp" || true
+mv "${CLEAN_ENV}.tmp" "$CLEAN_ENV"
+{
+  echo "K8S_NAMESPACE=${NAMESPACE}"
+  echo "K8S_IMAGE=${GCC_IMAGE}"
+  echo "K8S_IMAGE_PULL_POLICY=IfNotPresent"
+  echo "K8S_WORKER_NODE="
+} >> "$CLEAN_ENV"
+
 $KUBECMD create secret generic codecheck-env \
   --from-env-file="$CLEAN_ENV" \
   --namespace="$NAMESPACE" \

@@ -1,26 +1,47 @@
 const { k8sApi, k8sNetworkingApi, k8sExec, namespace } = require('../config/kubernetes');
 const stream = require('stream');
+const zlib = require('zlib');
 
-const MIN_WARM_PODS = parseInt(process.env.K8S_MIN_WARM_PODS, 10) || 1;
+const MIN_WARM_PODS = parseInt(process.env.K8S_MIN_WARM_PODS, 10) || 0; // 0: se ninguém usar por 24h, desliga e fica 0 pods
 const MAX_WARM_PODS = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 6;
-const IDLE_TIMEOUT_MS = parseInt(process.env.K8S_POD_IDLE_TIMEOUT_MS, 10) || (5 * 60 * 1000); // 5 minutos
+const IDLE_TIMEOUT_MS = parseInt(process.env.K8S_POD_IDLE_TIMEOUT_MS, 10) || (5 * 60 * 1000); // 5 minutos para pods extras
+const BASE_POD_MAX_IDLE_MS = parseInt(process.env.K8S_BASE_POD_MAX_IDLE_MS, 10) || (24 * 60 * 60 * 1000); // 24 horas de ociosidade total para o pod principal
 const TARGET_NS = process.env.K8S_NAMESPACE || namespace || 'default';
 
 const RUNNER_C = `
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <grp.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/types.h>
+#include <sys/prctl.h>
+
+static pid_t child_pid = 0;
+
+static void sig_handler(int sig) {
+    if (child_pid > 0) {
+        kill(child_pid, SIGKILL);
+    }
+    _exit(128 + sig);
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 3) return 1;
-    pid_t pid = fork();
-    if (pid < 0) return 1;
-    if (pid == 0) {
-        // Reduz privilégios estritamente para o usuário 'nobody' (UID/GID 65534)
+
+    signal(SIGTERM, sig_handler);
+    signal(SIGINT, sig_handler);
+    signal(SIGALRM, sig_handler);
+    signal(SIGHUP, sig_handler);
+
+    child_pid = fork();
+    if (child_pid < 0) return 1;
+    if (child_pid == 0) {
+        // Encerra imediatamente o filho caso o processo pai (runner) seja finalizado
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
         setgroups(0, NULL);
         if (setgid(65534) != 0 || setuid(65534) != 0) _exit(1);
         execv(argv[1], &argv[1]);
@@ -28,7 +49,7 @@ int main(int argc, char *argv[]) {
     } else {
         int status;
         struct rusage usage;
-        if (wait4(pid, &status, 0, &usage) < 0) return 1;
+        if (wait4(child_pid, &status, 0, &usage) < 0) return 1;
         
         double user_time = usage.ru_utime.tv_sec + (usage.ru_utime.tv_usec / 1000000.0);
         double sys_time  = usage.ru_stime.tv_sec + (usage.ru_stime.tv_usec / 1000000.0);
@@ -39,8 +60,19 @@ int main(int argc, char *argv[]) {
             fclose(f);
         }
         
-        if (WIFEXITED(status)) return WEXITSTATUS(status);
-        if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+        if (WIFEXITED(status)) return 0;
+        if (WIFSIGNALED(status)) {
+            int sig = WTERMSIG(status);
+            if (sig == SIGSEGV) fprintf(stderr, "Segmentation fault (core dumped) [SIGSEGV]\\n");
+            else if (sig == SIGFPE) fprintf(stderr, "Floating point exception (core dumped) [SIGFPE]\\n");
+            else if (sig == SIGABRT) fprintf(stderr, "Aborted (core dumped) [SIGABRT]\\n");
+            else if (sig == SIGBUS) fprintf(stderr, "Bus error (core dumped) [SIGBUS]\\n");
+            else if (sig == SIGILL) fprintf(stderr, "Illegal instruction [SIGILL]\\n");
+            else if (sig == SIGXFSZ) fprintf(stderr, "File size limit exceeded [SIGXFSZ]\\n");
+            else fprintf(stderr, "Terminated by signal %d\\n", sig);
+            fflush(stderr);
+            return 128 + sig;
+        }
         return 1;
     }
 }
@@ -72,7 +104,7 @@ gcc -O2 runner.c -o /usr/local/bin/runner
 chmod 555 /usr/local/bin/runner
 cd / && rm -rf /tmp/runner_build
 mkdir -p /sandbox && chmod 711 /sandbox
-touch /tmp/runner_v2_ready /tmp/runner_ready
+touch /tmp/runner_v4_ready /tmp/runner_ready
 exec sleep infinity
 `;
     const b64Startup = Buffer.from(startupScript, 'utf-8').toString('base64');
@@ -91,6 +123,11 @@ exec sleep infinity
         spec: {
             restartPolicy: 'Always',
             automountServiceAccountToken: false,
+            ...(process.env.K8S_WORKER_NODE ? {
+                nodeSelector: {
+                    'kubernetes.io/hostname': process.env.K8S_WORKER_NODE
+                }
+            } : {}),
             dnsPolicy: 'None',
             dnsConfig: {
                 nameservers: ['127.0.0.1']
@@ -263,17 +300,24 @@ function programarDesalocacaoSeExtra(entry) {
         entry.idleTimer = null;
     }
 
-    // Se temos mais pods no pool do que o mínimo configurado (ex: > 2),
-    // agendamos a destruição deste pod caso fique 5 minutos ocioso.
-    if (podMap.size > MIN_WARM_PODS) {
+    // 1. Pods extras (> 1): morrem após 5 minutos de ociosidade
+    if (podMap.size > 1) {
         entry.idleTimer = setTimeout(async () => {
-            // Re-verifica no momento do disparo se ainda está ocioso e se o pool ainda está acima do mínimo
-            if (entry.status === 'idle' && podMap.size > MIN_WARM_PODS) {
+            if (entry.status === 'idle' && podMap.size > 1) {
                 console.log(`[WarmPool] Pod extra ${entry.name} permaneceu ocioso por ${IDLE_TIMEOUT_MS / 60000} minutos. Desalocando...`);
                 await destruirPod(entry.name, 'timeout_ocioso_5min');
             }
         }, IDLE_TIMEOUT_MS);
+        return;
     }
+
+    // 2. Pod principal (único): se ninguém compilar nele por 24 horas consecutivas, desliga e fica em 0 pods!
+    entry.idleTimer = setTimeout(async () => {
+        if (entry.status === 'idle') {
+            console.log(`[WarmPool] Nenhuma compilação ocorreu nas últimas 24h. Desalocando pod principal ${entry.name}. Pool em repouso (0 pods).`);
+            await destruirPod(entry.name, 'sem_uso_24h');
+        }
+    }, BASE_POD_MAX_IDLE_MS);
 }
 
 async function adquirirPod() {
@@ -290,10 +334,12 @@ async function adquirirPod() {
         }
     }
 
-    // 2. Se não há pod idle e ainda estamos abaixo do limite máximo, criamos um pod sob demanda (escala dinâmica)
+    // 2. Se o pool estiver vazio (0 pods após 24h desligado) ou todos ocupados:
+    // Sobe um novo pod sob demanda instantaneamente a hora que alguém compilar!
     if (podMap.size < MAX_WARM_PODS) {
-        console.log(`[WarmPool] Todos os ${podMap.size} pods estão ocupados. Criando pod sob demanda (limite: ${MAX_WARM_PODS})...`);
-        const novoPod = await criarPodWorker(true);
+        const motivo = podMap.size === 0 ? "Pool acordando de repouso (0 pods)" : `Todos os ${podMap.size} pods ocupados`;
+        console.log(`[WarmPool] ${motivo}. Criando novo pod worker sob demanda...`);
+        const novoPod = await criarPodWorker(podMap.size > 0);
         novoPod.status = 'busy';
         novoPod.lastUsedAt = Date.now();
         return novoPod.name;
@@ -433,40 +479,75 @@ function executarComandoNoPod(podName, scriptBash, timeoutMs) {
 function montarScriptJob(code, tests, timeoutAlunoMs, jobId) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
     const limitSec = timeoutAlunoMs / 1000;
-    const hardTimeoutSec = Math.min(Math.max(1, Math.ceil(limitSec * 3)), 30);
+    const totalTests = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
+    const firstTimeoutSec = totalTests === 1
+        ? Math.max(1, Number(limitSec.toFixed(2)))
+        : Math.max(1, Number((limitSec * 0.85).toFixed(2)));
+    const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+    const compileTimeoutSec = Math.max(1, Math.ceil(compileTimeoutMs / 1000));
     const safeJobId = String(jobId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    let scriptTestes = '';
+    let scriptTestes = `
+START_TIME_MS=$(date +%s%3N)
+HAD_TIMEOUT=0
+TIMEOUT_COUNT=0
+
+run_step() {
+    local i="$1"
+    local b64In="$2"
+    echo "---STEP---"
+    echo "INDEX:\${i}"
+
+    NOW_MS=$(date +%s%3N)
+    ELAPSED_TOTAL=$(( NOW_MS - START_TIME_MS ))
+    if [ $ELAPSED_TOTAL -ge ${timeoutAlunoMs} ]; then
+        HAD_TIMEOUT=1
+    fi
+
+    if [ $TIMEOUT_COUNT -ge 3 ]; then
+        echo "TIME:0.000000"
+        echo "STATUS:HARD_TIME_LIMIT"
+        echo "GOT_B64:"
+    else
+        if [ $HAD_TIMEOUT -eq 1 ]; then
+            STEP_TIMEOUT="0.15s"
+        else
+            STEP_TIMEOUT="${firstTimeoutSec}s"
+        fi
+
+        find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
+        cd "$WORK_DIR"
+        echo "$b64In" | base64 -d > "$CTRL_DIR/in_\${i}.txt"
+
+        rm -f "$CTRL_DIR/time_\${i}.txt"
+        timeout -k 0.2s -s 9 $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_\${i}.txt" < "$CTRL_DIR/in_\${i}.txt" > "$CTRL_DIR/got_\${i}.txt" 2> "$CTRL_DIR/err_\${i}.txt"
+        EXIT_CODE=$?
+        pkill -9 -u 65534 2>/dev/null || true
+
+        CPUTIME=$(cat "$CTRL_DIR/time_\${i}.txt" 2>/dev/null || echo "0.000000")
+        echo "TIME:$CPUTIME"
+
+        if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
+            HAD_TIMEOUT=1
+            TIMEOUT_COUNT=$(( TIMEOUT_COUNT + 1 ))
+            echo "STATUS:HARD_TIME_LIMIT"
+            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+        elif [ $EXIT_CODE -ne 0 ]; then
+            echo "STATUS:RUNTIME_ERROR"
+            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+        else
+            echo "STATUS:OK"
+            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+        fi
+        rm -f "$CTRL_DIR/in_\${i}.txt" "$CTRL_DIR/got_\${i}.txt" "$CTRL_DIR/err_\${i}.txt" "$CTRL_DIR/time_\${i}.txt"
+    fi
+}
+`;
+
     tests.forEach((t, i) => {
         const b64In = Buffer.from(t.input || '', 'utf-8').toString('base64');
-        scriptTestes += `
-# Teste ${i}
-find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
-cd "$WORK_DIR"
-echo "${b64In}" | base64 -d > "$CTRL_DIR/in_${i}.txt"
-
-echo "---STEP---"
-echo "INDEX:${i}"
-
-rm -f "$CTRL_DIR/time_${i}.txt"
-timeout -k 1s -s 9 ${hardTimeoutSec}s /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_${i}.txt" < "$CTRL_DIR/in_${i}.txt" > "$CTRL_DIR/got_${i}.txt" 2> "$CTRL_DIR/err_${i}.txt"
-EXIT_CODE=$?
-pkill -9 -u 65534 2>/dev/null || true
-
-CPUTIME=$(cat "$CTRL_DIR/time_${i}.txt" 2>/dev/null || echo "0.000000")
-echo "TIME:$CPUTIME"
-
-if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
-    echo "STATUS:HARD_TIME_LIMIT"
-elif [ $EXIT_CODE -ne 0 ]; then
-    echo "STATUS:RUNTIME_ERROR"
-    echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
-else
-    echo "STATUS:OK"
-    echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
-fi
-rm -f "$CTRL_DIR/in_${i}.txt" "$CTRL_DIR/got_${i}.txt" "$CTRL_DIR/err_${i}.txt" "$CTRL_DIR/time_${i}.txt"
-`;
+        scriptTestes += `run_step ${i} "${b64In}"\n`;
     });
 
     return `#!/usr/bin/env bash
@@ -498,12 +579,12 @@ mkdir -p "$BIN_DIR" && chmod 755 "$BIN_DIR"
 mkdir -p "$WORK_DIR" && chown 65534:65534 "$WORK_DIR" && chmod 700 "$WORK_DIR"
 
 # Garante que o binário do runner esteja presente e atualizado (inclusive em Warm Pods adotados)
-if [ ! -f /usr/local/bin/runner ] || [ ! -f /tmp/runner_v2_ready ]; then
+if [ ! -f /usr/local/bin/runner ] || [ ! -f /tmp/runner_v4_ready ]; then
     echo "${B64_RUNNER}" | base64 -d > "$CTRL_DIR/runner.c"
     gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
     chmod 555 /usr/local/bin/runner
     rm -f "$CTRL_DIR/runner.c"
-    touch /tmp/runner_v2_ready
+    touch /tmp/runner_v4_ready
 fi
 
 cd "$WORK_DIR"
@@ -512,16 +593,19 @@ chown 65534:65534 main.c
 chmod 600 main.c
 
 set +e
-COMPILE_ERR=$(timeout -k 1s -s 9 10s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc main.c -o prog -lm' 2>&1)
+COMPILE_ERR=$(timeout -k 1s -s 9 ${compileTimeoutSec}s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc -Wall main.c -o prog -lm' 2>&1)
 COMPILE_STATUS=$?
 
 if [ $COMPILE_STATUS -ne 0 ]; then
     if [ $COMPILE_STATUS -eq 124 ] || [ $COMPILE_STATUS -eq 137 ]; then
-        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (10s). Verifique diretivas #include ou macros."
+        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (${compileTimeoutSec}s). Verifique diretivas #include ou macros."
     fi
     echo "STATUS:COMPILATION_ERROR"
     echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
     exit 0
+fi
+if [ -n "$COMPILE_ERR" ]; then
+    echo "WARN_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
 fi
 
 mv "$WORK_DIR/prog" "$BIN_DIR/prog"
@@ -544,18 +628,12 @@ async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now()
 
     try {
         const scriptJob = montarScriptJob(code, tests, timeoutAlunoMs, jobId);
-        const b64Script = Buffer.from(scriptJob, 'utf-8').toString('base64');
-        const comando = `echo "${b64Script}" | base64 -d | /bin/bash`;
+        const b64GzScript = zlib.gzipSync(Buffer.from(scriptJob, 'utf-8')).toString('base64');
+        const comando = `echo "${b64GzScript}" | base64 -d | gzip -d | /bin/bash`;
 
-        const totalTestes = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
-        const hardTimeoutSec = Math.min(Math.max(1, Math.ceil((timeoutAlunoMs * 3) / 1000)), 30);
-        
-        // Trava de segurança global:
-        // - Se o professor configurou tempo limite customizado: teto máximo de 2 minutos (120.000 ms)
-        // - Se não foi configurado (tempo padrão): teto máximo de 10 segundos (+ 5s margem de compilação = 15.000 ms)
-        const temLimiteCustomizado = timeoutAlunoMs && timeoutAlunoMs !== 10000;
-        const tetoMaximoExecucaoMs = temLimiteCustomizado ? 120000 : 15000;
-        const timeoutExecMs = Math.min((hardTimeoutSec * 1000 * totalTestes) + 5000, tetoMaximoExecucaoMs);
+        // Teto de execução: tempo limite configurado para o teste + margem de compilação do .env (COMPILE_TIMEOUT)
+        const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+        const timeoutExecMs = Math.min(Math.max(timeoutAlunoMs + compileTimeoutMs + 5000, 15000), 200000);
 
         const resultado = await executarComandoNoPod(podName, comando, timeoutExecMs);
         return (resultado.stdout || resultado.stderr || '').toString();
@@ -603,15 +681,18 @@ async function verificarEManterPool() {
 
                 // Adota pods saudáveis que já estejam no cluster (ex: após reboot da app)
                 if (!podMap.has(name)) {
-                    podMap.set(name, {
+                    const criacao = pod.metadata?.creationTimestamp ? new Date(pod.metadata.creationTimestamp).getTime() : Date.now();
+                    const novaEntrada = {
                         name,
                         status: 'idle',
-                        createdAt: Date.now(),
+                        createdAt: criacao,
                         lastUsedAt: Date.now(),
                         idleTimer: null,
                         isExtra: podMap.size >= MIN_WARM_PODS
-                    });
-                    console.log(`[WarmPool] Pod existente ${name} adotado no pool.`);
+                    };
+                    podMap.set(name, novaEntrada);
+                    console.log(`[WarmPool] Pod existente ${name} adotado no pool (Idade: ${Math.round((Date.now() - criacao) / 3600000)}h).`);
+                    programarDesalocacaoSeExtra(novaEntrada);
                 }
             }
         }
@@ -624,9 +705,9 @@ async function verificarEManterPool() {
             }
         }
 
-        // Se estiver abaixo do mínimo de pods (MIN_WARM_PODS), sobe os que faltam
+        // Se estiver abaixo do mínimo de pods (MIN_WARM_PODS > 0), sobe os que faltam
         const podsValidos = podMap.size;
-        if (podsValidos < MIN_WARM_PODS) {
+        if (MIN_WARM_PODS > 0 && podsValidos < MIN_WARM_PODS) {
             const faltam = MIN_WARM_PODS - podsValidos;
             console.log(`[WarmPool] Iniciando ${faltam} pod(s) que faltam (Ativos: ${podsValidos} | Teto Máximo: ${MAX_WARM_PODS})...`);
             for (let i = 0; i < faltam; i++) {

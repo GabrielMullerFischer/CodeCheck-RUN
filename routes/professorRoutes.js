@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 
 const Exercise = require('../models/Exercise');
 const ExerciseList = require('../models/ExerciseList');
@@ -9,7 +10,7 @@ const ActivityAttempt = require('../models/ActivityAttempt');
 const minioService = require('../services/minioService');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
-const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 1000;
+const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_TIME_LIMIT_MS || process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 5000;
 const MAX_TESTS_PER_EXERCISE = 1000;
 const MAX_TEST_IO_CHARS = 5000;
 
@@ -104,6 +105,7 @@ router.get('/atividade/exercicios', async (req, res) => {
                 }
 
                 const exObj = exercicioIndividual.toObject ? exercicioIndividual.toObject() : JSON.parse(JSON.stringify(exercicioIndividual));
+                exObj.timeLimit = exObj.timeLimit || DEFAULT_TIME_LIMIT_MS;
                 return res.json({
                     success: true,
                     lista: {
@@ -170,6 +172,13 @@ router.get('/atividade/exercicios', async (req, res) => {
         }
 
         const listaObj = listaCompleta.toObject ? listaCompleta.toObject() : JSON.parse(JSON.stringify(listaCompleta));
+
+        if (Array.isArray(listaObj.exercises)) {
+            listaObj.exercises = listaObj.exercises.map(ex => {
+                ex.timeLimit = ex.timeLimit || DEFAULT_TIME_LIMIT_MS;
+                return ex;
+            });
+        }
 
         // Sanitização crítica: para alunos, remove TODOS os casos de teste privados/secretos,
         // enviando estritamente os casos de teste visíveis (máximo 3) que servem de exemplo na interface.
@@ -287,7 +296,7 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
             return res.status(400).json({ success: false, error: "No máximo 3 casos de teste podem ser marcados como visíveis." });
         }
 
-        let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : null;
+        let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : DEFAULT_TIME_LIMIT_MS;
         if (timeLimitVal !== null) {
             if (isNaN(timeLimitVal) || timeLimitVal < 100) {
                 return res.status(400).json({ success: false, error: "O tempo limite deve ser de pelo menos 100 ms." });
@@ -368,7 +377,7 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
             return res.status(400).json({ success: false, error: "No máximo 3 casos de teste podem ser marcados como visíveis." });
         }
 
-        let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : null;
+        let timeLimitVal = (timeLimit !== null && timeLimit !== undefined && timeLimit !== '') ? parseInt(timeLimit, 10) : DEFAULT_TIME_LIMIT_MS;
         if (timeLimitVal !== null) {
             if (isNaN(timeLimitVal) || timeLimitVal < 100) {
                 return res.status(400).json({ success: false, error: "O tempo limite deve ser de pelo menos 100 ms." });
@@ -399,6 +408,9 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
 router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
     try {
         const { id } = req.params;
+        if (!ehObjectIdValido(id)) {
+            return res.status(400).json({ success: false, error: "ID de exercício inválido." });
+        }
         const { removeFromAllLists } = req.query;
         const ctx = obterContextoAuth(req);
         const meuId = String(ctx.userId || 'preview_user');
@@ -406,17 +418,19 @@ router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
         const ex = await Exercise.findById(id);
         if (!ex) return res.status(404).json({ success: false, error: "Exercício não encontrado." });
 
-        if (ex.authorId === 'codecheck_oficial') {
-            return res.status(403).json({ success: false, error: "Itens oficiais do CodeCheck-RUN não podem ser excluídos." });
-        }
+        const objId = new mongoose.Types.ObjectId(id);
 
-        if (String(ex.authorId) !== meuId && meuId !== 'preview_user') {
-            return res.status(403).json({ success: false, error: "Sem permissão para excluir este exercício." });
+        // Se for exercício oficial (codecheck_oficial) ou de outro autor:
+        // O original permanece intacto no banco universal para sempre,
+        // mas é removido imediatamente de todas as listas e do workspace deste professor sem erro.
+        if (ex.authorId === 'codecheck_oficial' || (String(ex.authorId) !== meuId && meuId !== 'preview_user')) {
+            await ExerciseList.updateMany({ authorId: meuId, exercises: objId }, { $pull: { exercises: objId } });
+            return res.json({ success: true, message: "Exercício removido das suas listas com sucesso." });
         }
 
         if (removeFromAllLists === 'true') {
-            await Exercise.findByIdAndDelete(id);
-            await ExerciseList.updateMany({ exercises: id }, { $pull: { exercises: id } });
+            await Exercise.findByIdAndDelete(objId);
+            await ExerciseList.updateMany({ exercises: objId }, { $pull: { exercises: objId } });
         } else {
             ex.isArchived = true;
             await ex.save();
@@ -424,8 +438,8 @@ router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
-        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
+        console.error("❌ [Erro ao excluir exercício]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao excluir o exercício." });
     }
 });
 
@@ -566,7 +580,7 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
             }
 
             // Cria o exercício:
-            // Regra: timeLimit = null (default do sistema)
+            // Regra: timeLimit = DEFAULT_TIME_LIMIT_MS (5000ms padrão do sistema)
             // Regra: isPublic = true (público por padrão)
             const novoEx = await Exercise.create({
                 title: tituloFinal,
@@ -575,7 +589,7 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
                 authorId,
                 authorName,
                 isPublic: true,
-                timeLimit: null
+                timeLimit: DEFAULT_TIME_LIMIT_MS
             });
 
             exerciciosCriadosIds.push(novoEx._id);
@@ -628,14 +642,6 @@ router.put('/lista/:id', verificarProfessor, async (req, res) => {
         const lista = await ExerciseList.findById(id);
         if (!lista) return res.status(404).json({ success: false, error: "Lista não encontrada." });
 
-        if (lista.authorId === 'codecheck_oficial') {
-            return res.status(403).json({ success: false, error: "Listas oficiais do CodeCheck-RUN não podem ser alteradas. Clique em 'Importar' para criar sua própria cópia." });
-        }
-
-        if (String(lista.authorId) !== meuId && meuId !== 'preview_user') {
-            return res.status(403).json({ success: false, error: "Sem permissão para alterar esta lista." });
-        }
-
         if (!Array.isArray(exercises) || exercises.length === 0) {
             return res.status(400).json({ success: false, error: "Selecione pelo menos um exercício válido." });
         }
@@ -658,6 +664,21 @@ router.put('/lista/:id', verificarProfessor, async (req, res) => {
             }
         }
 
+        // Se o professor estiver editando uma lista oficial ou criada por outro docente:
+        // Mantém a original intacta no banco universal e cria automaticamente a sua própria cópia com as alterações!
+        if (lista.authorId === 'codecheck_oficial' || (String(lista.authorId) !== meuId && meuId !== 'preview_user')) {
+            const novaLista = await ExerciseList.create({
+                title: (title || lista.title).trim(),
+                authorId: meuId,
+                authorName: ctx.userName || 'Professor',
+                exercises: idsValidos,
+                isPublic: !isPrivate
+            });
+
+            await ActivityConfig.updateMany({ listId: lista._id }, { $set: { listId: novaLista._id } });
+            return res.json({ success: true, lista: novaLista, cloned: true });
+        }
+
         lista.title = (title || '').trim();
         lista.exercises = idsValidos;
         lista.isPublic = !isPrivate;
@@ -674,27 +695,31 @@ router.put('/lista/:id', verificarProfessor, async (req, res) => {
 router.delete('/lista/:id', verificarProfessor, async (req, res) => {
     try {
         const { id } = req.params;
+        if (!ehObjectIdValido(id)) {
+            return res.status(400).json({ success: false, error: "ID de lista inválido." });
+        }
         const ctx = obterContextoAuth(req);
         const meuId = String(ctx.userId || 'preview_user');
 
         const lista = await ExerciseList.findById(id);
         if (!lista) return res.status(404).json({ success: false, error: "Lista não encontrada." });
 
-        if (lista.authorId === 'codecheck_oficial') {
-            return res.status(403).json({ success: false, error: "Listas oficiais do CodeCheck-RUN não podem ser excluídas." });
+        const objId = new mongoose.Types.ObjectId(id);
+
+        // Se for lista oficial ou de outro docente vinculada à atividade:
+        // Mantém o original no banco universal, mas desvincula do contexto deste professor sem erro
+        if (lista.authorId === 'codecheck_oficial' || (String(lista.authorId) !== meuId && meuId !== 'preview_user')) {
+            await ActivityConfig.updateMany({ listId: objId }, { $unset: { listId: "" } });
+            return res.json({ success: true, message: "Lista desvinculada com sucesso." });
         }
 
-        if (String(lista.authorId) !== meuId && meuId !== 'preview_user') {
-            return res.status(403).json({ success: false, error: "Sem permissão para excluir esta lista." });
-        }
-
-        await ExerciseList.findByIdAndDelete(id);
-        await ActivityConfig.updateMany({ listId: id }, { $unset: { listId: "" } });
+        await ExerciseList.findByIdAndDelete(objId);
+        await ActivityConfig.updateMany({ listId: objId }, { $unset: { listId: "" } });
 
         res.json({ success: true });
     } catch (e) {
-        console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
-        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao carregar os exercícios." });
+        console.error("❌ [Erro ao excluir lista]:", e?.message || e);
+        res.status(500).json({ success: false, error: "Ocorreu um erro interno no servidor ao excluir a lista." });
     }
 });
 
@@ -818,12 +843,22 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
         const meuId = String(ctx.userId || 'preview_user');
 
         const todasListas = await ExerciseList.find().populate('exercises').sort({ _id: -1 }).lean();
+        todasListas.forEach(l => {
+            if (Array.isArray(l.exercises)) {
+                l.exercises.forEach(ex => {
+                    if (ex && !ex.timeLimit) ex.timeLimit = DEFAULT_TIME_LIMIT_MS;
+                });
+            }
+        });
         const minhasListas = todasListas.filter(l => String(l.authorId) === meuId);
         
         let bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
         bancoUniversalListas.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
 
         const todosExercicios = await Exercise.find({ isArchived: { $ne: true } }).sort({ _id: -1 }).lean();
+        todosExercicios.forEach(ex => {
+            if (!ex.timeLimit) ex.timeLimit = DEFAULT_TIME_LIMIT_MS;
+        });
         const meusExercicios = todosExercicios.filter(e => String(e.authorId) === meuId);
 
         let bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
@@ -1081,7 +1116,7 @@ router.post('/professor/exercicio/importar', verificarProfessor, async (req, res
             authorId: meuId,
             authorName: meuNome,
             isPublic: false,
-            timeLimit: exOriginal.timeLimit || null
+            timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS
         });
 
         res.json({ success: true, exercicio: novoExercicio });
@@ -1171,7 +1206,7 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
                 authorId: meuId,
                 authorName: meuNome,
                 isPublic: false,
-                timeLimit: exOriginal.timeLimit || null
+                timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS
             });
 
             novosIdsExercicios.push(novoExercicio._id);
@@ -1271,6 +1306,12 @@ async function carregarSubmissaoProfessor(req, res, params) {
             if (targetLog && targetLog !== 'preview') {
                 const rawLog = await minioService.lerArquivoPorPath(targetLog);
                 logResultado = JSON.parse(rawLog);
+                if (logResultado && logResultado.status === 'Time Limit') {
+                    delete logResultado.input;
+                    delete logResultado.got;
+                    delete logResultado.expected;
+                    delete logResultado.testIndex;
+                }
             }
         } catch (err) {
             logResultado = {
