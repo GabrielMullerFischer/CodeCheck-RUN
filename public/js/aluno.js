@@ -39,6 +39,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnSubAnterior = document.getElementById('btnSubAnterior');
     const btnSubProximo = document.getElementById('btnSubProximo');
     const labelHistoricoSub = document.getElementById('labelHistoricoSub');
+    const conteudoPrincipalEl = document.getElementById('conteudo-principal-aluno');
+    const rowLayoutEl = document.getElementById('row-layout-aluno');
+    const btnToggleModoFoco = document.getElementById('btnToggleModoFoco');
+    const btnReverterModoFoco = document.getElementById('btnReverterModoFoco');
+    const iconModoFoco = document.getElementById('iconModoFoco');
+    const textoModoFoco = document.getElementById('textoModoFoco');
+    const cardEnunciadoFoco = document.getElementById('card-enunciado-foco');
+    const headerEnunciadoFoco = document.getElementById('header-enunciado-foco');
+    const bodyEnunciadoFoco = document.getElementById('body-enunciado-foco');
+    const btnRetrairEnunciado = document.getElementById('btnRetrairEnunciado');
+    const iconRetrairEnunciado = document.getElementById('iconRetrairEnunciado');
+    const slotEnunciadoPadrao = document.getElementById('slot-enunciado-padrao');
+    const blocoEnunciadoQuestao = document.getElementById('bloco-enunciado-questao');
+    const hrEnunciadoPadrao = document.getElementById('hr-enunciado-padrao');
+    const splitterModoFoco = document.getElementById('splitter-modo-foco');
+    const labelPosMinimalista = document.getElementById('label-pos-minimalista');
+    const btnTrofeuMinimalista = document.getElementById('btnTrofeuMinimalista');
+    const navContainerMini = document.getElementById('container-nav-questoes-mini');
     const MODELO_PADRAO = '#include <stdio.h>\n\nint main() {\n    \n    return 0;\n}';
 
     const badgeCronometro = document.getElementById('badge-cronometro-atividade');
@@ -173,6 +191,278 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.setItem('codecheck_editor_theme', novoTema);
         });
     }
+
+    // --- Controle do Modo Foco e Painel Lateral Redimensionável (Splitter) ---
+    let modoFocoAtivo = localStorage.getItem('codecheck_modo_foco') === 'true';
+    let enunciadoRetraidoFoco = false;
+
+    function ajustarTipografiaEnunciado() {
+        if (!descEl) return;
+        const texto = (descEl.innerText || descEl.textContent || '').trim();
+        if (texto.length > 220) {
+            descEl.classList.add('enunciado-longo');
+        } else {
+            descEl.classList.remove('enunciado-longo');
+        }
+    }
+
+    function aplicarLarguraSplitterSalva() {
+        if (!conteudoPrincipalEl) return;
+        const pctSalvo = parseFloat(localStorage.getItem('codecheck_foco_split_pct'));
+        const pctValido = (!isNaN(pctSalvo) && pctSalvo >= 20 && pctSalvo <= 55) ? pctSalvo : 32;
+        conteudoPrincipalEl.style.setProperty('--foco-left-width', `${pctValido}%`);
+    }
+
+    const ALTURA_PADRAO_NORMAL = 500;
+    const ALTURA_PADRAO_FOCO = 640;
+    const resizerAlturaEditor = document.getElementById('resizer-altura-editor');
+
+    function obterChaveAlturaStorage() {
+        const emFoco = modoFocoAtivo && window.innerWidth >= 992;
+        return emFoco ? 'codecheck_altura_editor_foco' : 'codecheck_altura_editor_normal';
+    }
+
+    function obterAlturaPadraoModoAtual() {
+        const emFoco = modoFocoAtivo && window.innerWidth >= 992;
+        return emFoco ? ALTURA_PADRAO_FOCO : ALTURA_PADRAO_NORMAL;
+    }
+
+    function ajustarAlturaEditorModoFoco() {
+        if (!editorCM) return;
+        const chave = obterChaveAlturaStorage();
+        const salvo = parseInt(localStorage.getItem(chave), 10);
+        const padrao = obterAlturaPadraoModoAtual();
+        const alturaFinal = (!isNaN(salvo) && salvo >= 280 && salvo <= 1050) ? salvo : padrao;
+
+        editorCM.setSize(null, `${alturaFinal}px`);
+        editorCM.refresh();
+    }
+
+    if (resizerAlturaEditor) {
+        let arrastandoAltura = false;
+        let inicioY = 0;
+        let alturaInicial = ALTURA_PADRAO_NORMAL;
+
+        const iniciarArrasteAltura = (clientY) => {
+            if (!editorCM) return;
+            arrastandoAltura = true;
+            inicioY = clientY;
+            const wrapper = editorCM.getWrapperElement();
+            alturaInicial = wrapper ? wrapper.offsetHeight : obterAlturaPadraoModoAtual();
+            resizerAlturaEditor.classList.add('arrastando');
+            document.body.classList.add('arrastando-altura-editor');
+        };
+
+        const moverArrasteAltura = (clientY) => {
+            if (!arrastandoAltura || !editorCM) return;
+            const deltaY = clientY - inicioY;
+            const novaAltura = Math.min(1050, Math.max(280, Math.round(alturaInicial + deltaY)));
+            editorCM.setSize(null, `${novaAltura}px`);
+            editorCM.refresh();
+        };
+
+        const finalizarArrasteAltura = () => {
+            if (!arrastandoAltura || !editorCM) return;
+            arrastandoAltura = false;
+            resizerAlturaEditor.classList.remove('arrastando');
+            document.body.classList.remove('arrastando-altura-editor');
+            const wrapper = editorCM.getWrapperElement();
+            if (wrapper) {
+                try {
+                    localStorage.setItem(obterChaveAlturaStorage(), String(wrapper.offsetHeight));
+                } catch { }
+            }
+            editorCM.refresh();
+        };
+
+        resizerAlturaEditor.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            iniciarArrasteAltura(e.clientY);
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (arrastandoAltura) {
+                moverArrasteAltura(e.clientY);
+            }
+        });
+
+        window.addEventListener('mouseup', finalizarArrasteAltura);
+
+        resizerAlturaEditor.addEventListener('touchstart', (e) => {
+            if (e.touches && e.touches.length > 0) {
+                iniciarArrasteAltura(e.touches[0].clientY);
+            }
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (e) => {
+            if (arrastandoAltura && e.touches && e.touches.length > 0) {
+                moverArrasteAltura(e.touches[0].clientY);
+            }
+        }, { passive: true });
+
+        window.addEventListener('touchend', finalizarArrasteAltura);
+
+        resizerAlturaEditor.addEventListener('dblclick', () => {
+            if (!editorCM) return;
+            try {
+                localStorage.removeItem(obterChaveAlturaStorage());
+            } catch { }
+            const padrao = obterAlturaPadraoModoAtual();
+            editorCM.setSize(null, `${padrao}px`);
+            editorCM.refresh();
+        });
+    }
+
+    function ajustarAlturaEditorModoFoco() {
+        if (!editorCM) return;
+        // Mantém a altura definida via CSS (no Modo Foco: calc(100vh - 260px) até 610px),
+        // garantindo sempre espaço livre abaixo do terminal para visualizar alertas/erros.
+        editorCM.setSize(null, null);
+        editorCM.refresh();
+    }
+
+    function sincronizarLayoutModoFoco() {
+        if (!conteudoPrincipalEl || !blocoEnunciadoQuestao) return;
+        const emTelaGrande = window.innerWidth >= 992;
+        const ativarVisualmente = modoFocoAtivo && emTelaGrande;
+
+        if (ativarVisualmente) {
+            aplicarLarguraSplitterSalva();
+            conteudoPrincipalEl.classList.add('modo-foco-ativo');
+
+            if (bodyEnunciadoFoco && blocoEnunciadoQuestao.parentElement !== bodyEnunciadoFoco) {
+                bodyEnunciadoFoco.appendChild(blocoEnunciadoQuestao);
+            }
+            if (cardEnunciadoFoco) cardEnunciadoFoco.style.display = 'block';
+            if (slotEnunciadoPadrao) slotEnunciadoPadrao.style.display = 'none';
+
+            if (btnToggleModoFoco) btnToggleModoFoco.classList.add('active');
+            if (iconModoFoco) iconModoFoco.className = 'fas fa-compress-alt mr-1';
+            if (textoModoFoco) textoModoFoco.innerText = 'Sair do Foco';
+        } else {
+            conteudoPrincipalEl.classList.remove('modo-foco-ativo');
+
+            if (slotEnunciadoPadrao && blocoEnunciadoQuestao.parentElement !== slotEnunciadoPadrao) {
+                if (hrEnunciadoPadrao) {
+                    slotEnunciadoPadrao.insertBefore(blocoEnunciadoQuestao, hrEnunciadoPadrao);
+                } else {
+                    slotEnunciadoPadrao.appendChild(blocoEnunciadoQuestao);
+                }
+            }
+            if (cardEnunciadoFoco) cardEnunciadoFoco.style.display = 'none';
+            if (slotEnunciadoPadrao) slotEnunciadoPadrao.style.display = 'block';
+
+            if (btnToggleModoFoco) btnToggleModoFoco.classList.remove('active');
+            if (iconModoFoco) iconModoFoco.className = 'fas fa-expand-alt mr-1';
+            if (textoModoFoco) textoModoFoco.innerText = 'Modo Foco';
+        }
+
+        ajustarTipografiaEnunciado();
+        setTimeout(() => {
+            ajustarAlturaEditorModoFoco();
+        }, 50);
+    }
+
+    function alternarModoFoco(forcarEstado) {
+        modoFocoAtivo = typeof forcarEstado === 'boolean' ? forcarEstado : !modoFocoAtivo;
+        try {
+            localStorage.setItem('codecheck_modo_foco', modoFocoAtivo ? 'true' : 'false');
+        } catch { }
+        sincronizarLayoutModoFoco();
+    }
+
+    if (btnToggleModoFoco) {
+        btnToggleModoFoco.addEventListener('click', () => alternarModoFoco());
+    }
+    if (btnReverterModoFoco) {
+        btnReverterModoFoco.addEventListener('click', () => alternarModoFoco(false));
+    }
+
+    if (headerEnunciadoFoco && bodyEnunciadoFoco) {
+        headerEnunciadoFoco.addEventListener('click', () => {
+            enunciadoRetraidoFoco = !enunciadoRetraidoFoco;
+            if (enunciadoRetraidoFoco) {
+                bodyEnunciadoFoco.classList.add('retraido');
+                if (iconRetrairEnunciado) iconRetrairEnunciado.className = 'fas fa-chevron-down';
+            } else {
+                bodyEnunciadoFoco.classList.remove('retraido');
+                if (iconRetrairEnunciado) iconRetrairEnunciado.className = 'fas fa-chevron-up';
+            }
+            setTimeout(ajustarAlturaEditorModoFoco, 260);
+        });
+    }
+
+    if (splitterModoFoco && rowLayoutEl && conteudoPrincipalEl) {
+        let arrastandoSplitter = false;
+
+        const atualizarLarguraPorPosicao = (clientX) => {
+            if (!arrastandoSplitter) return;
+            const rect = rowLayoutEl.getBoundingClientRect();
+            if (!rect.width) return;
+            const relativoX = clientX - rect.left;
+            const pct = Math.min(55, Math.max(20, (relativoX / rect.width) * 100));
+            const pctFormatado = pct.toFixed(2);
+            conteudoPrincipalEl.style.setProperty('--foco-left-width', `${pctFormatado}%`);
+            if (editorCM) editorCM.refresh();
+        };
+
+        const finalizarArrasteSplitter = () => {
+            if (!arrastandoSplitter) return;
+            arrastandoSplitter = false;
+            splitterModoFoco.classList.remove('arrastando');
+            document.body.classList.remove('arrastando-splitter');
+            const valorAtual = conteudoPrincipalEl.style.getPropertyValue('--foco-left-width');
+            if (valorAtual) {
+                try {
+                    localStorage.setItem('codecheck_foco_split_pct', parseFloat(valorAtual));
+                } catch { }
+            }
+            if (editorCM) editorCM.refresh();
+        };
+
+        splitterModoFoco.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            arrastandoSplitter = true;
+            splitterModoFoco.classList.add('arrastando');
+            document.body.classList.add('arrastando-splitter');
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (arrastandoSplitter) {
+                atualizarLarguraPorPosicao(e.clientX);
+            }
+        });
+
+        window.addEventListener('mouseup', finalizarArrasteSplitter);
+
+        splitterModoFoco.addEventListener('touchstart', () => {
+            arrastandoSplitter = true;
+            splitterModoFoco.classList.add('arrastando');
+            document.body.classList.add('arrastando-splitter');
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (e) => {
+            if (arrastandoSplitter && e.touches && e.touches.length > 0) {
+                atualizarLarguraPorPosicao(e.touches[0].clientX);
+            }
+        }, { passive: true });
+
+        window.addEventListener('touchend', finalizarArrasteSplitter);
+
+        splitterModoFoco.addEventListener('dblclick', () => {
+            conteudoPrincipalEl.style.setProperty('--foco-left-width', '32%');
+            try {
+                localStorage.setItem('codecheck_foco_split_pct', '32');
+            } catch { }
+            if (editorCM) editorCM.refresh();
+        });
+    }
+
+    window.addEventListener('resize', () => {
+        sincronizarLayoutModoFoco();
+    });
+
+    sincronizarLayoutModoFoco();
 
     editorCM.on("inputRead", (cm, change) => {
         if (change.text && change.text.length > 0 && /^[a-zA-Z_]$/.test(change.text[0])) {
@@ -659,6 +949,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function montarNavegacaoMoodle() {
         if (!navContainer) return;
         navContainer.innerHTML = '';
+        if (navContainerMini) navContainerMini.innerHTML = '';
 
         listaExercicios.forEach((ex, index) => {
             const box = document.createElement('a');
@@ -682,6 +973,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             navContainer.appendChild(box);
+
+            if (navContainerMini) {
+                const miniBox = document.createElement('a');
+                miniBox.href = '#';
+                miniBox.className = `moodle-nav-box mini-nav-box ${index === indiceAtual ? 'active' : ''} ${statusClass}`;
+                miniBox.title = `Questão ${index + 1}: ${ex.title || ''}`;
+                miniBox.innerHTML = `
+                    <span>${index + 1}</span>
+                    <div class="status-strip"></div>
+                `;
+                miniBox.onclick = (e) => {
+                    e.preventDefault();
+                    if (timerBloqueado) return;
+                    selecionarQuestao(index);
+                };
+                navContainerMini.appendChild(miniBox);
+            }
         });
     }
 
@@ -1146,6 +1454,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
 
+                if (labelPosMinimalista) {
+                    labelPosMinimalista.innerText = minhaPos ? `#${minhaPos}` : '#-';
+                }
+                if (btnTrofeuMinimalista) {
+                    btnTrofeuMinimalista.title = minhaPos
+                        ? `Sua Posição Geral: #${minhaPos} de ${totalAlunos} (Clique para ver a classificação)`
+                        : 'Sua Posição Geral: Pendente (Clique para ver a classificação)';
+                }
+
                 containerTop3.innerHTML = '';
 
                 if (rankingCompleto.length === 0) {
@@ -1343,7 +1660,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         mapaUltimoCodigoCompilado[exAtual._id] = data.code;
                     }
                 }
-                renderizarFeedbackJuiz(data.resultado);
+                renderizarFeedbackJuiz(data.resultado, !apenasLog);
             } else if (!apenasLog) {
                 setCodigoNoEditor('// Erro ao carregar código desta submissão.');
             }
@@ -1410,6 +1727,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (tituloEl) tituloEl.innerText = ex.title;
         if (descEl) descEl.innerText = ex.description;
+        ajustarTipografiaEnunciado();
+        if (bodyEnunciadoFoco) bodyEnunciadoFoco.scrollTop = 0;
 
         if (valTempoLimite && infoTempoLimite) {
             const limiteMs = (ex.timeLimit && Number(ex.timeLimit) > 0) ? Number(ex.timeLimit) : 5000;
@@ -1493,7 +1812,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btnAnterior) btnAnterior.disabled = (indiceAtual === 0);
         if (btnProximo) btnProximo.disabled = (indiceAtual === listaExercicios.length - 1);
 
-        editorCM.refresh();
+        ajustarAlturaEditorModoFoco();
         posicionarCursorAposAspas();
         atualizarEstadoBotaoCompilar();
         atualizarEstadoBotaoTesteCustom();

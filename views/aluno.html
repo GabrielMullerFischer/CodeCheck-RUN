@@ -63,12 +63,48 @@
             background-color: #dc3545;
         }
         .CodeMirror {
-            height: 520px;
-            border-radius: 6px;
+            height: 500px;
+            border-radius: 6px 6px 0 0;
             font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
             font-size: 0.96rem;
             border: 1px solid #ced4da;
             line-height: 1.5;
+        }
+        .editor-height-resizer {
+            height: 12px;
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            cursor: row-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+            transition: background-color 0.15s ease;
+        }
+        .editor-height-resizer:hover,
+        .editor-height-resizer.arrastando {
+            background-color: #dee2e6;
+        }
+        .editor-height-resizer-grip {
+            width: 44px;
+            height: 4px;
+            border-top: 1.5px solid #adb5bd;
+            border-bottom: 1.5px solid #adb5bd;
+            transition: border-color 0.15s ease, width 0.15s ease;
+        }
+        .editor-height-resizer:hover .editor-height-resizer-grip,
+        .editor-height-resizer.arrastando .editor-height-resizer-grip {
+            border-color: #00539b;
+            width: 64px;
+        }
+        body.arrastando-altura-editor,
+        body.arrastando-altura-editor * {
+            cursor: row-resize !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
         }
         @keyframes piscarLinhaSuave {
             0% { opacity: 0.4; }
@@ -180,6 +216,192 @@
             background-color: #212529;
             color: #ffffff;
         }
+        .theme-pill-divider {
+            display: inline-block;
+            width: 1px;
+            height: 14px;
+            background-color: rgba(255, 255, 255, 0.25);
+            margin: 0 8px;
+        }
+        .btn-modo-foco-pill {
+            background: transparent;
+            color: #f8f9fa;
+            border: none;
+            font-size: 0.76rem;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none !important;
+            padding: 1px 6px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .btn-modo-foco-pill:hover {
+            background-color: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+        }
+        .btn-modo-foco-pill.active {
+            background-color: #00539b;
+            color: #ffffff;
+        }
+        .barra-compilar-fixa {
+            position: relative;
+            padding-top: 4px;
+        }
+        /* Estilos do Modo Foco e Painel Redimensionável (Splitter) */
+        .foco-splitter {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 12px;
+            flex: 0 0 12px;
+            cursor: col-resize;
+            user-select: none;
+            -webkit-user-select: none;
+            z-index: 12;
+            margin: 0 2px;
+        }
+        .foco-splitter-grip {
+            width: 4px;
+            height: 52px;
+            border-radius: 4px;
+            background-color: #ced4da;
+            transition: background-color 0.2s ease, height 0.2s ease, box-shadow 0.2s ease;
+        }
+        .foco-splitter:hover .foco-splitter-grip,
+        .foco-splitter.arrastando .foco-splitter-grip {
+            background-color: #00539b;
+            height: 76px;
+            box-shadow: 0 0 6px rgba(0, 83, 155, 0.45);
+        }
+        body.arrastando-splitter,
+        body.arrastando-splitter * {
+            cursor: col-resize !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+        }
+        #body-enunciado-foco {
+            max-height: 290px;
+            overflow-y: auto;
+            transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+        }
+        #body-enunciado-foco.retraido {
+            max-height: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            overflow: hidden !important;
+            opacity: 0;
+        }
+        .modo-foco-ativo #body-enunciado-foco #descricao-questao {
+            font-size: 0.8rem;
+            line-height: 1.45;
+        }
+        .modo-foco-ativo #body-enunciado-foco #nome-questao {
+            font-size: 1rem;
+        }
+        .modo-foco-ativo #body-enunciado-foco #info-tempo-limite {
+            font-size: 0.72rem !important;
+            padding: 3px 7px !important;
+        }
+        .barra-minimalista-foco {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 54px;
+            flex: 0 0 54px;
+            margin-left: 6px;
+        }
+        .barra-minimalista-card {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 10px 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            position: sticky;
+            top: 12px;
+        }
+        .btn-minimalista-foco {
+            width: 38px;
+            height: 38px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #dee2e6;
+            background: #f8f9fa;
+            color: #495057;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .btn-minimalista-foco:hover {
+            background: #00539b;
+            color: #ffffff;
+            border-color: #00539b;
+        }
+        .badge-trofeu-minimalista {
+            width: 42px;
+            padding: 6px 2px;
+            border-radius: 8px;
+            border: 1px solid #ffeeba;
+            background: #fffdf5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            text-decoration: none !important;
+        }
+        .badge-trofeu-minimalista:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+        }
+        .mini-nav-box {
+            width: 34px;
+            height: 32px;
+            font-size: 0.78rem;
+            border-width: 1.5px;
+        }
+        @media (min-width: 992px) {
+            #conteudo-principal-aluno.modo-foco-ativo #row-layout-aluno {
+                display: flex;
+                flex-wrap: nowrap;
+                align-items: flex-start;
+                margin-left: 0;
+                margin-right: 0;
+            }
+            #conteudo-principal-aluno.modo-foco-ativo #col-esquerda-aluno {
+                flex: 0 0 var(--foco-left-width, 32%);
+                max-width: var(--foco-left-width, 32%);
+                min-width: 250px;
+                padding-left: 0;
+                padding-right: 4px;
+            }
+            #conteudo-principal-aluno.modo-foco-ativo #splitter-modo-foco {
+                display: flex;
+                align-self: stretch;
+            }
+            #conteudo-principal-aluno.modo-foco-ativo #col-central-aluno {
+                flex: 1 1 0%;
+                max-width: none;
+                min-width: 0;
+                padding-left: 4px;
+                padding-right: 4px;
+            }
+            #conteudo-principal-aluno.modo-foco-ativo #col-direita-aluno {
+                display: none !important;
+            }
+            #conteudo-principal-aluno.modo-foco-ativo #barra-minimalista-foco {
+                display: flex !important;
+            }
+            #conteudo-principal-aluno.modo-foco-ativo #col-central-aluno > .card > .card-body {
+                padding: 1.15rem !important;
+            }
+        }
         .nav-segmented {
             background-color: #f4f7fa;
             padding: 4px;
@@ -237,8 +459,18 @@
 <body>
 
     <div class="container-fluid px-4 py-3" id="conteudo-principal-aluno">
-        <div class="row">
-            <div class="col-xl-3 col-lg-3 col-md-12 mb-3">
+        <div class="row" id="row-layout-aluno">
+            <div class="col-xl-3 col-lg-3 col-md-12 mb-3" id="col-esquerda-aluno">
+                <div class="card shadow-sm border-0 mb-3" id="card-enunciado-foco" style="display: none;">
+                    <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom d-flex justify-content-between align-items-center" id="header-enunciado-foco" style="cursor: pointer;" title="Clique para recolher ou expandir o enunciado">
+                        <span><i class="fas fa-book-open text-primary mr-1"></i> Enunciado da Questão</span>
+                        <button type="button" id="btnRetrairEnunciado" class="btn btn-sm btn-light border-0 py-0 px-2 text-secondary" title="Recolher/Expandir enunciado">
+                            <i class="fas fa-chevron-up" id="iconRetrairEnunciado"></i>
+                        </button>
+                    </div>
+                    <div class="card-body p-3" id="body-enunciado-foco"></div>
+                </div>
+
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom">
                         <i class="fas fa-vial text-primary mr-1"></i> Exemplos de Teste
@@ -284,18 +516,26 @@
 
             </div>
 
-            <div class="col-xl-6 col-lg-6 col-md-12 mb-3">
+            <div id="splitter-modo-foco" class="foco-splitter" title="Arraste para ajustar a largura dos painéis">
+                <div class="foco-splitter-grip"></div>
+            </div>
+
+            <div class="col-xl-6 col-lg-6 col-md-12 mb-3" id="col-central-aluno">
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-body p-4">
-                        <div class="d-flex justify-content-between align-items-start mb-2" style="gap: 16px;">
-                            <h4 class="text-primary font-weight-bold mb-0" id="nome-questao" style="flex: 1 1 auto; word-break: break-word; min-width: 0;">{{NOME_QUESTAO}}</h4>
-                            <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold shadow-sm" style="display: inline-block; font-size: 0.85rem; flex-shrink: 0; white-space: nowrap;">
-                                <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">5000 ms</span>
-                            </span>
-                        </div>
-                        <p class="text-secondary" id="descricao-questao" style="white-space: pre-line;">{{DESCRICAO_QUESTAO}}</p>
+                        <div id="slot-enunciado-padrao">
+                            <div id="bloco-enunciado-questao">
+                                <div class="d-flex justify-content-between align-items-start mb-2" style="gap: 16px;">
+                                    <h4 class="text-primary font-weight-bold mb-0" id="nome-questao" style="flex: 1 1 auto; word-break: break-word; min-width: 0;">{{NOME_QUESTAO}}</h4>
+                                    <span id="info-tempo-limite" class="badge badge-light border text-muted p-2 font-weight-bold shadow-sm" style="display: inline-block; font-size: 0.85rem; flex-shrink: 0; white-space: nowrap;">
+                                        <i class="fas fa-stopwatch mr-1"></i> Limite: <span id="val-tempo-limite">5000 ms</span>
+                                    </span>
+                                </div>
+                                <p class="text-secondary mb-0" id="descricao-questao" style="white-space: pre-line;">{{DESCRICAO_QUESTAO}}</p>
+                            </div>
 
-                        <hr>
+                            <hr id="hr-enunciado-padrao">
+                        </div>
 
                         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
                             <div class="mb-1 mb-md-0 d-flex align-items-center">
@@ -330,12 +570,20 @@
                                     <option value="monokai">Monokai</option>
                                     <option value="default">Claro</option>
                                 </select>
+                                <span class="theme-pill-divider d-none d-lg-inline-block"></span>
+                                <button type="button" id="btnToggleModoFoco" class="btn-modo-foco-pill d-none d-lg-inline-flex" title="Alternar Modo Foco (Expandir Editor)">
+                                    <i class="fas fa-expand-alt mr-1" id="iconModoFoco"></i>
+                                    <span id="textoModoFoco">Modo Foco</span>
+                                </button>
                             </div>
 
                             <textarea id="editor"></textarea>
+                            <div id="resizer-altura-editor" class="editor-height-resizer" title="Arraste para cima ou para baixo para ajustar a altura do terminal (duplo clique para restaurar o padrão)">
+                                <div class="editor-height-resizer-grip"></div>
+                            </div>
                         </div>
 
-                        <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex justify-content-between align-items-center barra-compilar-fixa" id="barra-acoes-compilar">
                             <div>
                                 <button type="button" id="btn-exercicio-anterior" class="btn btn-outline-secondary btn-sm" disabled>
                                     <i class="fas fa-arrow-left mr-1"></i> Anterior
@@ -367,7 +615,7 @@
                 </div>
             </div>
 
-            <div class="col-xl-3 col-lg-3 col-md-12 mb-3">
+            <div class="col-xl-3 col-lg-3 col-md-12 mb-3" id="col-direita-aluno">
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-header bg-white font-weight-bold text-secondary py-2 border-bottom">
                         <i class="fas fa-th-large text-primary mr-1"></i> Navegação da Atividade
@@ -437,6 +685,24 @@
                     </button>
                 </div>
 
+            </div>
+
+            <!-- Barra Lateral Minimalista exibida no Modo Foco -->
+            <div class="barra-minimalista-foco" id="barra-minimalista-foco">
+                <div class="barra-minimalista-card shadow-sm">
+                    <button type="button" id="btnReverterModoFoco" class="btn-minimalista-foco" title="Sair do Modo Foco e restaurar painéis">
+                        <i class="fas fa-compress-alt"></i>
+                    </button>
+
+                    <a href="#" class="badge-trofeu-minimalista" id="btnTrofeuMinimalista" data-toggle="modal" data-target="#modalRankingGeral" title="Sua posição na turma (Clique para ver a classificação)">
+                        <i class="fas fa-trophy text-warning mb-1" style="font-size: 1rem;"></i>
+                        <span id="label-pos-minimalista" class="font-weight-bold text-dark" style="font-size: 0.75rem;">#-</span>
+                    </a>
+
+                    <hr class="my-1 w-100">
+
+                    <div id="container-nav-questoes-mini" class="d-flex flex-column align-items-center" style="gap: 6px;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -568,6 +834,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
 
-    <script src="/js/aluno.js?v=20261114_1"></script>
+    <script src="/js/aluno.js?v=20261114_7"></script>
 </body>
 </html>
