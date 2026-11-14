@@ -1259,12 +1259,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const ex = (window.todosMeusExerciciosCache || []).find(e => String(e._id) === String(exerciseId));
         const tituloEx = ex ? ex.title : 'este exercício';
 
+        const listasComExercicio = (window.minhasListasCache || []).filter(l =>
+            Array.isArray(l.exercises) && l.exercises.some(item => String(item._id || item) === String(exerciseId))
+        );
+        const estaNaAtiva = idListaAtivaVinculada && listasComExercicio.some(l => String(l._id) === String(idListaAtivaVinculada));
+
+        let mensagemConfirmacao = `Deseja realmente excluir o exercício "${tituloEx}"?\n\n⚠️ Atenção: Ele será apagado permanentemente do seu banco e também será removido de qualquer lista ou atividade vinculada sua.`;
+        if (listasComExercicio.length > 0) {
+            const nomesListas = listasComExercicio.map(l => `"${l.title}"`).join(', ');
+            mensagemConfirmacao = `⚠️ ATENÇÃO: O exercício "${tituloEx}" está presente em ${listasComExercicio.length} lista(s) sua(s) (${nomesListas})${estaNaAtiva ? ' — incluindo a atividade ativa vinculada no momento!' : '.'}\n\nSe você confirmar, ele será apagado permanentemente e removido de todas as suas listas e de qualquer atividade vinculada sua.\n\nDeseja realmente excluir mesmo assim?`;
+        }
+
         const confirmou = await confirmarAcao({
-            titulo: 'Excluir Exercício',
-            mensagem: `Deseja realmente excluir o exercício "${tituloEx}"?\n\nEle será removido do seu banco e desvinculado de listas.`,
-            textoConfirmar: 'Excluir Exercício',
+            titulo: 'Excluir Exercício Permanentemente',
+            mensagem: mensagemConfirmacao,
+            textoConfirmar: 'Sim, Excluir de Tudo',
             corConfirmar: 'btn-danger',
-            icone: 'fa-trash-alt text-danger'
+            icone: 'fa-exclamation-triangle text-danger'
         });
 
         if (!confirmou) return;
@@ -1384,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function escapeHtml(str) {
-        if (!str) return '';
+        if (!str && str !== 0) return '';
         return String(str)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
@@ -2433,10 +2444,14 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
                 divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Compilando e executando testes...</div>';
                 btnRecompilar.disabled = true;
 
+                const controllerRecompilar = new AbortController();
+                const timerAbortRecompilar = setTimeout(() => controllerRecompilar.abort(), 45000);
+
                 try {
                     const res = await fetch(comLtik('/judge/submit'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        signal: controllerRecompilar.signal,
                         body: JSON.stringify({
                             code,
                             activityId,
@@ -2447,24 +2462,18 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
                     const data = await res.json();
                     renderizarFeedbackModalProfessor(data);
                 } catch (e) {
-                    divResultado.innerHTML = '<div class="alert alert-danger py-1 small">Erro de conexão com o servidor.</div>';
+                    const msgErro = e && e.name === 'AbortError'
+                        ? 'A compilação demorou mais que o esperado. Tente novamente.'
+                        : 'Erro de conexão com o servidor.';
+                    divResultado.innerHTML = `<div class="alert alert-danger py-1 small">${msgErro}</div>`;
                 } finally {
+                    clearTimeout(timerAbortRecompilar);
                     btnRecompilar.disabled = false;
                 }
             };
         }
 
         $('#modalHistoricoAluno').modal('show');
-    }
-
-    function escapeHtml(str) {
-        if (!str && str !== 0) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
     }
 
     function renderizarFeedbackModalProfessor(data) {

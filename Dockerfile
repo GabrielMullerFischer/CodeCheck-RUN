@@ -13,12 +13,9 @@ RUN npm install --omit=dev
 # 5. Copia o código-fonte da aplicação
 COPY . .
 
-# 6. Cria a pasta tmp caso algum coletor ou rotina auxiliar precise
-RUN mkdir -p /app/tmp
-
-# 7. Expõe as portas da aplicação web (3000) e do mecanismo LTI (3001)
+# 6. Expõe as portas da aplicação web (3000) e do mecanismo LTI (3001)
 EXPOSE 3000
 EXPOSE 3001
 
-# 8. Comando de inicialização
+# 7. Comando de inicialização
 CMD ["npm", "start"]

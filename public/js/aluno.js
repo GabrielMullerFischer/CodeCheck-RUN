@@ -313,14 +313,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    function ajustarAlturaEditorModoFoco() {
-        if (!editorCM) return;
-        // Mantém a altura definida via CSS (no Modo Foco: calc(100vh - 260px) até 610px),
-        // garantindo sempre espaço livre abaixo do terminal para visualizar alertas/erros.
-        editorCM.setSize(null, null);
-        editorCM.refresh();
-    }
-
     function sincronizarLayoutModoFoco() {
         if (!conteudoPrincipalEl || !blocoEnunciadoQuestao) return;
         const emTelaGrande = window.innerWidth >= 992;
@@ -757,10 +749,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             html,
             totalLinhas: linhas.length
         };
-    }
-
-    function formatarSaidaComAlinhamento(rawOutput, classeCor = 'text-dark') {
-        return formatarSaidaComNumeracao(rawOutput, classeCor).html;
     }
 
     function formatarTempoExecucao(ms) {
@@ -1843,10 +1831,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnExecutarTesteCustom.disabled = true;
             btnExecutarTesteCustom.style.pointerEvents = 'none';
 
+            const controllerTeste = new AbortController();
+            const timerAbortTeste = setTimeout(() => controllerTeste.abort(), 45000);
+
             try {
                 const res = await fetch('/judge/test-custom' + (ltiToken ? `?ltik=${ltiToken}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    signal: controllerTeste.signal,
                     body: JSON.stringify({
                         code,
                         input,
@@ -1908,9 +1900,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else {
                     resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">${escapeHtml(data.error || 'Erro no teste.')}</div>`;
                 }
-            } catch {
-                resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">Erro de conexão ao executar teste.</div>`;
+            } catch (errTeste) {
+                const msgErroTeste = errTeste && errTeste.name === 'AbortError'
+                    ? 'A execução demorou mais que o esperado. Tente compilar novamente.'
+                    : 'Erro de conexão ao executar teste.';
+                resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">${msgErroTeste}</div>`;
             } finally {
+                clearTimeout(timerAbortTeste);
                 atualizarEstadoBotaoTesteCustom();
             }
         };
@@ -1944,11 +1940,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubmit.disabled = true;
             btnSubmit.style.pointerEvents = 'none';
 
+            const controllerSubmit = new AbortController();
+            const timerAbortSubmit = setTimeout(() => controllerSubmit.abort(), 45000);
+
             try {
                 const url = '/judge/submit' + (ltiToken ? `?ltik=${ltiToken}` : '');
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    signal: controllerSubmit.signal,
                     body: JSON.stringify({
                         code,
                         activityId: activityId || 'preview',
@@ -1979,21 +1979,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                     await carregarHistoricoSubmissoesExercicio(exercicioAtual._id);
                     await atualizarRankingEStatus();
                 } else {
-                    if (exercicioAtual) {
+                    // Só trava o botão como "Compilado" se o servidor avisar que o código já era idêntico ao último envio;
+                    // em erros 429/500/rede, mantém o botão liberado para o usuário poder tentar novamente sem recarregar a página.
+                    if (exercicioAtual && res.status === 400 && data?.error?.includes('Altere seu código')) {
                         mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
                     }
                     resultDiv.innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(data.error || 'Erro ao processar submissão.')}</div>`;
 
-                    if (exercicioAtual && mapaStatusQuestoes[String(exercicioAtual._id)] !== 'accepted') {
-                        mapaStatusQuestoes[String(exercicioAtual._id)] = 'wrong';
-                        montarNavegacaoMoodle();
-                    }
-
                     await atualizarRankingEStatus();
                 }
             } catch (err) {
-                resultDiv.innerHTML = `<div class="alert alert-danger py-2">Erro de conexão com o servidor.</div>`;
+                const msgErro = err && err.name === 'AbortError'
+                    ? 'A compilação demorou mais que o esperado para responder. Tente clicar em Compilar novamente.'
+                    : 'Erro de conexão com o servidor.';
+                resultDiv.innerHTML = `<div class="alert alert-danger py-2">${msgErro}</div>`;
             } finally {
+                clearTimeout(timerAbortSubmit);
                 atualizarEstadoBotaoCompilar();
             }
         };

@@ -81,8 +81,6 @@ async function popularBanco() {
                         title: listaData.title,
                         exercises: idsExercicios,
                         isPublic: true,
-                        isEvaluative: false,
-                        maxAttempts: 3,
                         authorId: SISTEMA_AUTHOR_ID,
                         authorName: SISTEMA_AUTHOR_NAME
                     });

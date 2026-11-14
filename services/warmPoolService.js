@@ -85,34 +85,9 @@ const podMap = new Map();
 const filaEsperaExecucao = [];
 let loopManutencao = null;
 let inicializando = false;
-let cachedOwnerReference = null;
 const ORPHAN_TIMEOUT_SEC = parseInt(process.env.K8S_ORPHAN_TIMEOUT_SEC, 10) || (15 * 60); // 15 minutos sem sinal da aplicação principal = auto-desligamento
 
-async function obterOwnerRefAppPod() {
-    if (cachedOwnerReference !== null) return cachedOwnerReference || undefined;
-    const hostname = process.env.HOSTNAME || '';
-    if (!process.env.KUBERNETES_SERVICE_HOST || !hostname.startsWith('codecheck-app')) {
-        cachedOwnerReference = false;
-        return undefined;
-    }
-    try {
-        const podStatus = await apiReadPodStatus(hostname);
-        if (podStatus && podStatus.metadata && podStatus.metadata.uid) {
-            cachedOwnerReference = [{
-                apiVersion: 'v1',
-                kind: 'Pod',
-                name: podStatus.metadata.name || hostname,
-                uid: podStatus.metadata.uid,
-                blockOwnerDeletion: false
-            }];
-            return cachedOwnerReference;
-        }
-    } catch { }
-    cachedOwnerReference = false;
-    return undefined;
-}
-
-function gerarManifestoWarmPod(podName, ownerReferences = undefined) {
+function gerarManifestoWarmPod(podName) {
     const cpuReq = process.env.K8S_CPU_REQUEST || '1000m';
     const cpuLim = process.env.K8S_CPU_LIMIT || '1000m';
     const memReq = process.env.K8S_MEMORY_REQUEST || '512Mi';
@@ -153,8 +128,7 @@ done
             labels: {
                 app: 'codecheck-worker',
                 role: 'judge-sandbox'
-            },
-            ...(ownerReferences ? { ownerReferences } : {})
+            }
         },
         spec: {
             restartPolicy: 'Never',
@@ -549,6 +523,7 @@ run_step() {
         timeout -k 0.2s -s 9 $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_\${i}.txt" < "$CTRL_DIR/in_\${i}.txt" > "$CTRL_DIR/got_\${i}.txt" 2> "$CTRL_DIR/err_\${i}.txt"
         EXIT_CODE=$?
         pkill -9 -u 65534 2>/dev/null || true
+        ipcrm -a 2>/dev/null || true
 
         CPUTIME=$(cat "$CTRL_DIR/time_\${i}.txt" 2>/dev/null || echo "0.000000")
         echo "TIME:$CPUTIME"
@@ -589,14 +564,16 @@ WORK_DIR="/sandbox/job_${safeJobId}"
 
 limpar_ambiente() {
     pkill -9 -u 65534 2>/dev/null || true
+    ipcrm -a 2>/dev/null || true
     cd /
     rm -rf "$CTRL_DIR" "$BIN_DIR" "$WORK_DIR"
     find /tmp /var/tmp /dev/shm -mindepth 1 -user 65534 -exec rm -rf {} + 2>/dev/null || true
 }
 trap limpar_ambiente EXIT
 
-# Esteriliza processos e arquivos residuais antes de iniciar a submissão
+# Esteriliza processos, memória compartilhada IPC (System V) e arquivos residuais antes de iniciar a submissão
 pkill -9 -u 65534 2>/dev/null || true
+ipcrm -a 2>/dev/null || true
 find /tmp /var/tmp /dev/shm -mindepth 1 -user 65534 -exec rm -rf {} + 2>/dev/null || true
 
 mkdir -p /sandbox && chmod 711 /sandbox
@@ -842,20 +819,6 @@ async function inicializarPool() {
     }
 }
 
-function obterStatusPool() {
-    return {
-        totalPods: podMap.size,
-        minPods: MIN_WARM_PODS,
-        maxPods: MAX_WARM_PODS,
-        idleTimeoutMin: IDLE_TIMEOUT_MS / 60000,
-        pods: Array.from(podMap.values()).map(p => ({
-            name: p.name,
-            status: p.status,
-            idleTimerAtivo: !!p.idleTimer
-        }))
-    };
-}
-
 async function encerrarPool() {
     if (loopManutencao) {
         clearInterval(loopManutencao);
@@ -874,6 +837,5 @@ module.exports = {
     executarJobNoPool,
     adquirirPod,
     liberarPod,
-    obterStatusPool,
     B64_RUNNER
 };

@@ -6,10 +6,10 @@ const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 
 let activeExecutions = 0;
 const executionQueue = [];
 
-// Mapa de usuário -> timestamp do bloqueio (libera compilação automaticamente após 5 minutos contra travamentos)
+// Mapa de usuário -> timestamp do bloqueio (libera compilação automaticamente após 45s contra travamentos)
 const activeUsers = new Map();
-const USER_LOCK_TTL_MS = 5 * 60 * 1000; // Limite máximo de 5 minutos por usuário
-const QUEUE_WAIT_TIMEOUT_MS = 3 * 60 * 1000; // Limite máximo de 3 minutos de espera na fila
+const USER_LOCK_TTL_MS = 45 * 1000; // Limite máximo de 45 segundos por usuário
+const QUEUE_WAIT_TIMEOUT_MS = 60 * 1000; // Limite máximo de 60 segundos de espera na fila
 
 function extrairUserId(containerName) {
     if (!containerName) return null;
@@ -85,35 +85,81 @@ function normalize(s) {
         .trim();
 }
 
-function prepararTestesOrdenados(array) {
+// Mapa de (userId + exercício) -> ordem atual dos índices de casos de teste ocultos.
+// Mantém a mesma ordem enquanto o aluno erra e só reembaralha quando ele acerta (Accepted).
+const ordemTestesOcultosMap = new Map();
+
+function embaralharArray(lista) {
+    const copia = [...lista];
+    for (let i = copia.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = copia[i];
+        copia[i] = copia[j];
+        copia[j] = temp;
+    }
+    return copia;
+}
+
+function prepararTestesOrdenados(array, chaveOrdem = null) {
     if (!Array.isArray(array) || array.length === 0) return [];
-    const embaralhados = array.map((t, idx) => {
+    const todos = array.map((t, idx) => {
         const obj = (t && typeof t.toObject === 'function') ? t.toObject() : { ...t };
         obj.originalIndex = idx;
         return obj;
     });
 
-    // Embaralha a bateria de casos de teste (Fisher-Yates) para evitar que alunos decorem a ordem
-    for (let i = embaralhados.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const temp = embaralhados[i];
-        embaralhados[i] = embaralhados[j];
-        embaralhados[j] = temp;
+    const temAlgumVisivel = todos.some(t => t.isVisible === true);
+    const visiveis = [];
+    const ocultos = [];
+
+    todos.forEach((t, idx) => {
+        const ehVisivel = temAlgumVisivel ? (t.isVisible === true) : (idx === 0);
+        if (ehVisivel) {
+            visiveis.push(t); // Testes visíveis NUNCA são embaralhados e rodam sempre primeiro
+        } else {
+            ocultos.push(t);
+        }
+    });
+
+    if (ocultos.length <= 1) {
+        return [...visiveis, ...ocultos];
     }
 
-    return embaralhados;
+    if (!chaveOrdem) {
+        return [...visiveis, ...embaralharArray(ocultos)];
+    }
+
+    const indicesOcultosAtuais = ocultos.map(t => t.originalIndex);
+    let ordemSalva = ordemTestesOcultosMap.get(chaveOrdem);
+
+    const ordemValida = Array.isArray(ordemSalva) &&
+        ordemSalva.length === indicesOcultosAtuais.length &&
+        indicesOcultosAtuais.every(idx => ordemSalva.includes(idx));
+
+    if (!ordemValida) {
+        ordemSalva = embaralharArray(indicesOcultosAtuais);
+        ordemTestesOcultosMap.set(chaveOrdem, ordemSalva);
+    }
+
+    const mapaPorIndice = new Map(ocultos.map(t => [t.originalIndex, t]));
+    const ocultosOrdenados = ordemSalva.map(idx => mapaPorIndice.get(idx)).filter(Boolean);
+
+    return [...visiveis, ...ocultosOrdenados];
 }
 
-async function runTests(code, tests, containerName, timeLimitMs) {
+async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = null) {
     const uid = extrairUserId(containerName);
     if (uid) activeUsers.set(uid, Date.now());
 
+    const chaveEfetiva = chaveOrdem || (uid ? `${uid}_${Array.isArray(tests) ? tests.length : 0}` : null);
+
     await adquirirVagaNaFila();
     try {
-        const testesOrdenados = prepararTestesOrdenados(tests);
+        const testesOrdenados = prepararTestesOrdenados(tests, chaveEfetiva);
         const padraoTempoLimiteMs = Number(process.env.DEFAULT_TIME_LIMIT_MS || process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS) || 5000;
         const timeoutAlunoMs = Number(timeLimitMs) > 0 ? Number(timeLimitMs) : padraoTempoLimiteMs;
 
+        let resultadoFinal;
         // 1. Tenta executar no Warm Pod Pool (respostas < 0.5s)
         try {
             const outputBruto = await warmPoolService.executarJobNoPool(
@@ -122,11 +168,28 @@ async function runTests(code, tests, containerName, timeLimitMs) {
                 timeoutAlunoMs,
                 containerName || Date.now()
             );
-            return processarResultadoSandbox(outputBruto, testesOrdenados, timeoutAlunoMs);
+            resultadoFinal = processarResultadoSandbox(outputBruto, testesOrdenados, timeoutAlunoMs);
         } catch (poolErr) {
             console.warn(`[Judge] Warm pool falhou ou indisponível (${poolErr.message}). Utilizando fallback para Pod efêmero...`);
-            return await executarProcessoDeTesteK8sIndividual(code, testesOrdenados, containerName, timeoutAlunoMs);
+            resultadoFinal = await executarProcessoDeTesteK8sIndividual(code, testesOrdenados, containerName, timeoutAlunoMs);
         }
+
+        // Quando o aluno acerta todos os testes (Accepted), reembaralha os ocultos para o próximo envio;
+        // enquanto ele errar, mantém exatamente a mesma ordem sem embaralhar.
+        if (chaveEfetiva && resultadoFinal && resultadoFinal.status === 'Accepted') {
+            const ocultosIndices = testesOrdenados
+                .filter((t, idx) => {
+                    const temAlgumVisivel = testesOrdenados.some(item => item.isVisible === true);
+                    const ehVisivel = temAlgumVisivel ? (t.isVisible === true) : (t.originalIndex === 0 && idx === 0);
+                    return !ehVisivel;
+                })
+                .map(t => t.originalIndex);
+            if (ocultosIndices.length > 1) {
+                ordemTestesOcultosMap.set(chaveEfetiva, embaralharArray(ocultosIndices));
+            }
+        }
+
+        return resultadoFinal;
     } finally {
         liberarVagaNaFila();
         liberarTravaUsuario(containerName);
@@ -293,6 +356,7 @@ run_step() {
         timeout -k 0.2s -s 9 $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_$i.txt" < "$CTRL_DIR/in_$i.txt" > "$CTRL_DIR/got_$i.txt" 2> "$CTRL_DIR/err_$i.txt"
         EXIT_CODE=$?
         pkill -9 -u 65534 2>/dev/null || true
+        ipcrm -a 2>/dev/null || true
 
         CPUTIME=$(cat "$CTRL_DIR/time_$i.txt" 2>/dev/null || echo "0.000000")
         echo "TIME:$CPUTIME"
@@ -543,8 +607,6 @@ module.exports = {
     runTests,
     isAlreadyRunning,
     liberarTravaUsuario,
-    processarResultadoSandbox,
     inicializarPool: warmPoolService.inicializarPool,
-    encerrarPool: warmPoolService.encerrarPool,
-    obterStatusPool: warmPoolService.obterStatusPool
+    encerrarPool: warmPoolService.encerrarPool
 };

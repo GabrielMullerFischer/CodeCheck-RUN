@@ -17,12 +17,6 @@ const SubmissionSchema = new mongoose.Schema({
     executionTime: { type: Number, default: null },
     percentage: { type: Number, default: 0 },
     compilationDetails: { type: String },
-    testResults: [{
-        testIndex: Number,
-        passed: Boolean,
-        got: String,
-        expected: String
-    }],
     createdAt: { type: Date, default: Date.now }
 });
 

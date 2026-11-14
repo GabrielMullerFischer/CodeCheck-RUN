@@ -81,7 +81,7 @@ async function salvarArquivo(caminho, conteudo) {
 }
 
 // Histórico de submissões mantidas por exercício do aluno (as 10 últimas no total, protegendo sempre o código mais rápido)
-async function arquivarSubmissao(userId, activityId, exerciseId, isAccepted, code, caminhoProtegido = null, session = null) {
+async function arquivarSubmissao(userId, activityId, exerciseId, code, caminhoProtegido = null, session = null) {
     if (isTestUser(userId, session)) return 'preview';
     const uSafe = validarSegmentoCaminho(userId, 'userId');
     const aSafe = validarSegmentoCaminho(activityId, 'activityId');
@@ -186,15 +186,6 @@ async function lerArquivoPorPath(caminho) {
     }
 }
 
-// Remove arquivo do MinIO
-async function removerArquivo(objectName) {
-    try {
-        await minioClient.removeObject(BUCKET_NAME, objectName);
-    } catch (err) {
-        console.error("Erro ao remover arquivo do MinIO:", err.message);
-    }
-}
-
 // Limpa arquivos de uma atividade ao remiver da submissão
 async function limparArquivosAtividade(activityId) {
     if (!activityId || activityId === 'preview') return;
@@ -233,15 +224,11 @@ async function limparArquivosAtividade(activityId) {
 
 module.exports = {
     initMinio,
-    minioClient,
-    BUCKET_NAME,
     MAX_SUBMISSION_HISTORY,
     salvarRascunho,
     lerRascunho,
     salvarArquivo,
     arquivarSubmissao,
     lerArquivoPorPath,
-    removerArquivo,
-    limparArquivosAtividade,
-    isTestUser
+    limparArquivosAtividade
 };

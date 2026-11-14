@@ -469,8 +469,17 @@ router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
         }
 
         if (removeFromAllLists === 'true') {
-            await Exercise.findByIdAndDelete(objId);
-            await ExerciseList.updateMany({ exercises: objId }, { $pull: { exercises: objId } });
+            const usadoPorOutroProfessor = await ExerciseList.exists({
+                exercises: objId,
+                authorId: { $ne: meuId }
+            });
+            await ExerciseList.updateMany({ authorId: meuId, exercises: objId }, { $pull: { exercises: objId } });
+            if (usadoPorOutroProfessor) {
+                ex.isArchived = true;
+                await ex.save();
+            } else {
+                await Exercise.findByIdAndDelete(objId);
+            }
         } else {
             ex.isArchived = true;
             await ex.save();

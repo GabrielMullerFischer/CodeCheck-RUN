@@ -6,8 +6,6 @@ const ExerciseListSchema = new mongoose.Schema({
     authorName: { type: String, default: 'Professor' },
     courseId: { type: String, default: null, index: true },
     isPublic: { type: Boolean, default: true },
-    isEvaluative: { type: Boolean, default: false },
-    maxAttempts: { type: Number, default: 3 },
     exercises: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' }],
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }

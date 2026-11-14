@@ -12,6 +12,8 @@ const ActivityAttempt = require('../models/ActivityAttempt');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_TIME_LIMIT_MS || process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 5000;
+// Limite máximo suportado pelo buffer de argumentos do kernel Linux / K8s Exec: 100.000 caracteres (~100 KB)
+const MAX_CODE_CHARS = Math.min(Math.max(parseInt(process.env.MAX_CODE_CHARS, 10) || 100000, 1000), 100000);
 
 function obterContextoAuth(req) {
     const auth = req.auth || req.session || {};
@@ -57,10 +59,23 @@ const submitLimiter = rateLimit({
     }
 });
 
-function isTestUser(userId, auth) {
-    if (auth?.isProfessor === true) return true;
-    return false;
-}
+// Rate limit: 30 salvamentos de rascunho por minuto por aluno/IP
+const draftLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
+    keyGenerator: (req) => {
+        return req.auth?.userId || req.session?.userId || req.ip;
+    },
+    skip: (req) => {
+        return req.auth ? req.auth.isProfessor === true : req.session?.isProfessor === true;
+    },
+    message: {
+        error: "Muitas requisições de salvamento de rascunho. Aguarde alguns segundos."
+    }
+});
 
 function sanitizarMensagemErroServidor(msg) {
     if (!msg || typeof msg !== 'string') return "O ambiente de compilação está temporariamente indisponível. Tente novamente em instantes.";
@@ -227,7 +242,7 @@ router.post('/atividade/iniciar-timer', async (req, res) => {
 
 // Submissão oficial (protegida com limite de 10 submissões por minuto)
 router.post('/submit', submitLimiter, async (req, res) => {
-    const { code, activityId, listId, exerciseId, draftOnly } = req.body;
+    const { code, activityId, listId, exerciseId } = req.body;
     const ctx = obterContextoAuth(req);
     const isProfessorReal = ctx.isProfessor;
 
@@ -236,7 +251,7 @@ router.post('/submit', submitLimiter, async (req, res) => {
         return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
     }
 
-    const isModoTeste = isProfessorReal || isTestUser(req.body.userId, ctx.auth);
+    const isModoTeste = isProfessorReal;
     const userId = isModoTeste ? 'professor_test' : ctx.userId;
     const userName = isModoTeste ? 'Professor' : (ctx.userName || 'Aluno');
     const effectiveActivityId = isModoTeste
@@ -249,6 +264,21 @@ router.post('/submit', submitLimiter, async (req, res) => {
 
     if (!effectiveActivityId && !listId && !exerciseId) {
         return res.status(400).json({ error: "ID da atividade, lista ou exercício faltando." });
+    }
+
+    if (typeof code === 'string' && code.length > MAX_CODE_CHARS) {
+        return res.status(400).json({
+            error: `O código enviado excede o limite máximo permitido de ${MAX_CODE_CHARS} caracteres.`
+        });
+    }
+
+    // Trava adquirida no início da rota (usando o ID real do usuário autenticado) para evitar Race Condition
+    // no limite de tentativas/cronômetro e impedir que um professor bloqueie outro em modo preview
+    const lockUserKey = String(ctx.userId).replace(/[^a-zA-Z0-9]/g, '') || 'anon';
+    const containerName = `judge_${lockUserKey}_${Date.now()}`;
+    const isRunning = await judgeService.isAlreadyRunning(containerName);
+    if (isRunning) {
+        return res.status(429).json({ error: "Você já tem uma compilação em andamento. Aguarde alguns segundos." });
     }
 
     try {
@@ -367,7 +397,7 @@ router.post('/submit', submitLimiter, async (req, res) => {
         }
 
         // Bloqueio no servidor para submissões idênticas (impede burlar 'Altere seu código' no F12)
-        if (!isProfessorReal && !isModoTeste && !draftOnly) {
+        if (!isModoTeste) {
             const ultimaSub = await Submission.findOne({
                 userId,
                 activityId: effectiveActivityId,
@@ -384,29 +414,12 @@ router.post('/submit', submitLimiter, async (req, res) => {
                     }
                 } catch { }
             }
-        }
 
-        if (!isModoTeste) {
             await minioService.salvarRascunho(userId, effectiveActivityId, idExercicioFinal, code, ctx.auth);
         }
 
-        if (draftOnly) {
-            return res.json({ success: true, draftSaved: !isModoTeste });
-        }
-
-        const containerName = `judge_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
-        const isRunning = await judgeService.isAlreadyRunning(containerName);
-        if (isRunning) {
-            return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
-        }
-
-        let resultado;
-        try {
-            resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit);
-        } catch (execErr) {
-            judgeService.liberarTravaUsuario(containerName);
-            throw execErr;
-        }
+        const chaveOrdemTestes = `${userId}_${effectiveActivityId}_${idExercicioFinal}`;
+        const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit, chaveOrdemTestes);
 
         const tempoGastoMs = resultado.executionTime || 0;
         const isAccepted = resultado.status === 'Accepted';
@@ -454,7 +467,6 @@ router.post('/submit', submitLimiter, async (req, res) => {
             userId,
             effectiveActivityId,
             idExercicioFinal,
-            isAccepted,
             code,
             caminhoMaisRapidoProtegido,
             ctx.auth
@@ -499,6 +511,8 @@ router.post('/submit', submitLimiter, async (req, res) => {
     } catch (err) {
         console.error("Erro na submissão:", err);
         res.status(500).json({ error: sanitizarMensagemErroServidor(err.message) });
+    } finally {
+        judgeService.liberarTravaUsuario(containerName);
     }
 });
 
@@ -519,6 +533,18 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
         : ctx.activityId;
 
     if (!code) return res.status(400).json({ error: "Código vazio." });
+    if (typeof code === 'string' && code.length > MAX_CODE_CHARS) {
+        return res.status(400).json({
+            error: `O código enviado excede o limite máximo permitido de ${MAX_CODE_CHARS} caracteres.`
+        });
+    }
+
+    const lockUserKey = String(ctx.userId).replace(/[^a-zA-Z0-9]/g, '') || 'anon';
+    const containerName = `test_${lockUserKey}_${Date.now()}`;
+    const isRunning = await judgeService.isAlreadyRunning(containerName);
+    if (isRunning) {
+        return res.status(429).json({ error: "Você já tem uma compilação em andamento. Aguarde alguns segundos." });
+    }
 
     try {
         if (!isProfessor) {
@@ -564,20 +590,8 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
             timeLimit = MAX_TIME_LIMIT_MS;
         }
 
-        const containerName = `test_${String(userId).replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`;
-        const isRunning = await judgeService.isAlreadyRunning(containerName);
-        if (isRunning) {
-            return res.status(429).json({ error: "Você já tem uma compilação em andamento." });
-        }
-
-        let resultado;
-        try {
-            const testes = [{ input: input || '', output: '' }];
-            resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
-        } catch (execErr) {
-            judgeService.liberarTravaUsuario(containerName);
-            throw execErr;
-        }
+        const testes = [{ input: input || '', output: '' }];
+        const resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
 
         const tempoGastoMs = resultado.executionTime || 0;
         const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
@@ -594,6 +608,8 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
     } catch (err) {
         console.error("Erro no teste customizado:", err);
         res.status(500).json({ error: sanitizarMensagemErroServidor(err.message) });
+    } finally {
+        judgeService.liberarTravaUsuario(containerName);
     }
 });
 
@@ -745,7 +761,7 @@ router.get('/get-draft', async (req, res) => {
     }
 
     const userId = ctx.userId;
-    const effectiveActivityId = ctx.activityId || req.body.activityId;
+    const effectiveActivityId = ctx.activityId || req.query.activityId;
 
     if (!effectiveActivityId || effectiveActivityId === 'preview' || !exerciseId || !ehObjectIdValido(String(exerciseId))) {
         return res.status(400).json({ error: "Dados ausentes ou inválidos." });
@@ -766,7 +782,7 @@ router.get('/get-draft', async (req, res) => {
 });
 
 // Salvamento periódico / em segundo plano de rascunho no MinIO
-router.post('/save-draft', async (req, res) => {
+router.post('/save-draft', draftLimiter, async (req, res) => {
     const { exerciseId, code } = req.body;
     const ctx = obterContextoAuth(req);
     const isProfessor = ctx.isProfessor;
@@ -779,8 +795,14 @@ router.post('/save-draft', async (req, res) => {
         return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
     }
 
+    if (typeof code === 'string' && code.length > MAX_CODE_CHARS) {
+        return res.status(400).json({
+            error: `O rascunho excede o limite máximo permitido de ${MAX_CODE_CHARS} caracteres.`
+        });
+    }
+
     const userId = ctx.userId;
-    const effectiveActivityId = ctx.activityId || req.body.activityId;
+    const effectiveActivityId = ctx.activityId || req.body?.activityId;
 
     if (!effectiveActivityId || effectiveActivityId === 'preview' || !exerciseId || !ehObjectIdValido(String(exerciseId))) {
         return res.status(400).json({ error: "Dados ausentes ou inválidos." });
@@ -791,6 +813,13 @@ router.post('/save-draft', async (req, res) => {
         const idsPermitidos = (configAtividade?.listId?.exercises || []).map(id => String(id._id || id));
         if (!idsPermitidos.includes(String(exerciseId))) {
             return res.status(403).json({ error: "Este exercício não pertence à atividade atual." });
+        }
+
+        if (configAtividade && configAtividade.hasTimeLimit) {
+            const attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId }).lean();
+            if (!attempt || Date.now() > new Date(attempt.expiresAt).getTime()) {
+                return res.status(403).json({ error: "Tempo da atividade não iniciado ou já encerrado." });
+            }
         }
 
         await minioService.salvarRascunho(userId, effectiveActivityId, exerciseId, code || '', ctx.auth);
@@ -820,14 +849,6 @@ router.get('/ranking', async (req, res) => {
         : ctx.activityId;
 
     try {
-        const submissoes = effectiveActivityId && effectiveActivityId !== 'preview'
-            ? await Submission.find({
-                activityId: effectiveActivityId,
-                codePath: { $ne: 'preview' },
-                userId: { $nin: ['professor_test', 'preview_user'] }
-            }).lean()
-            : [];
-
         const configAtividade = effectiveActivityId && effectiveActivityId !== 'preview'
             ? await ActivityConfig.findOne({ activityId: effectiveActivityId }).populate({
                 path: 'listId',
@@ -837,6 +858,43 @@ router.get('/ranking', async (req, res) => {
 
         const isEvaluative = (configAtividade && !isProfessorReal) ? !!configAtividade.isEvaluative : false;
         const maxAttempts = configAtividade && configAtividade.maxAttempts ? configAtividade.maxAttempts : 3;
+
+        // Bloqueia vazamento de títulos, IDs de questões e ranking antes de o aluno iniciar o cronômetro
+        if (!isProfessorReal && configAtividade && configAtividade.hasTimeLimit && effectiveActivityId && effectiveActivityId !== 'preview') {
+            const attempt = await ActivityAttempt.findOne({ userId, activityId: effectiveActivityId }).lean();
+            if (!attempt) {
+                return res.json({
+                    success: true,
+                    timerRequired: true,
+                    isEvaluative,
+                    maxAttempts,
+                    minhasTentativasEx: 0,
+                    timeLimit: null,
+                    statusMeusExercicios: {},
+                    exercicio: {
+                        totalResolvidos: 0,
+                        minhaPosicao: null,
+                        meuTempo: null,
+                        primeiroLugar: null
+                    },
+                    geral: {
+                        minhaPosicaoGeral: null,
+                        totalAlunos: 0,
+                        rankingCompleto: []
+                    },
+                    rankingPorExercicio: {}
+                });
+            }
+        }
+
+        const submissoes = effectiveActivityId && effectiveActivityId !== 'preview'
+            ? await Submission.find({
+                activityId: effectiveActivityId,
+                codePath: { $ne: 'preview' },
+                userId: { $nin: ['professor_test', 'preview_user'] }
+            }).lean()
+            : [];
+
         const exercicios = configAtividade?.listId?.exercises || [];
 
         if (exerciseId && !isProfessorReal && exercicios.length > 0) {
