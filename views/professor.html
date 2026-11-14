@@ -475,7 +475,9 @@
 
         #modalInspecionarWrapper .CodeMirror,
         .cm-template-wrapper .CodeMirror {
-            height: 260px;
+            height: 380px;
+            min-height: 220px;
+            resize: vertical;
             border-radius: 6px;
             font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
             font-size: 0.92rem;
@@ -1285,12 +1287,15 @@
                             </div>
                         </div>
 
-                        <!-- Mensagem dos visíveis abaixo do prompt e botão de apagar todos os casos de teste -->
-                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap: 10px;">
-                            <div class="alert alert-info py-2 px-3 small border-0 mb-0 flex-grow-1" id="alert-dica-casos-teste">
-                                <i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha.
-                                Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).
-                            </div>
+                        <!-- Avisos dos Casos de Teste e botão de apagar todos os casos de teste -->
+                        <div class="alert alert-info py-2 px-3 small border-0 mb-2" id="alert-dica-casos-teste">
+                            <i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha.
+                            Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).
+                        </div>
+                        <div class="alert alert-info py-2 px-3 small border-0 mb-2" id="alert-dica-vetores-matrizes" style="display: none;">
+                            <i class="fas fa-info-circle mr-1"></i> Preencha vetores com chaves simples <code>{1, 4, 4}</code> e matrizes com chaves duplas <code>{{1, 2}, {3, 4}}</code>.
+                        </div>
+                        <div class="mb-3">
                             <button type="button" id="btnLimparTodosTestes"
                                 class="btn btn-sm btn-outline-danger font-weight-bold shadow-sm"
                                 style="border-radius: 6px; white-space: nowrap;"
@@ -1976,7 +1981,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
-    <script src="/js/professor.js?v=20261114_15"></script>
+    <script src="/js/funcaoC.js?v=20261114_2"></script>
+    <script src="/js/professor.js?v=20261114_21"></script>
 </body>
 
 </html>

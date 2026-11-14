@@ -222,11 +222,50 @@ async function limparArquivosAtividade(activityId) {
     }
 }
 
+// Salva a solução/rascunho único do professor por exercício (sobrescreve a versão anterior)
+async function salvarRascunhoProfessor(profId, exerciseId, code) {
+    const pSafe = validarSegmentoCaminho(profId, 'profId');
+    const eSafe = validarSegmentoCaminho(exerciseId, 'exerciseId');
+    const objectName = `professores/${pSafe}/solucoes/${eSafe}.c`;
+    const buffer = Buffer.from(code || '', 'utf-8');
+    await minioClient.putObject(BUCKET_NAME, objectName, buffer);
+    return objectName;
+}
+
+// Lê a solução/rascunho único do professor por exercício
+async function lerRascunhoProfessor(profId, exerciseId) {
+    const pSafe = validarSegmentoCaminho(profId, 'profId');
+    const eSafe = validarSegmentoCaminho(exerciseId, 'exerciseId');
+    const objectName = `professores/${pSafe}/solucoes/${eSafe}.c`;
+    const stream = await minioClient.getObject(BUCKET_NAME, objectName);
+    return new Promise((resolve, reject) => {
+        let data = '';
+        stream.on('data', chunk => data += chunk);
+        stream.on('end', () => resolve(data));
+        stream.on('error', err => reject(err));
+    });
+}
+
+// Remove a solução do professor caso o exercício seja excluído definitivamente do banco
+async function removerRascunhoProfessor(profId, exerciseId) {
+    try {
+        const pSafe = validarSegmentoCaminho(profId, 'profId');
+        const eSafe = validarSegmentoCaminho(exerciseId, 'exerciseId');
+        const objectName = `professores/${pSafe}/solucoes/${eSafe}.c`;
+        await minioClient.removeObject(BUCKET_NAME, objectName);
+    } catch {
+        // Se não existir, ignora silenciosamente
+    }
+}
+
 module.exports = {
     initMinio,
     MAX_SUBMISSION_HISTORY,
     salvarRascunho,
     lerRascunho,
+    salvarRascunhoProfessor,
+    lerRascunhoProfessor,
+    removerRascunhoProfessor,
     salvarArquivo,
     arquivarSubmissao,
     lerArquivoPorPath,

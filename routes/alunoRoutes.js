@@ -463,9 +463,14 @@ router.post('/submit', submitLimiter, async (req, res) => {
         }
 
         if (isModoTeste) {
-            // Professor em teste/preview: exibe feedback na tela do navegador,
-            // mas NUNCA salva no MinIO nem grava no MongoDB (Submission).
-            // Não polui o ranking de alunos e ao fechar a aba/sair tudo se perde.
+            // Professor em teste/preview: salva a solução/código atual do professor no MinIO (apenas 1 arquivo único sobrescrito),
+            // mas NUNCA grava Submission no MongoDB nem gera histórico multi-arquivos de aluno ou altera ranking.
+            const profId = String(ctx.userId || 'preview_user');
+            if (idExercicioFinal && ehObjectIdValido(String(idExercicioFinal))) {
+                minioService.salvarRascunhoProfessor(profId, idExercicioFinal, code || '').catch(err => {
+                    console.warn("Erro ao salvar solução de professor no MinIO:", err.message);
+                });
+            }
             return res.json(respostaResultado);
         }
 
@@ -793,8 +798,18 @@ router.get('/get-draft', async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessor = ctx.isProfessor;
 
+    if (!exerciseId || !ehObjectIdValido(String(exerciseId))) {
+        return res.status(400).json({ error: "Dados ausentes ou inválidos." });
+    }
+
     if (isProfessor) {
-        return res.status(404).json({ error: "Sem rascunho persistido para professor." });
+        const profId = String(ctx.userId || 'preview_user');
+        try {
+            const codigo = await minioService.lerRascunhoProfessor(profId, exerciseId);
+            return res.json({ code: codigo });
+        } catch {
+            return res.status(404).json({ error: "Sem solução salva para este exercício." });
+        }
     }
 
     if (!ctx.userId) {
@@ -804,7 +819,7 @@ router.get('/get-draft', async (req, res) => {
     const userId = ctx.userId;
     const effectiveActivityId = ctx.activityId || req.query.activityId;
 
-    if (!effectiveActivityId || effectiveActivityId === 'preview' || !exerciseId || !ehObjectIdValido(String(exerciseId))) {
+    if (!effectiveActivityId || effectiveActivityId === 'preview') {
         return res.status(400).json({ error: "Dados ausentes ou inválidos." });
     }
 
@@ -828,24 +843,35 @@ router.post('/save-draft', draftLimiter, async (req, res) => {
     const ctx = obterContextoAuth(req);
     const isProfessor = ctx.isProfessor;
 
-    if (isProfessor) {
-        return res.json({ success: true, draftSaved: false });
-    }
-
-    if (!ctx.userId) {
-        return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
-    }
-
     if (typeof code === 'string' && code.length > MAX_CODE_CHARS) {
         return res.status(400).json({
             error: `O rascunho excede o limite máximo permitido de ${MAX_CODE_CHARS} caracteres.`
         });
     }
 
+    if (!exerciseId || !ehObjectIdValido(String(exerciseId))) {
+        return res.status(400).json({ error: "Dados ausentes ou inválidos." });
+    }
+
+    if (isProfessor) {
+        const profId = String(ctx.userId || 'preview_user');
+        try {
+            await minioService.salvarRascunhoProfessor(profId, exerciseId, code || '');
+            return res.json({ success: true, draftSaved: true });
+        } catch (e) {
+            console.error("Erro ao salvar rascunho de professor no MinIO:", e);
+            return res.status(500).json({ error: "Erro interno ao salvar rascunho do professor." });
+        }
+    }
+
+    if (!ctx.userId) {
+        return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
+    }
+
     const userId = ctx.userId;
     const effectiveActivityId = ctx.activityId || req.body?.activityId;
 
-    if (!effectiveActivityId || effectiveActivityId === 'preview' || !exerciseId || !ehObjectIdValido(String(exerciseId))) {
+    if (!effectiveActivityId || effectiveActivityId === 'preview') {
         return res.status(400).json({ error: "Dados ausentes ou inválidos." });
     }
 

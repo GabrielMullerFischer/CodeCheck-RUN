@@ -25,4 +25,8 @@ const ExerciseSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+ExerciseSchema.index({ authorId: 1, isArchived: 1 });
+ExerciseSchema.index({ isPublic: 1, isArchived: 1 });
+ExerciseSchema.index({ title: 1, authorId: 1, courseId: 1 });
+
 module.exports = mongoose.model('Exercise', ExerciseSchema);

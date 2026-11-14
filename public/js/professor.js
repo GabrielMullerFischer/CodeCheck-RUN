@@ -185,6 +185,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (window.ResizeObserver) {
+        const roProfTemplate = new ResizeObserver(() => {
+            if (editorTemplateMainCM) editorTemplateMainCM.refresh();
+            if (editorTemplateFuncCM) editorTemplateFuncCM.refresh();
+        });
+        document.querySelectorAll('.cm-template-wrapper').forEach(el => roProfTemplate.observe(el));
+    }
+
     function definirValorTemplateMain(valor) {
         const v = String(valor || '');
         if (textareaTemplateMain) textareaTemplateMain.value = v;
@@ -433,80 +441,9 @@ int main() {
     }
 
     function parsearAssinaturaFuncao(sigOuTemplate) {
-        if (!sigOuTemplate || typeof sigOuTemplate !== 'string') return null;
-
-        function testarLinha(linhaBruta) {
-            const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
-            const semPrefixo = String(linhaBruta || '').replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
-            if (!semPrefixo || semPrefixo.startsWith('#')) return null;
-            const clean = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
-            const match = clean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)\s*\(([^)]*)\)$/);
-            if (!match) return null;
-            const returnType = match[1].replace(/\s+/g, ' ').trim();
-            const funcName = match[2].trim();
-            if (funcName === 'main') return null;
-            const paramsRaw = match[3].trim();
-            const params = [];
-
-            if (paramsRaw && paramsRaw !== 'void') {
-                const parts = paramsRaw.split(',');
-                for (const part of parts) {
-                    const pClean = part.trim().replace(/\[\s*\]/g, '');
-                    if (!pClean) continue;
-                    const pMatch = pClean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)$/);
-                    if (!pMatch) return null;
-                    params.push({
-                        type: pMatch[1].replace(/\s+/g, ' ').trim(),
-                        name: pMatch[2].trim()
-                    });
-                }
-            }
-            const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
-            return {
-                isLocked,
-                cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`,
-                returnType,
-                funcName,
-                params
-            };
-        }
-
-        const linhas = sigOuTemplate.replace(/\r/g, '').split('\n');
-        const candidatos = [];
-        let emComentarioBloco = false;
-        let nivelChaves = 0;
-
-        for (const linhaOriginal of linhas) {
-            let linhaLimpa = '';
-            for (let i = 0; i < linhaOriginal.length; i++) {
-                if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
-                    emComentarioBloco = true;
-                    i++;
-                } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
-                    emComentarioBloco = false;
-                    i++;
-                } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
-                    break;
-                } else if (!emComentarioBloco) {
-                    linhaLimpa += linhaOriginal[i];
-                }
-            }
-
-            if (nivelChaves === 0 && linhaLimpa.trim()) {
-                const res = testarLinha(linhaLimpa);
-                if (res) candidatos.push(res);
-            }
-
-            for (const ch of linhaLimpa) {
-                if (ch === '{') nivelChaves++;
-                else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
-            }
-        }
-
-        if (candidatos.length > 0) {
-            return candidatos.find(c => c.isLocked) || candidatos[0];
-        }
-        return null;
+        if (!sigOuTemplate || typeof sigOuTemplate !== 'string' || !window.FuncaoC) return null;
+        const r = window.FuncaoC.parsearAssinatura(sigOuTemplate);
+        return r && r.valido ? r : null;
     }
 
     function habilitarTabEmTextarea(textareaEl) {
@@ -541,10 +478,9 @@ int main() {
             let labelSaida = 'Saída Esperada:';
 
             if (modoEx === 'function' && parsedSig && parsedSig.params.length > 0) {
-                const linhasInput = String(t.input || '').split(/\r?\n/);
-                const pares = parsedSig.params.map((p, idx) => `${p.name} = ${linhasInput[idx] !== undefined ? linhasInput[idx] : ''}`).join('\n');
+                const pares = window.FuncaoC.formatarEntradaExibicao(t.input, parsedSig);
                 entradaFormatadaHTML = `<pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${escapeHtml(pares)}</pre>`;
-                labelSaida = 'Retorno Esperado (return):';
+                labelSaida = parsedSig.returnType === 'void' ? 'Valores Após a Chamada:' : 'Retorno Esperado (return):';
             }
 
             containerTeste.innerHTML = `
@@ -777,7 +713,10 @@ int main() {
                     $(tabGerenciarLink).tab('show');
                 }
 
-                await carregarMetricasTurma();
+                const abaGerenciarAtiva = tabGerenciarLink && tabGerenciarLink.classList.contains('active');
+                if (isInitialLoad || abaGerenciarAtiva) {
+                    await carregarMetricasTurma();
+                }
             } else {
                 if (tabGerenciarLink) {
                     tabGerenciarLink.classList.add('disabled');
@@ -1516,6 +1455,7 @@ int main() {
             containerTestes.appendChild(div);
         }
         atualizarContadorTestesVisiveis();
+        atualizarTodosItensTesteModo();
 
         $('#modalNovoExercicio').modal('show');
     }
@@ -1749,10 +1689,14 @@ int main() {
             const parsed = obterAssinaturaExtraidaModoFuncao();
 
             if (labelSaida) {
-                labelSaida.innerText = 'Valor de Retorno Esperado (return):';
+                labelSaida.innerText = (parsed && parsed.returnType === 'void')
+                    ? 'Valores Esperados Após a Execução (saída):'
+                    : 'Valor de Retorno Esperado (return):';
             }
             if (textareaOutput) {
-                textareaOutput.placeholder = 'Digite o valor de retorno esperado (return)...';
+                textareaOutput.placeholder = (parsed && parsed.returnType === 'void')
+                    ? 'Valores esperados dos vetores/matrizes após a chamada (ex: {1, 2, 4})...'
+                    : 'Digite o valor de retorno esperado (return)...';
             }
 
             if (parsed && parsed.params.length > 0 && boxVars && boxPadrao) {
@@ -1774,10 +1718,21 @@ int main() {
                     <div class="form-row">
                         ${parsed.params.map((p, idx) => {
                             const val = linhasAtuais[idx] !== undefined ? linhasAtuais[idx] : '';
+                            let labelTipo = `Variável <strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.type)}):`;
+
+                            if (p.kind === 'vector') {
+                                labelTipo = `Vetor <strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.type)}[]):`;
+                            } else if (p.kind === 'matrix') {
+                                const dim = p.matrixKind === 'fixed' ? `[][${p.cols}]` : '**';
+                                labelTipo = `Matriz <strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.type)}${dim}):`;
+                            } else if (p.kind === 'string') {
+                                labelTipo = `Texto <strong>${escapeHtml(p.name)}</strong> (char[]):`;
+                            }
+
                             return `
                                 <div class="${colClass} mb-2">
-                                    <label class="small font-weight-bold text-muted mb-1">
-                                        Variável <strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.type)}):
+                                    <label class="small font-weight-bold text-muted mb-1 d-block">
+                                        ${labelTipo}
                                     </label>
                                     <input type="text" class="form-control form-control-sm input-param-var font-monospace"
                                         data-param-index="${idx}"
@@ -1836,6 +1791,23 @@ int main() {
     }
 
     function atualizarTodosItensTesteModo() {
+        const alertDica = document.getElementById('alert-dica-casos-teste');
+        const alertDicaVetores = document.getElementById('alert-dica-vetores-matrizes');
+        const modo = obterModoExercicioModalAtual();
+        const parsed = (modo === 'function') ? obterAssinaturaExtraidaModoFuncao() : null;
+
+        if (alertDica) {
+            alertDica.innerHTML = `<i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha. Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).`;
+        }
+
+        if (alertDicaVetores) {
+            if (modo === 'function' && parsed && parsed.temArrays) {
+                alertDicaVetores.style.display = 'block';
+            } else {
+                alertDicaVetores.style.display = 'none';
+            }
+        }
+
         document.querySelectorAll('#modal-container-testes .teste-item').forEach(item => {
             sincronizarInputsVariaveisNoItemTeste(item);
         });
@@ -2171,7 +2143,7 @@ int main() {
                 if (res.ok && data.success) {
                     $('#modalNovoExercicio').modal('hide');
                     limparModalNovoExercicio();
-                    await carregarEstadoInicial();
+                    await carregarEstadoInicial(false);
 
                     if (!editId && data.exercicio && data.exercicio._id) {
                         const labelTitulo = document.getElementById('modalSucessoTituloExercicio');
@@ -2350,10 +2322,21 @@ Regras específicas deste modo:
             }
             const prec = parseInt(document.getElementById('modal-float-precision')?.value, 10);
             const precFinal = (!isNaN(prec) && prec >= 0 && prec <= 10) ? prec : 2;
-            const listaParams = parsed.params.map((p, i) => `${i + 1}ª linha da entrada: parâmetro "${p.name}" (tipo ${p.type})`).join('\n');
+            const listaParams = parsed.params.map((p, i) => {
+                let desc = `${i + 1}ª linha da entrada: parâmetro "${p.name}" (tipo ${p.type})`;
+                if (p.kind === 'vector') desc += ` -> VETOR: formate obrigatoriamente entre chaves, ex: {1, 4, 4}`;
+                if (p.kind === 'matrix') desc += ` -> MATRIZ: formate obrigatoriamente com chaves duplas, ex: {{1, 2}, {3, 4}}`;
+                if (p.kind === 'string') desc += ` -> STRING: formate com aspas ou texto simples, ex: "exemplo"`;
+                return desc;
+            }).join('\n');
+
             const regraFloat = (parsed.returnType === 'float' || parsed.returnType === 'double')
                 ? `\n- Como o retorno da função é "${parsed.returnType}", formate o valor no campo "saida" com exatamente ${precFinal} casas decimais (padrão %.${precFinal}f).`
                 : '';
+
+            const regraVoid = (parsed.returnType === 'void')
+                ? `\n- ATENÇÃO (Função void): O campo "saida" de cada caso de teste deve conter os valores finais dos vetores/matrizes alterados pela função formatados entre chaves (ex: {1, 2, 4} para vetores ou {{1, 2}, {3, 4}} para matrizes).`
+                : '\n- O campo "saida" de cada caso de teste deve conter EXCLUSIVAMENTE o valor de retorno esperado (return) da função.';
 
             contextoModoPrompt = `
 Modo do Exercício: MODO FUNÇÃO (Escopo Fechado / Return)
@@ -2365,9 +2348,12 @@ ${tplFunc || parsed.cleanSignature}
 Ordem dos parâmetros na "entrada" (separados por quebra de linha \\n):
 ${listaParams}
 Regras específicas deste modo:
-- O aluno implementa apenas o corpo da função e retorna o resultado com "return".
+- O aluno implementa apenas o corpo da função e retorna o resultado com "return" (ou altera os ponteiros/vetores in-place se for void).
 - O campo "entrada" de cada caso de teste deve conter os valores dos parâmetros (${parsed.params.map(p => p.name).join(', ')}) separados por quebra de linha (\\n), exatamente nessa ordem.
-- O campo "saida" de cada caso de teste deve conter EXCLUSIVAMENTE o valor de retorno esperado (return) da função.${regraFloat}`;
+- Regra de formatação de parâmetros na entrada:
+  * Parâmetros do tipo vetor DEVEM ser formatados obrigatoriamente entre chaves: ex: {1, 4, 4} ou {10, 20, 30}.
+  * Parâmetros do tipo matriz DEVEM ser formatados com chaves duplas: ex: {{1, 2, 3}, {4, 5, 6}}.
+  * Parâmetros escalares simples (int, float) devem ser apenas o valor direto: ex: 10 ou 3.14.${regraVoid}${regraFloat}`;
         } else {
             contextoModoPrompt = `
 Modo do Exercício: MAIN PADRÃO (Livre / Tradicional)

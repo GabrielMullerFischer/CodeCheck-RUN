@@ -11,4 +11,7 @@ const ExerciseListSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
+ExerciseListSchema.index({ authorId: 1, courseId: 1 });
+ExerciseListSchema.index({ isPublic: 1 });
+
 module.exports = mongoose.model('ExerciseList', ExerciseListSchema);

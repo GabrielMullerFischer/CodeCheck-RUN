@@ -192,80 +192,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function parsearAssinaturaFuncao(sigOuTemplate) {
-        if (!sigOuTemplate || typeof sigOuTemplate !== 'string') return null;
-
-        function testarLinha(linhaBruta) {
-            const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
-            const semPrefixo = String(linhaBruta || '').replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
-            if (!semPrefixo || semPrefixo.startsWith('#')) return null;
-            const clean = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
-            const match = clean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)\s*\(([^)]*)\)$/);
-            if (!match) return null;
-            const returnType = match[1].replace(/\s+/g, ' ').trim();
-            const funcName = match[2].trim();
-            if (funcName === 'main') return null;
-            const paramsRaw = match[3].trim();
-            const params = [];
-
-            if (paramsRaw && paramsRaw !== 'void') {
-                const parts = paramsRaw.split(',');
-                for (const part of parts) {
-                    const pClean = part.trim().replace(/\[\s*\]/g, '');
-                    if (!pClean) continue;
-                    const pMatch = pClean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)$/);
-                    if (!pMatch) return null;
-                    params.push({
-                        type: pMatch[1].replace(/\s+/g, ' ').trim(),
-                        name: pMatch[2].trim()
-                    });
-                }
-            }
-            const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
-            return {
-                isLocked,
-                cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`,
-                returnType,
-                funcName,
-                params
-            };
-        }
-
-        const linhas = sigOuTemplate.replace(/\r/g, '').split('\n');
-        const candidatos = [];
-        let emComentarioBloco = false;
-        let nivelChaves = 0;
-
-        for (const linhaOriginal of linhas) {
-            let linhaLimpa = '';
-            for (let i = 0; i < linhaOriginal.length; i++) {
-                if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
-                    emComentarioBloco = true;
-                    i++;
-                } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
-                    emComentarioBloco = false;
-                    i++;
-                } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
-                    break;
-                } else if (!emComentarioBloco) {
-                    linhaLimpa += linhaOriginal[i];
-                }
-            }
-
-            if (nivelChaves === 0 && linhaLimpa.trim()) {
-                const res = testarLinha(linhaLimpa);
-                if (res) candidatos.push(res);
-            }
-
-            for (const ch of linhaLimpa) {
-                if (ch === '{') nivelChaves++;
-                else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
-            }
-        }
-
-        if (candidatos.length > 0) {
-            return candidatos.find(c => c.isLocked) || candidatos[0];
-        }
-        return null;
+        if (!sigOuTemplate || typeof sigOuTemplate !== 'string' || !window.FuncaoC) return null;
+        const r = window.FuncaoC.parsearAssinatura(sigOuTemplate);
+        return r && r.valido ? r : null;
     }
 
     function obterLabelRestaurarPorModo(ex) {
@@ -1638,7 +1567,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (res.ok && data.success && data.lista && data.lista.exercises.length > 0) {
                 listaExercicios = data.lista.exercises;
-                await atualizarRankingEStatus();
                 montarNavegacaoMoodle();
                 await selecionarQuestao(0);
             }
@@ -2066,12 +1994,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     if (modoEx === 'function') {
                         labelEntrada = 'Parâmetros de Entrada:';
-                        labelSaida = 'Retorno esperado:';
+                        labelSaida = (parsedSig && parsedSig.returnType === 'void') ? 'Valores após a chamada:' : 'Retorno esperado:';
                         if (parsedSig && parsedSig.params.length > 0) {
-                            const linhasIn = String(t.input || '').replace(/\r\n/g, '\n').split('\n');
-                            textoEntradaExibicao = parsedSig.params
-                                .map((p, idx) => `${p.name} = ${linhasIn[idx] !== undefined ? linhasIn[idx] : ''}`)
-                                .join('\n');
+                            textoEntradaExibicao = window.FuncaoC.formatarEntradaExibicao(t.input, parsedSig);
                         }
                     }
 
@@ -2111,9 +2036,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 if (modoEx === 'function') {
+                    const avisoRetorno = (parsedSig && parsedSig.returnType === 'void')
+                        ? 'Como a função é do tipo void, o juiz avalia as alterações feitas diretamente nos vetores/matrizes.'
+                        : 'Programe apenas o corpo da função e retorne o resultado usando "return".';
                     htmlExemplos += `
                         <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
-                            <strong>Atenção:</strong> Programe apenas o corpo da função e retorne o resultado usando "return". As linhas com cadeado são protegidas.
+                            <strong>Atenção:</strong> ${avisoRetorno} As linhas com cadeado são protegidas.
                         </div>
                     `;
                 } else if (modoEx === 'main_custom') {
@@ -2139,8 +2067,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         removerDestaqueErro();
         atualizarStatusAutoSave('limpar');
 
-        await carregarRascunho(ex._id);
-        await carregarHistoricoSubmissoesExercicio(ex._id);
+        await Promise.all([
+            carregarRascunho(ex._id),
+            carregarHistoricoSubmissoesExercicio(ex._id)
+        ]);
         await atualizarRankingEStatus();
 
         if (listaSubmissoesMeta && listaSubmissoesMeta.length > 0) {
@@ -2150,6 +2080,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (btnAnterior) btnAnterior.disabled = (indiceAtual === 0);
         if (btnProximo) btnProximo.disabled = (indiceAtual === listaExercicios.length - 1);
+
+        if (customInputStdin) {
+            if (modoEx === 'function' && parsedSig && parsedSig.params.length > 0) {
+                customInputStdin.placeholder = parsedSig.params.map(p => {
+                    if (p.kind === 'vector') return `{1, 4, 4}`;
+                    if (p.kind === 'matrix') return `{{1, 2}, {3, 4}}`;
+                    if (p.kind === 'string') return `"texto"`;
+                    return `10`;
+                }).join('\n');
+            } else {
+                customInputStdin.placeholder = 'Digite os valores lidos pelo seu programa...';
+            }
+        }
 
         ajustarAlturaEditorModoFoco();
         posicionarCursorAposAspas();

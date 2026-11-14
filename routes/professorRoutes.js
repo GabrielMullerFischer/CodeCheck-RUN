@@ -8,6 +8,7 @@ const ActivityConfig = require('../models/ActivityConfig');
 const Submission = require('../models/Submission');
 const ActivityAttempt = require('../models/ActivityAttempt');
 const minioService = require('../services/minioService');
+const FuncaoC = require('../public/js/funcaoC');
 
 const MAX_TIME_LIMIT_MS = parseInt(process.env.MAX_EXECUTION_TIME_LIMIT_MS, 10) || 120000;
 const DEFAULT_TIME_LIMIT_MS = parseInt(process.env.DEFAULT_TIME_LIMIT_MS || process.env.DEFAULT_EXECUTION_TIME_LIMIT_MS, 10) || 5000;
@@ -46,90 +47,9 @@ function normalizarModoExercicio(mode) {
 
 function extrairAssinaturaDeTextoC(texto) {
     if (!texto || typeof texto !== 'string') return null;
-    const regexSig = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)$/;
-    const regexParam = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)$/;
-
-    function testarLinhaCandidata(linhaBruta) {
-        const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
-        const semPrefixo = linhaBruta.replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
-        if (!semPrefixo || semPrefixo.startsWith('#')) return null;
-        const candidata = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
-        const matchSig = candidata.match(regexSig);
-        if (!matchSig) return null;
-        const returnType = matchSig[1].replace(/\s+/g, ' ').trim();
-        const funcName = matchSig[2].trim();
-        if (funcName === 'main') return null;
-        const paramsRaw = matchSig[3].trim();
-        const params = [];
-        if (paramsRaw && paramsRaw !== 'void') {
-            const listaParams = paramsRaw.split(',').map(p => p.trim());
-            for (const p of listaParams) {
-                const mParam = p.match(regexParam);
-                if (!mParam) {
-                    return { invalidParam: p };
-                }
-                params.push({
-                    type: mParam[1].replace(/\s+/g, ' ').trim(),
-                    name: mParam[2].trim()
-                });
-            }
-        }
-        const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
-        return {
-            valido: true,
-            isLocked,
-            returnType,
-            funcName,
-            params,
-            cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`
-        };
-    }
-
-    const linhas = texto.replace(/\r/g, '').split('\n');
-    const candidatos = [];
-    let erroParametro = null;
-    let emComentarioBloco = false;
-    let nivelChaves = 0;
-
-    for (const linhaOriginal of linhas) {
-        let linhaLimpa = '';
-        for (let i = 0; i < linhaOriginal.length; i++) {
-            if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
-                emComentarioBloco = true;
-                i++;
-            } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
-                emComentarioBloco = false;
-                i++;
-            } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
-                break;
-            } else if (!emComentarioBloco) {
-                linhaLimpa += linhaOriginal[i];
-            }
-        }
-
-        if (nivelChaves === 0 && linhaLimpa.trim()) {
-            const res = testarLinhaCandidata(linhaLimpa);
-            if (res) {
-                if (res.invalidParam) {
-                    erroParametro = res.invalidParam;
-                } else if (res.valido) {
-                    candidatos.push(res);
-                }
-            }
-        }
-
-        for (const ch of linhaLimpa) {
-            if (ch === '{') nivelChaves++;
-            else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
-        }
-    }
-
-    if (candidatos.length > 0) {
-        return candidatos.find(c => c.isLocked) || candidatos[0];
-    }
-    if (erroParametro) {
-        return { invalidParam: erroParametro };
-    }
+    const res = FuncaoC.parsearAssinatura(texto);
+    if (res.valido) return res;
+    if (res.invalidParam) return { invalidParam: res.invalidParam };
     return null;
 }
 
@@ -183,7 +103,7 @@ function validarConfiguracaoModoExercicio(body = {}) {
         }
         if (extraido.invalidParam) {
             return {
-                error: `Parâmetro inválido na declaração da função: "${extraido.invalidParam}". Declare cada parâmetro com tipo e nome (ex: int a, float b).`
+                error: `Parâmetro inválido na declaração da função: "${extraido.invalidParam}". Use tipos simples (int a, float b), vetores (int v[]), textos (char s[]) ou matrizes (int m[][3], int **m). O tamanho das colunas deve ser um número.`
             };
         }
         if (!extraido.params || extraido.params.length === 0) {
@@ -198,7 +118,9 @@ function validarConfiguracaoModoExercicio(body = {}) {
 
         const templateFinal = rawTpl.trim()
             ? rawTpl
-            : `***${extraido.cleanSignature} {\n    int resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`;
+            : (extraido.returnType === 'void'
+                ? `***${extraido.cleanSignature} {\n    // Espaco livre para o aluno programar\n    \n***}`
+                : `***${extraido.cleanSignature} {\n    ${extraido.returnType} resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`);
 
         return {
             exerciseMode: 'function',
@@ -422,6 +344,19 @@ function verificarProfessor(req, res, next) {
 }
 
 
+function validarEntradasModoFuncao(configModo, testes) {
+    if (!configModo || configModo.exerciseMode !== 'function' || !Array.isArray(testes)) return null;
+    const sig = FuncaoC.parsearAssinatura(configModo.templateCode || configModo.functionSignature || '');
+    if (!sig.valido || !sig.temArrays) return null;
+    for (let i = 0; i < testes.length; i++) {
+        const conv = FuncaoC.converterParaStdin(testes[i].input || '', sig);
+        if (!conv.ok) {
+            return `Caso de teste #${i + 1}: ${conv.erro}.`;
+        }
+    }
+    return null;
+}
+
 function processarTestesExercicio(tests) {
     if (!Array.isArray(tests)) return [];
     const processados = tests
@@ -509,6 +444,10 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
         const configModo = validarConfiguracaoModoExercicio(req.body);
         if (configModo.error) {
             return res.status(400).json({ success: false, error: configModo.error });
+        }
+        const erroEntradasFuncao = validarEntradasModoFuncao(configModo, testesFormatados);
+        if (erroEntradasFuncao) {
+            return res.status(400).json({ success: false, error: erroEntradasFuncao });
         }
 
         const exercicio = await Exercise.create({ 
@@ -601,6 +540,10 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
         if (configModo.error) {
             return res.status(400).json({ success: false, error: configModo.error });
         }
+        const erroEntradasFuncao = validarEntradasModoFuncao(configModo, testesFormatados);
+        if (erroEntradasFuncao) {
+            return res.status(400).json({ success: false, error: erroEntradasFuncao });
+        }
 
         // Proteção entre disciplinas: se o exercício pertencer a outra disciplina,
         // clona uma cópia exclusiva para a disciplina atual para nunca alterar enunciados de outra turma!
@@ -686,6 +629,7 @@ router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
                 await ex.save();
             } else {
                 await Exercise.findByIdAndDelete(objId);
+                await minioService.removerRascunhoProfessor(meuId, objId);
             }
         } else {
             ex.isArchived = true;
@@ -1145,7 +1089,10 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
         }) : null;
         const idListaVinculadaStr = vinculo && vinculo.listId ? String(vinculo.listId._id || vinculo.listId) : null;
 
-        const todasListas = await ExerciseList.find().populate('exercises').sort({ _id: -1 }).lean();
+        const todasListas = await ExerciseList.find().populate({
+            path: 'exercises',
+            select: '_id title authorId isPublic timeLimit exerciseMode tags'
+        }).sort({ _id: -1 }).lean();
         todasListas.forEach(l => {
             if (Array.isArray(l.exercises)) {
                 l.exercises.forEach(ex => {
@@ -1208,6 +1155,16 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
         let bancoUniversalExercicios = todosExercicios.filter(e => {
             if (idsMeusExercicios.has(String(e._id))) return false;
             return e.isPublic !== false || String(e.authorId) === meuId;
+        });
+
+        // Otimização de performance: para os exercícios do Banco Universal (comunitários/oficiais),
+        // mantemos apenas o 1º caso de teste para o preview do modal de visualização.
+        // Os testes completos de "Meus Exercícios" continuam intactos para edição imediata.
+        bancoUniversalExercicios = bancoUniversalExercicios.map(e => {
+            if (Array.isArray(e.tests) && e.tests.length > 1) {
+                return { ...e, tests: [e.tests[0]] };
+            }
+            return e;
         });
         bancoUniversalExercicios.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
 

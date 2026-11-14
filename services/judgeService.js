@@ -1,6 +1,7 @@
 const { k8sApi, namespace } = require('../config/kubernetes');
 const zlib = require('zlib');
 const warmPoolService = require('./warmPoolService');
+const FuncaoC = require('../public/js/funcaoC');
 
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 6;
 let activeExecutions = 0;
@@ -77,12 +78,21 @@ function liberarVagaNaFila() {
 
 function normalize(s) {
     if (!s) return '';
-    return s.toString()
+    let res = s.toString()
         .replace(/\r/g, '')
         .split('\n')
         .map(line => line.trimEnd())
         .join('\n')
         .trim();
+
+    // Se contiver chaves de vetor/matriz, padroniza espaçamento: { 1 , 2 } -> {1, 2}
+    if (res.includes('{') || res.includes('}')) {
+        res = res
+            .replace(/\{\s*/g, '{')
+            .replace(/\s*\}/g, '}')
+            .replace(/\s*,\s*/g, ', ');
+    }
+    return res;
 }
 
 function normalizarModoExercicio(mode) {
@@ -91,86 +101,7 @@ function normalizarModoExercicio(mode) {
 }
 
 function extrairAssinaturaFuncaoC(assinaturaOuTemplate) {
-    const regexSig = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)$/;
-    const regexParam = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)$/;
-
-    function testarLinha(linhaBruta) {
-        const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
-        const semPrefixo = String(linhaBruta || '').replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
-        if (!semPrefixo || semPrefixo.startsWith('#')) return null;
-        const candidata = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
-        const match = candidata.match(regexSig);
-        if (!match) return null;
-        const returnType = match[1].replace(/\s+/g, ' ').trim();
-        const funcName = match[2].trim();
-        if (funcName === 'main') return null;
-        const paramsRaw = match[3].trim();
-        const params = [];
-
-        if (paramsRaw && paramsRaw !== 'void') {
-            const parts = paramsRaw.split(',').map(p => p.trim());
-            for (const p of parts) {
-                const mParam = p.match(regexParam);
-                if (!mParam) return null;
-                params.push({
-                    type: mParam[1].replace(/\s+/g, ' ').trim(),
-                    name: mParam[2].trim()
-                });
-            }
-        }
-
-        const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
-        return {
-            valido: true,
-            isLocked,
-            returnType,
-            funcName,
-            params,
-            cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`
-        };
-    }
-
-    const texto = String(assinaturaOuTemplate || '').replace(/\r/g, '');
-    if (!texto.trim()) return { valido: false };
-
-    const linhas = texto.split('\n');
-    const candidatos = [];
-    let emComentarioBloco = false;
-    let nivelChaves = 0;
-
-    for (const linhaOriginal of linhas) {
-        let linhaLimpa = '';
-        for (let i = 0; i < linhaOriginal.length; i++) {
-            if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
-                emComentarioBloco = true;
-                i++;
-            } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
-                emComentarioBloco = false;
-                i++;
-            } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
-                break;
-            } else if (!emComentarioBloco) {
-                linhaLimpa += linhaOriginal[i];
-            }
-        }
-
-        if (nivelChaves === 0 && linhaLimpa.trim()) {
-            const res = testarLinha(linhaLimpa);
-            if (res && res.valido) {
-                candidatos.push(res);
-            }
-        }
-
-        for (const ch of linhaLimpa) {
-            if (ch === '{') nivelChaves++;
-            else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
-        }
-    }
-
-    if (candidatos.length > 0) {
-        return candidatos.find(c => c.isLocked) || candidatos[0];
-    }
-    return { valido: false };
+    return FuncaoC.parsearAssinatura(assinaturaOuTemplate);
 }
 
 function prepararCodigoMainCustom(code, templateCode, isCustomDebug = false) {
@@ -356,6 +287,141 @@ function obterFormatadorPrintRetornoC(returnType, floatPrecision = 2) {
     return { fmt: '%d', cast: '(int)' };
 }
 
+function tipoCastParametroC(p) {
+    const c = p.isConst ? 'const ' : '';
+    if (p.kind === 'string') return `${c}char *`;
+    if (p.kind === 'vector') return `${c}${p.type} *`;
+    if (p.kind === 'matrix' && p.matrixKind === 'fixed') return `${c}${p.type} (*)[${p.cols}]`;
+    if (p.kind === 'matrix') return `${c}${p.type} **`;
+    return null;
+}
+
+function gerarMainOcultaFuncao(sig, floatPrecision, isCustomDebug) {
+    const leituras = [];
+    const autos = [];
+    const args = [];
+
+    sig.params.forEach((p, idx) => {
+        const v = `__cc_p${idx}`;
+        const cast = tipoCastParametroC(p);
+        args.push(cast ? `(${cast})${v}` : v);
+
+        if (p.auto) {
+            const origem = p.auto.dim === 'rows' ? `__cc_rows${p.auto.de}` : (p.auto.dim === 'cols' ? `__cc_cols${p.auto.de}` : `__cc_len${p.auto.de}`);
+            autos.push(`    ${p.type} ${v} = (${p.type})${origem};`);
+            return;
+        }
+
+        if (p.kind === 'scalar') {
+            const info = obterFormatadorScanfC(p.type);
+            leituras.push(`    ${info.decl} ${v} = ${info.init};`);
+            leituras.push(`    if (scanf("${info.fmt}", &${v}) != 1) {}`);
+            return;
+        }
+
+        if (p.kind === 'string') {
+            const len = `__cc_len${idx}`;
+            leituras.push(`    int ${len} = 0;`);
+            leituras.push(`    if (scanf("%d", &${len}) != 1 || ${len} < 0) ${len} = 0;`);
+            leituras.push('    getchar();');
+            leituras.push(`    char *${v} = (char *)calloc((size_t)${len} + ${(p.fixedLen || 0) + 1024}, 1);`);
+            leituras.push(`    if (${len} > 0 && fread(${v}, 1, (size_t)${len}, stdin) != (size_t)${len}) {}`);
+            return;
+        }
+
+        const info = obterFormatadorScanfC(p.type);
+
+        if (p.kind === 'vector') {
+            const len = `__cc_len${idx}`;
+            leituras.push(`    int ${len} = 0;`);
+            leituras.push(`    if (scanf("%d", &${len}) != 1 || ${len} < 0) ${len} = 0;`);
+            leituras.push(`    ${info.decl} *${v} = (${info.decl} *)calloc((size_t)${len} + ${(p.fixedLen || 0) + 64}, sizeof(${info.decl}));`);
+            leituras.push(`    for (int __cc_k = 0; __cc_k < ${len}; __cc_k++) if (scanf("${info.fmt}", &${v}[__cc_k]) != 1) {}`);
+            return;
+        }
+
+        const rows = `__cc_rows${idx}`;
+        const cols = `__cc_cols${idx}`;
+        leituras.push(`    int ${rows} = 0, ${cols} = 0;`);
+        leituras.push(`    if (scanf("%d %d", &${rows}, &${cols}) != 2 || ${rows} < 0 || ${cols} < 0) { ${rows} = 0; ${cols} = 0; }`);
+        if (p.matrixKind === 'fixed') {
+            leituras.push(`    ${info.decl} (*${v})[${p.cols}] = (${info.decl} (*)[${p.cols}])calloc((size_t)${rows} + ${(p.maxRows || 0) + 1}, sizeof(*${v}));`);
+            leituras.push(`    for (int __cc_a = 0; __cc_a < ${rows}; __cc_a++)`);
+            leituras.push(`        for (int __cc_b = 0; __cc_b < ${cols}; __cc_b++)`);
+            leituras.push(`            if (scanf("${info.fmt}", &${v}[__cc_a][__cc_b]) != 1) {}`);
+        } else {
+            leituras.push(`    ${info.decl} **${v} = (${info.decl} **)calloc((size_t)${rows} + 1, sizeof(${info.decl} *));`);
+            leituras.push(`    for (int __cc_a = 0; __cc_a < ${rows}; __cc_a++) {`);
+            leituras.push(`        ${v}[__cc_a] = (${info.decl} *)calloc((size_t)${cols} + 1, sizeof(${info.decl}));`);
+            leituras.push(`        for (int __cc_b = 0; __cc_b < ${cols}; __cc_b++)`);
+            leituras.push(`            if (scanf("${info.fmt}", &${v}[__cc_a][__cc_b]) != 1) {}`);
+            leituras.push('    }');
+        }
+    });
+
+    const chamada = `${sig.funcName}(${args.join(', ')})`;
+    const impressoes = [];
+
+    if (sig.returnType === 'void') {
+        FuncaoC.parametrosDeSaida(sig).forEach(p => {
+            const idx = sig.params.indexOf(p);
+            const v = `__cc_p${idx}`;
+            if (p.kind === 'string') {
+                impressoes.push(`        fprintf(__cc_out, "%s\\n", ${v});`);
+                return;
+            }
+            const el = obterFormatadorPrintRetornoC(p.type, floatPrecision);
+            if (p.kind === 'vector') {
+                impressoes.push('        fputc(\'{\', __cc_out);');
+                impressoes.push(`        for (int __cc_k = 0; __cc_k < __cc_len${idx}; __cc_k++) {`);
+                impressoes.push('            if (__cc_k) fputs(", ", __cc_out);');
+                impressoes.push(`            fprintf(__cc_out, "${el.fmt}", ${el.cast}${v}[__cc_k]);`);
+                impressoes.push('        }');
+                impressoes.push('        fputs("}\\n", __cc_out);');
+                return;
+            }
+            impressoes.push('        fputc(\'{\', __cc_out);');
+            impressoes.push(`        for (int __cc_a = 0; __cc_a < __cc_rows${idx}; __cc_a++) {`);
+            impressoes.push('            if (__cc_a) fputs(", ", __cc_out);');
+            impressoes.push('            fputc(\'{\', __cc_out);');
+            impressoes.push(`            for (int __cc_b = 0; __cc_b < __cc_cols${idx}; __cc_b++) {`);
+            impressoes.push('                if (__cc_b) fputs(", ", __cc_out);');
+            impressoes.push(`                fprintf(__cc_out, "${el.fmt}", ${el.cast}${v}[__cc_a][__cc_b]);`);
+            impressoes.push('            }');
+            impressoes.push('            fputc(\'}\', __cc_out);');
+            impressoes.push('        }');
+            impressoes.push('        fputs("}\\n", __cc_out);');
+        });
+    } else {
+        const retPrint = obterFormatadorPrintRetornoC(sig.returnType, floatPrecision);
+        impressoes.push(`        fprintf(__cc_out, "${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`);
+    }
+
+    const linhaChamada = sig.returnType === 'void'
+        ? `    ${chamada};`
+        : `    ${sig.returnType} __cc_ret = ${chamada};`;
+
+    const abertura = isCustomDebug
+        ? '    FILE *__cc_out = stdout;'
+        : '    FILE *__cc_out = fopen("official_got.txt", "a");';
+
+    return [
+        '',
+        'int main(void) {',
+        ...leituras,
+        ...autos,
+        linhaChamada,
+        abertura,
+        '    if (__cc_out) {',
+        isCustomDebug ? '        fflush(stdout);' : '        setbuf(__cc_out, NULL);',
+        ...impressoes,
+        '        if (__cc_out != stdout) fclose(__cc_out);',
+        '    }',
+        '    return 0;',
+        '}'
+    ].join('\n');
+}
+
 function prepararCodigoModoFuncao(code, functionSignature, floatPrecision = 2, isCustomDebug = false, templateCode = null) {
     const sig = extrairAssinaturaFuncaoC(functionSignature || templateCode);
     if (!sig.valido) {
@@ -382,8 +448,8 @@ function prepararCodigoModoFuncao(code, functionSignature, floatPrecision = 2, i
         };
     }
 
-    const normCode = codigoSemComentarios.replace(/\s+/g, ' ');
-    const normSig = sig.cleanSignature.replace(/\s+/g, ' ');
+    const normCode = codigoSemComentarios.replace(/\s+/g, '');
+    const normSig = sig.cleanSignature.replace(/\s+/g, '');
     if (!normCode.includes(normSig) || !codigoSemComentarios.trim().endsWith('}')) {
         return {
             valido: false,
@@ -391,42 +457,7 @@ function prepararCodigoModoFuncao(code, functionSignature, floatPrecision = 2, i
         };
     }
 
-    const linhasLeitura = [];
-    const nomesArgs = [];
-    sig.params.forEach((p, idx) => {
-        const info = obterFormatadorScanfC(p.type);
-        const varName = `__cc_param_${idx}`;
-        nomesArgs.push(varName);
-        linhasLeitura.push(`    ${info.decl} ${varName} = ${info.init};`);
-        linhasLeitura.push(`    if (scanf("${info.fmt}", &${varName}) != 1) {}`);
-    });
-
-    const retPrint = obterFormatadorPrintRetornoC(sig.returnType, floatPrecision);
-    const chamada = `${sig.funcName}(${nomesArgs.join(', ')})`;
-
-    let blocoImpressao = '';
-    if (isCustomDebug) {
-        blocoImpressao = `    printf("${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`;
-    } else {
-        blocoImpressao = [
-            '    FILE *__cc_out = fopen("official_got.txt", "a");',
-            '    if (__cc_out) {',
-            '        setbuf(__cc_out, NULL);',
-            `        fprintf(__cc_out, "${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`,
-            '        fclose(__cc_out);',
-            '    }'
-        ].join('\n');
-    }
-
-    const mainGerada = [
-        '',
-        'int main(void) {',
-        ...linhasLeitura,
-        `    ${sig.returnType} __cc_ret = ${chamada};`,
-        blocoImpressao,
-        '    return 0;',
-        '}'
-    ].join('\n');
+    const mainGerada = gerarMainOcultaFuncao(sig, floatPrecision, isCustomDebug);
 
     const cabecalhoPadrao = [
         '#include <stdio.h>',
@@ -438,7 +469,8 @@ function prepararCodigoModoFuncao(code, functionSignature, floatPrecision = 2, i
     return {
         valido: true,
         codeFinal: `${cabecalhoPadrao}\n${codigoStr}\n${mainGerada}\n`,
-        useOfficialOut: !isCustomDebug
+        useOfficialOut: !isCustomDebug,
+        sig
     };
 }
 
@@ -562,6 +594,27 @@ async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = nu
 
     const codeParaExecutar = preparo.codeFinal;
     const useOfficialOut = preparo.useOfficialOut === true;
+
+    if (preparo.sig && preparo.sig.valido && Array.isArray(tests)) {
+        const convertidos = [];
+        for (let i = 0; i < tests.length; i++) {
+            const t = (tests[i] && typeof tests[i].toObject === 'function') ? tests[i].toObject() : { ...tests[i] };
+            const conv = FuncaoC.converterParaStdin(t.input || '', preparo.sig);
+            if (!conv.ok) {
+                return {
+                    status: 'Runtime Error',
+                    details: `Entrada inválida para a função${tests.length > 1 ? ` (caso de teste #${i + 1})` : ''}: ${conv.erro}.`,
+                    input: t.input || '',
+                    executionTime: 0,
+                    percentage: 0,
+                    passedCount: 0,
+                    totalCount: tests.length
+                };
+            }
+            convertidos.push({ ...t, inputOriginal: t.input || '', input: conv.stdin });
+        }
+        tests = convertidos;
+    }
 
     await adquirirVagaNaFila();
     try {
@@ -948,7 +1001,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
                 primeiroErro = {
                     status: 'Runtime Error',
                     details,
-                    input: testItem.input || '',
+                    input: testItem.inputOriginal !== undefined ? testItem.inputOriginal : (testItem.input || ''),
                     got: got,
                     expected: expected,
                     executionTime: durMs,
@@ -959,7 +1012,7 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
             if (!primeiroErro) {
                 primeiroErro = {
                     status: 'Wrong Answer',
-                    input: testItem.input || '',
+                    input: testItem.inputOriginal !== undefined ? testItem.inputOriginal : (testItem.input || ''),
                     got: got,
                     expected: expected,
                     executionTime: durMs,

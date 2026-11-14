@@ -142,6 +142,8 @@ async function setup(app) {
         { route: '/healthz', method: 'get' },
         { route: '/js/aluno.js', method: 'get' },
         { route: '/js/professor.js', method: 'get' },
+        { route: '/js/funcaoC.js', method: 'get' },
+        { route: /^\/js\/.*/, method: 'get' },
         { route: '/favicon.ico', method: 'get' }
     );
 

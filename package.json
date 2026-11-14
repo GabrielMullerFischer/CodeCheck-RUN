@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
+    "compression": "^1.8.2",
     "connect-mongo": "^6.0.0",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
