@@ -9,6 +9,14 @@ const ExerciseSchema = new mongoose.Schema({
     isPublic: { type: Boolean, default: true },
     timeLimit: { type: Number, default: 5000 },
     isArchived: { type: Boolean, default: false },
+    exerciseMode: {
+        type: String,
+        enum: ['main_default', 'main_custom', 'function'],
+        default: 'main_default'
+    },
+    templateCode: { type: String, default: null },
+    functionSignature: { type: String, default: null },
+    floatPrecision: { type: Number, default: 2 },
     tests: [{
         input: { type: String, default: '' },
         output: { type: String, default: '' },

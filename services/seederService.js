@@ -93,7 +93,7 @@ async function popularBanco() {
             }
         }
 
-        console.log(`📦 Seeder: Sincronizados ${dadosPadrao.exercicios.length} exercícios e ${dadosPadrao.listas.length} listas padrão do exerciciosPadrao.json.`);
+        console.log(`Seeder: Sincronizados ${dadosPadrao.exercicios.length} exercícios e ${dadosPadrao.listas.length} listas padrão do exerciciosPadrao.json.`);
     } catch (err) {
         console.error('Erro no Seeder CodeCheck-RUN:', err.message);
     }

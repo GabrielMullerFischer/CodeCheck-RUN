@@ -85,6 +85,401 @@ function normalize(s) {
         .trim();
 }
 
+function normalizarModoExercicio(mode) {
+    if (mode === 'main_custom' || mode === 'function') return mode;
+    return 'main_default';
+}
+
+function extrairAssinaturaFuncaoC(assinaturaOuTemplate) {
+    const regexSig = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)$/;
+    const regexParam = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)$/;
+
+    function testarLinha(linhaBruta) {
+        const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
+        const semPrefixo = String(linhaBruta || '').replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
+        if (!semPrefixo || semPrefixo.startsWith('#')) return null;
+        const candidata = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
+        const match = candidata.match(regexSig);
+        if (!match) return null;
+        const returnType = match[1].replace(/\s+/g, ' ').trim();
+        const funcName = match[2].trim();
+        if (funcName === 'main') return null;
+        const paramsRaw = match[3].trim();
+        const params = [];
+
+        if (paramsRaw && paramsRaw !== 'void') {
+            const parts = paramsRaw.split(',').map(p => p.trim());
+            for (const p of parts) {
+                const mParam = p.match(regexParam);
+                if (!mParam) return null;
+                params.push({
+                    type: mParam[1].replace(/\s+/g, ' ').trim(),
+                    name: mParam[2].trim()
+                });
+            }
+        }
+
+        const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
+        return {
+            valido: true,
+            isLocked,
+            returnType,
+            funcName,
+            params,
+            cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`
+        };
+    }
+
+    const texto = String(assinaturaOuTemplate || '').replace(/\r/g, '');
+    if (!texto.trim()) return { valido: false };
+
+    const linhas = texto.split('\n');
+    const candidatos = [];
+    let emComentarioBloco = false;
+    let nivelChaves = 0;
+
+    for (const linhaOriginal of linhas) {
+        let linhaLimpa = '';
+        for (let i = 0; i < linhaOriginal.length; i++) {
+            if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
+                emComentarioBloco = true;
+                i++;
+            } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
+                emComentarioBloco = false;
+                i++;
+            } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
+                break;
+            } else if (!emComentarioBloco) {
+                linhaLimpa += linhaOriginal[i];
+            }
+        }
+
+        if (nivelChaves === 0 && linhaLimpa.trim()) {
+            const res = testarLinha(linhaLimpa);
+            if (res && res.valido) {
+                candidatos.push(res);
+            }
+        }
+
+        for (const ch of linhaLimpa) {
+            if (ch === '{') nivelChaves++;
+            else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
+        }
+    }
+
+    if (candidatos.length > 0) {
+        return candidatos.find(c => c.isLocked) || candidatos[0];
+    }
+    return { valido: false };
+}
+
+function prepararCodigoMainCustom(code, templateCode, isCustomDebug = false) {
+    const tplRaw = String(templateCode || '').replace(/\r/g, '');
+    if (!tplRaw.trim()) {
+        return { valido: true, codeFinal: code, useOfficialOut: false };
+    }
+
+    const linhasTpl = tplRaw.split('\n').map((linha, tplIdx) => {
+        const isStar = /^\s*\*\*\*/.test(linha);
+        const isHash = /^\s*###/.test(linha);
+        const isProtected = isStar || isHash;
+        const cleanText = isProtected ? linha.replace(/^(\s*)(?:\*\*\*|###)/, '$1') : linha;
+        return {
+            tplIdx,
+            isStar,
+            isHash,
+            isProtected,
+            cleanText
+        };
+    });
+
+    const protegidas = linhasTpl.filter(l => l.isProtected);
+    if (protegidas.length === 0) {
+        return { valido: true, codeFinal: code, useOfficialOut: false };
+    }
+
+    const lastProtectedTplIdx = protegidas[protegidas.length - 1].tplIdx;
+    let lastFreeTplIdx = -1;
+    for (let i = lastProtectedTplIdx - 1; i >= 0; i--) {
+        if (!linhasTpl[i].isProtected) {
+            lastFreeTplIdx = i;
+            break;
+        }
+    }
+
+    const prefixAndMid = lastFreeTplIdx === -1
+        ? protegidas
+        : protegidas.filter(p => p.tplIdx < lastFreeTplIdx);
+    const suffix = lastFreeTplIdx === -1
+        ? []
+        : protegidas.filter(p => p.tplIdx > lastFreeTplIdx);
+
+    const linhasAluno = String(code || '').replace(/\r/g, '').split('\n');
+    let cursor = 0;
+
+    for (const p of prefixAndMid) {
+        let achou = -1;
+        for (let i = cursor; i < linhasAluno.length; i++) {
+            if (linhasAluno[i].trim() === p.cleanText.trim()) {
+                achou = i;
+                break;
+            }
+        }
+        if (achou === -1) {
+            return {
+                valido: false,
+                error: "Violação de linha protegida pelo professor: Uma ou mais linhas travadas com cadeado foram modificadas ou removidas. Clique em 'Restaurar' para recuperar a estrutura original."
+            };
+        }
+        p.matchedLineIdx = achou;
+        cursor = achou + 1;
+    }
+
+    let upper = linhasAluno.length - 1;
+    for (let k = suffix.length - 1; k >= 0; k--) {
+        const p = suffix[k];
+        let achou = -1;
+        for (let i = upper; i >= cursor; i--) {
+            if (linhasAluno[i].trim() === p.cleanText.trim()) {
+                achou = i;
+                break;
+            }
+        }
+        if (achou === -1) {
+            return {
+                valido: false,
+                error: "Violação de linha protegida pelo professor: Uma ou mais linhas travadas com cadeado foram modificadas ou removidas. Clique em 'Restaurar' para recuperar a estrutura original."
+            };
+        }
+        p.matchedLineIdx = achou;
+        upper = achou - 1;
+    }
+
+    // Verifica se o aluno comentou alguma linha protegida usando /* ... */
+    const indicesProtegidosSet = new Set(protegidas.map(p => p.matchedLineIdx));
+    let emComentarioBloco = false;
+    for (let i = 0; i < linhasAluno.length; i++) {
+        if (indicesProtegidosSet.has(i) && emComentarioBloco) {
+            return {
+                valido: false,
+                error: "Violação de linha protegida pelo professor: Não é permitido comentar linhas travadas com cadeado."
+            };
+        }
+        const linha = linhasAluno[i];
+        let dentroAspas = false;
+        for (let c = 0; c < linha.length; c++) {
+            if (!emComentarioBloco && linha[c] === '"' && (c === 0 || linha[c - 1] !== '\\')) {
+                dentroAspas = !dentroAspas;
+            } else if (!dentroAspas && !emComentarioBloco && linha[c] === '/' && linha[c + 1] === '*') {
+                emComentarioBloco = true;
+                c++;
+            } else if (!dentroAspas && !emComentarioBloco && linha[c] === '/' && linha[c + 1] === '/') {
+                break;
+            } else if (emComentarioBloco && linha[c] === '*' && linha[c + 1] === '/') {
+                emComentarioBloco = false;
+                c++;
+            }
+        }
+    }
+
+    // Na aba "Depuração" livre, retorna o stdout completo (incluindo prints de debug + prints do template)
+    if (isCustomDebug) {
+        return {
+            valido: true,
+            codeFinal: code,
+            useOfficialOut: false
+        };
+    }
+
+    // Substitui printf( por fprintf(__cc_out, exclusivamente nas linhas correspondentes a ###
+    for (const p of protegidas) {
+        if (p.isHash && typeof p.matchedLineIdx === 'number') {
+            linhasAluno[p.matchedLineIdx] = linhasAluno[p.matchedLineIdx].replace(/\bprintf\s*\(/g, 'fprintf(__cc_out, ');
+        }
+    }
+
+    const cabecalhoInjetado = [
+        '#include <stdio.h>',
+        'FILE *__cc_out = NULL;',
+        '__attribute__((constructor)) static void __cc_init_out(void) { __cc_out = fopen("official_got.txt", "a"); if (__cc_out) setbuf(__cc_out, NULL); }',
+        '#line 1 "main.c"'
+    ].join('\n');
+
+    return {
+        valido: true,
+        codeFinal: `${cabecalhoInjetado}\n${linhasAluno.join('\n')}`,
+        useOfficialOut: true
+    };
+}
+
+function obterFormatadorScanfC(tipoParam) {
+    const t = String(tipoParam || '').replace(/\s+/g, ' ').trim();
+    if (t === 'double') return { decl: 'double', init: '0.0', fmt: '%lf' };
+    if (t === 'float') return { decl: 'float', init: '0.0f', fmt: '%f' };
+    if (t === 'long long' || t === 'long long int') return { decl: 'long long', init: '0', fmt: '%lld' };
+    if (t === 'unsigned long long') return { decl: 'unsigned long long', init: '0', fmt: '%llu' };
+    if (t === 'long' || t === 'long int') return { decl: 'long', init: '0', fmt: '%ld' };
+    if (t === 'unsigned long') return { decl: 'unsigned long', init: '0', fmt: '%lu' };
+    if (t === 'short' || t === 'short int') return { decl: 'short', init: '0', fmt: '%hd' };
+    if (t === 'unsigned int' || t === 'unsigned') return { decl: 'unsigned int', init: '0', fmt: '%u' };
+    if (t === 'char') return { decl: 'char', init: "'\\0'", fmt: ' %c' };
+    return { decl: 'int', init: '0', fmt: '%d' };
+}
+
+function obterFormatadorPrintRetornoC(returnType, floatPrecision = 2) {
+    const t = String(returnType || '').replace(/\s+/g, ' ').trim();
+    const prec = (!isNaN(parseInt(floatPrecision, 10)) && parseInt(floatPrecision, 10) >= 0 && parseInt(floatPrecision, 10) <= 10)
+        ? parseInt(floatPrecision, 10)
+        : 2;
+
+    if (t === 'float' || t === 'double') {
+        return { fmt: `%.${prec}f`, cast: '(double)' };
+    }
+    if (t === 'long long' || t === 'long long int') {
+        return { fmt: '%lld', cast: '(long long)' };
+    }
+    if (t === 'unsigned long long') {
+        return { fmt: '%llu', cast: '(unsigned long long)' };
+    }
+    if (t === 'long' || t === 'long int') {
+        return { fmt: '%ld', cast: '(long)' };
+    }
+    if (t === 'unsigned long') {
+        return { fmt: '%lu', cast: '(unsigned long)' };
+    }
+    if (t === 'unsigned int' || t === 'unsigned') {
+        return { fmt: '%u', cast: '(unsigned int)' };
+    }
+    if (t === 'char') {
+        return { fmt: '%c', cast: '(char)' };
+    }
+    return { fmt: '%d', cast: '(int)' };
+}
+
+function prepararCodigoModoFuncao(code, functionSignature, floatPrecision = 2, isCustomDebug = false, templateCode = null) {
+    const sig = extrairAssinaturaFuncaoC(functionSignature || templateCode);
+    if (!sig.valido) {
+        return { valido: true, codeFinal: code, useOfficialOut: false };
+    }
+
+    if (templateCode && String(templateCode).trim()) {
+        const validacaoTravas = prepararCodigoMainCustom(code, templateCode, true);
+        if (!validacaoTravas.valido) {
+            return validacaoTravas;
+        }
+    }
+
+    const codigoStr = String(code || '').replace(/\r/g, '');
+    // Remove comentários para validar assinatura e ausência de main()
+    const codigoSemComentarios = codigoStr
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+
+    if (/\b(?:int|void)\s+main\s*\(/.test(codigoSemComentarios)) {
+        return {
+            valido: false,
+            error: "Violação de estrutura: No Modo Função você não deve declarar a função main(). Programe apenas o corpo da função solicitada."
+        };
+    }
+
+    const normCode = codigoSemComentarios.replace(/\s+/g, ' ');
+    const normSig = sig.cleanSignature.replace(/\s+/g, ' ');
+    if (!normCode.includes(normSig) || !codigoSemComentarios.trim().endsWith('}')) {
+        return {
+            valido: false,
+            error: `Violação de linha protegida pelo professor: A assinatura da função "${sig.cleanSignature}" ou o fechamento "}" foi alterado. Clique em 'Restaurar' para recuperar a estrutura original.`
+        };
+    }
+
+    const linhasLeitura = [];
+    const nomesArgs = [];
+    sig.params.forEach((p, idx) => {
+        const info = obterFormatadorScanfC(p.type);
+        const varName = `__cc_param_${idx}`;
+        nomesArgs.push(varName);
+        linhasLeitura.push(`    ${info.decl} ${varName} = ${info.init};`);
+        linhasLeitura.push(`    if (scanf("${info.fmt}", &${varName}) != 1) {}`);
+    });
+
+    const retPrint = obterFormatadorPrintRetornoC(sig.returnType, floatPrecision);
+    const chamada = `${sig.funcName}(${nomesArgs.join(', ')})`;
+
+    let blocoImpressao = '';
+    if (isCustomDebug) {
+        blocoImpressao = `    printf("${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`;
+    } else {
+        blocoImpressao = [
+            '    FILE *__cc_out = fopen("official_got.txt", "a");',
+            '    if (__cc_out) {',
+            '        setbuf(__cc_out, NULL);',
+            `        fprintf(__cc_out, "${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`,
+            '        fclose(__cc_out);',
+            '    }'
+        ].join('\n');
+    }
+
+    const mainGerada = [
+        '',
+        'int main(void) {',
+        ...linhasLeitura,
+        `    ${sig.returnType} __cc_ret = ${chamada};`,
+        blocoImpressao,
+        '    return 0;',
+        '}'
+    ].join('\n');
+
+    const cabecalhoPadrao = [
+        '#include <stdio.h>',
+        '#include <stdlib.h>',
+        '#include <math.h>',
+        '#line 1 "main.c"'
+    ].join('\n');
+
+    return {
+        valido: true,
+        codeFinal: `${cabecalhoPadrao}\n${codigoStr}\n${mainGerada}\n`,
+        useOfficialOut: !isCustomDebug
+    };
+}
+
+function prepararCodigoPorModo(code, opcoesExercicio = {}) {
+    const mode = normalizarModoExercicio(opcoesExercicio?.exerciseMode);
+    const isCustomDebug = opcoesExercicio?.isCustomDebug === true;
+
+    if (mode === 'main_custom') {
+        return prepararCodigoMainCustom(code, opcoesExercicio.templateCode, isCustomDebug);
+    }
+    if (mode === 'function') {
+        return prepararCodigoModoFuncao(
+            code,
+            opcoesExercicio.functionSignature,
+            opcoesExercicio.floatPrecision,
+            isCustomDebug,
+            opcoesExercicio.templateCode
+        );
+    }
+    return {
+        valido: true,
+        codeFinal: code,
+        useOfficialOut: false
+    };
+}
+
+function validarCodigoExercicio(code, exercicio) {
+    if (!exercicio) return { valido: true };
+    const prep = prepararCodigoPorModo(code, {
+        exerciseMode: exercicio.exerciseMode,
+        templateCode: exercicio.templateCode,
+        functionSignature: exercicio.functionSignature,
+        floatPrecision: exercicio.floatPrecision,
+        isCustomDebug: false
+    });
+    return {
+        valido: prep.valido,
+        error: prep.error || null
+    };
+}
+
 // Mapa de (userId + exercício) -> ordem atual dos índices de casos de teste ocultos.
 // Mantém a mesma ordem enquanto o aluno erra e só reembaralha quando ele acerta (Accepted).
 const ordemTestesOcultosMap = new Map();
@@ -147,11 +542,26 @@ function prepararTestesOrdenados(array, chaveOrdem = null) {
     return [...visiveis, ...ocultosOrdenados];
 }
 
-async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = null) {
+async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = null, opcoesExercicio = null) {
     const uid = extrairUserId(containerName);
     if (uid) activeUsers.set(uid, Date.now());
 
     const chaveEfetiva = chaveOrdem || (uid ? `${uid}_${Array.isArray(tests) ? tests.length : 0}` : null);
+
+    const preparo = prepararCodigoPorModo(code, opcoesExercicio || {});
+    if (!preparo.valido) {
+        return {
+            status: 'Compilation Error',
+            details: preparo.error || 'Violação de linha protegida pelo professor.',
+            executionTime: 0,
+            percentage: 0,
+            passedCount: 0,
+            totalCount: Array.isArray(tests) ? tests.length : 0
+        };
+    }
+
+    const codeParaExecutar = preparo.codeFinal;
+    const useOfficialOut = preparo.useOfficialOut === true;
 
     await adquirirVagaNaFila();
     try {
@@ -163,15 +573,17 @@ async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = nu
         // 1. Tenta executar no Warm Pod Pool (respostas < 0.5s)
         try {
             const outputBruto = await warmPoolService.executarJobNoPool(
-                code,
+                codeParaExecutar,
                 testesOrdenados,
                 timeoutAlunoMs,
-                containerName || Date.now()
+                containerName || Date.now(),
+                1,
+                useOfficialOut
             );
             resultadoFinal = processarResultadoSandbox(outputBruto, testesOrdenados, timeoutAlunoMs);
         } catch (poolErr) {
             console.warn(`[Judge] Warm pool falhou ou indisponível (${poolErr.message}). Utilizando fallback para Pod efêmero...`);
-            resultadoFinal = await executarProcessoDeTesteK8sIndividual(code, testesOrdenados, containerName, timeoutAlunoMs);
+            resultadoFinal = await executarProcessoDeTesteK8sIndividual(codeParaExecutar, testesOrdenados, containerName, timeoutAlunoMs, useOfficialOut);
         }
 
         // Quando o aluno acerta todos os testes (Accepted), reembaralha os ocultos para o próximo envio;
@@ -196,7 +608,7 @@ async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = nu
     }
 }
 
-async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, timeoutAlunoMs) {
+async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, timeoutAlunoMs, useOfficialOut = false) {
     const podName = (containerName || `judge-${Date.now()}`).toLowerCase().replace(/[^a-z0-9-]/g, '-');
     const targetNs = process.env.K8S_NAMESPACE || namespace || 'default';
 
@@ -206,7 +618,7 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
     const memLim = process.env.K8S_MEMORY_LIMIT || '512Mi';
     const image = process.env.K8S_IMAGE || 'gcc:latest';
 
-    const runnerScript = gerarScriptSandbox(code, tests, timeoutAlunoMs);
+    const runnerScript = gerarScriptSandbox(code, tests, timeoutAlunoMs, useOfficialOut);
     const b64GzRunner = zlib.gzipSync(Buffer.from(runnerScript, 'utf-8')).toString('base64');
 
     const podManifest = {
@@ -302,7 +714,7 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
     }
 }
 
-function gerarScriptSandbox(code, tests, timeLimitMs) {
+function gerarScriptSandbox(code, tests, timeLimitMs, useOfficialOut = false) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
     const limitSec = timeLimitMs / 1000;
     const totalTests = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
@@ -311,6 +723,7 @@ function gerarScriptSandbox(code, tests, timeLimitMs) {
         : Math.max(1, Number((limitSec * 0.85).toFixed(2)));
     const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
     const compileTimeoutSec = Math.max(1, Math.ceil(compileTimeoutMs / 1000));
+    const flagOfficialOut = useOfficialOut ? '1' : '0';
 
     const b64Runner = warmPoolService.B64_RUNNER;
 
@@ -318,6 +731,7 @@ function gerarScriptSandbox(code, tests, timeLimitMs) {
 START_TIME_MS=$(date +%s%3N)
 HAD_TIMEOUT=0
 TIMEOUT_COUNT=0
+USE_OFFICIAL_OUT=${flagOfficialOut}
 if [ ! -f /usr/local/bin/runner ]; then
     echo "${b64Runner}" | base64 -d > "$CTRL_DIR/runner.c"
     gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
@@ -357,6 +771,14 @@ run_step() {
         EXIT_CODE=$?
         pkill -9 -u 65534 2>/dev/null || true
         ipcrm -a 2>/dev/null || true
+
+        if [ "$USE_OFFICIAL_OUT" = "1" ]; then
+            if [ -f "$WORK_DIR/official_got.txt" ]; then
+                cp -f "$WORK_DIR/official_got.txt" "$CTRL_DIR/got_$i.txt"
+            else
+                : > "$CTRL_DIR/got_$i.txt"
+            fi
+        fi
 
         CPUTIME=$(cat "$CTRL_DIR/time_$i.txt" 2>/dev/null || echo "0.000000")
         echo "TIME:$CPUTIME"
@@ -605,6 +1027,9 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
 
 module.exports = {
     runTests,
+    validarCodigoExercicio,
+    prepararCodigoPorModo,
+    extrairAssinaturaFuncaoC,
     isAlreadyRunning,
     liberarTravaUsuario,
     inicializarPool: warmPoolService.inicializarPool,

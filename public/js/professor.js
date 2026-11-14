@@ -107,6 +107,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const temaProfSalvo = localStorage.getItem('codecheck_prof_editor_theme') || 'dracula';
     if (selectTemaProf) selectTemaProf.value = temaProfSalvo;
+    document.querySelectorAll('.select-tema-template-cm').forEach(sel => {
+        sel.value = temaProfSalvo;
+    });
+
+    function atualizarMarcadoresTravaProfCM(cmInstance) {
+        if (!cmInstance) return;
+        cmInstance.clearGutter('locked-gutter');
+        const total = cmInstance.lineCount();
+        for (let i = 0; i < total; i++) {
+            const texto = cmInstance.getLine(i) || '';
+            cmInstance.removeLineClass(i, 'background', 'cm-prof-locked-line');
+            if (/^\s*(?:\*\*\*|###)/.test(texto)) {
+                const marker = document.createElement('div');
+                marker.style.textAlign = 'center';
+                marker.innerHTML = '<i class="fas fa-lock text-muted" style="font-size: 0.72rem; opacity: 0.75;" title="Linha travada para o aluno"></i>';
+                cmInstance.setGutterMarker(i, 'locked-gutter', marker);
+                cmInstance.addLineClass(i, 'background', 'cm-prof-locked-line');
+            }
+        }
+    }
 
     let editorInspecaoCM = null;
     if (textareaInspecao && window.CodeMirror) {
@@ -120,13 +140,97 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (selectTemaProf && editorInspecaoCM) {
-        selectTemaProf.addEventListener('change', () => {
-            const novoTema = selectTemaProf.value;
-            editorInspecaoCM.setOption('theme', novoTema);
-            localStorage.setItem('codecheck_prof_editor_theme', novoTema);
+    const textareaTemplateMain = document.getElementById('modal-template-code');
+    const textareaTemplateFunc = document.getElementById('modal-function-template');
+    let editorTemplateMainCM = null;
+    let editorTemplateFuncCM = null;
+
+    if (textareaTemplateMain && window.CodeMirror) {
+        editorTemplateMainCM = CodeMirror.fromTextArea(textareaTemplateMain, {
+            mode: 'text/x-csrc',
+            theme: temaProfSalvo,
+            lineNumbers: true,
+            gutters: ['CodeMirror-linenumbers', 'locked-gutter'],
+            autoCloseBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false
+        });
+        editorTemplateMainCM.on('change', (cm) => {
+            textareaTemplateMain.value = cm.getValue();
+            atualizarMarcadoresTravaProfCM(cm);
         });
     }
+
+    if (textareaTemplateFunc && window.CodeMirror) {
+        editorTemplateFuncCM = CodeMirror.fromTextArea(textareaTemplateFunc, {
+            mode: 'text/x-csrc',
+            theme: temaProfSalvo,
+            lineNumbers: true,
+            gutters: ['CodeMirror-linenumbers', 'locked-gutter'],
+            autoCloseBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false
+        });
+        editorTemplateFuncCM.on('change', (cm) => {
+            textareaTemplateFunc.value = cm.getValue();
+            atualizarMarcadoresTravaProfCM(cm);
+            if (typeof atualizarVisibilidadeFloatPrecision === 'function') {
+                atualizarVisibilidadeFloatPrecision();
+            }
+            if (typeof atualizarTodosItensTesteModo === 'function') {
+                atualizarTodosItensTesteModo();
+            }
+        });
+    }
+
+    function definirValorTemplateMain(valor) {
+        const v = String(valor || '');
+        if (textareaTemplateMain) textareaTemplateMain.value = v;
+        if (editorTemplateMainCM && editorTemplateMainCM.getValue() !== v) {
+            editorTemplateMainCM.setValue(v);
+        }
+        if (editorTemplateMainCM) {
+            atualizarMarcadoresTravaProfCM(editorTemplateMainCM);
+            setTimeout(() => editorTemplateMainCM.refresh(), 20);
+        }
+    }
+
+    function definirValorTemplateFuncao(valor) {
+        const v = String(valor || '');
+        if (textareaTemplateFunc) textareaTemplateFunc.value = v;
+        if (editorTemplateFuncCM && editorTemplateFuncCM.getValue() !== v) {
+            editorTemplateFuncCM.setValue(v);
+        }
+        if (editorTemplateFuncCM) {
+            atualizarMarcadoresTravaProfCM(editorTemplateFuncCM);
+            setTimeout(() => editorTemplateFuncCM.refresh(), 20);
+        }
+    }
+
+    function aplicarTemaEditoresProf(novoTema) {
+        if (selectTemaProf) selectTemaProf.value = novoTema;
+        document.querySelectorAll('.select-tema-template-cm').forEach(sel => {
+            sel.value = novoTema;
+        });
+        if (editorInspecaoCM) editorInspecaoCM.setOption('theme', novoTema);
+        if (editorTemplateMainCM) editorTemplateMainCM.setOption('theme', novoTema);
+        if (editorTemplateFuncCM) editorTemplateFuncCM.setOption('theme', novoTema);
+        localStorage.setItem('codecheck_prof_editor_theme', novoTema);
+    }
+
+    if (selectTemaProf) {
+        selectTemaProf.addEventListener('change', () => {
+            aplicarTemaEditoresProf(selectTemaProf.value);
+        });
+    }
+
+    document.querySelectorAll('.select-tema-template-cm').forEach(sel => {
+        sel.addEventListener('change', () => {
+            aplicarTemaEditoresProf(sel.value);
+        });
+    });
 
     if (btnCopiarCodigoAluno && editorInspecaoCM) {
         btnCopiarCodigoAluno.onclick = async () => {
@@ -265,6 +369,9 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             modalEl.off('hidden.bs.modal').on('hidden.bs.modal', () => {
+                if ($('.modal.show').length > 0) {
+                    $('body').addClass('modal-open');
+                }
                 resolve(confirmou);
             });
 
@@ -299,22 +406,155 @@ document.addEventListener('DOMContentLoaded', () => {
         abrirModalUnificado(ex, showImportButton, false);
     }
 
+    const TEMPLATE_PADRAO_MAIN_CUSTOM = `#include <stdio.h>
+
+int main() {
+    int resultado = 0;
+    // Espaco livre para o aluno programar
+    
+###    printf("%d\\n", resultado);
+***    return 0;
+}`;
+
+    const TEMPLATE_PADRAO_MODO_FUNCAO = `***int somar(int a, int b) {
+    int resultado = 0;
+    // Espaco livre para o aluno programar
+    
+***    return resultado;
+***}`;
+
+    function normalizarModoExercicio(modo) {
+        if (modo === 'main_custom' || modo === 'function') return modo;
+        return 'main_default';
+    }
+
+    function obterBadgeModoExercicio() {
+        return '';
+    }
+
+    function parsearAssinaturaFuncao(sigOuTemplate) {
+        if (!sigOuTemplate || typeof sigOuTemplate !== 'string') return null;
+
+        function testarLinha(linhaBruta) {
+            const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
+            const semPrefixo = String(linhaBruta || '').replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
+            if (!semPrefixo || semPrefixo.startsWith('#')) return null;
+            const clean = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
+            const match = clean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)\s*\(([^)]*)\)$/);
+            if (!match) return null;
+            const returnType = match[1].replace(/\s+/g, ' ').trim();
+            const funcName = match[2].trim();
+            if (funcName === 'main') return null;
+            const paramsRaw = match[3].trim();
+            const params = [];
+
+            if (paramsRaw && paramsRaw !== 'void') {
+                const parts = paramsRaw.split(',');
+                for (const part of parts) {
+                    const pClean = part.trim().replace(/\[\s*\]/g, '');
+                    if (!pClean) continue;
+                    const pMatch = pClean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)$/);
+                    if (!pMatch) return null;
+                    params.push({
+                        type: pMatch[1].replace(/\s+/g, ' ').trim(),
+                        name: pMatch[2].trim()
+                    });
+                }
+            }
+            const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
+            return {
+                isLocked,
+                cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`,
+                returnType,
+                funcName,
+                params
+            };
+        }
+
+        const linhas = sigOuTemplate.replace(/\r/g, '').split('\n');
+        const candidatos = [];
+        let emComentarioBloco = false;
+        let nivelChaves = 0;
+
+        for (const linhaOriginal of linhas) {
+            let linhaLimpa = '';
+            for (let i = 0; i < linhaOriginal.length; i++) {
+                if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
+                    emComentarioBloco = true;
+                    i++;
+                } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
+                    emComentarioBloco = false;
+                    i++;
+                } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
+                    break;
+                } else if (!emComentarioBloco) {
+                    linhaLimpa += linhaOriginal[i];
+                }
+            }
+
+            if (nivelChaves === 0 && linhaLimpa.trim()) {
+                const res = testarLinha(linhaLimpa);
+                if (res) candidatos.push(res);
+            }
+
+            for (const ch of linhaLimpa) {
+                if (ch === '{') nivelChaves++;
+                else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
+            }
+        }
+
+        if (candidatos.length > 0) {
+            return candidatos.find(c => c.isLocked) || candidatos[0];
+        }
+        return null;
+    }
+
+    function habilitarTabEmTextarea(textareaEl) {
+        if (!textareaEl) return;
+        textareaEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                const val = this.value;
+                this.value = val.substring(0, start) + '    ' + val.substring(end);
+                this.selectionStart = this.selectionEnd = start + 4;
+            }
+        });
+    }
+
+    habilitarTabEmTextarea(document.getElementById('modal-template-code'));
+    habilitarTabEmTextarea(document.getElementById('modal-function-template'));
+    habilitarTabEmTextarea(document.getElementById('modal-desc'));
+
     function abrirModalUnificado(ex, showImportButton, isRetornoParaLista) {
-        document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${escapeHtml(ex.title)}`;
+        document.getElementById('modalVerExTitulo').innerHTML = `<i class="fas fa-file-code text-primary mr-2"></i> ${escapeHtml(ex.title)} ${obterBadgeModoExercicio(ex)}`;
         document.getElementById('modalVerExDescricao').innerText = ex.description || 'Sem descrição cadastrada.';
         document.getElementById('modalVerExTempoLimite').innerText = `${ex.timeLimit || 5000} ms`;
 
         const containerTeste = document.getElementById('modalVerExTeste');
         if (ex.tests && ex.tests.length > 0) {
             const t = ex.tests[0];
+            const modoEx = normalizarModoExercicio(ex.exerciseMode);
+            const parsedSig = modoEx === 'function' ? parsearAssinaturaFuncao(ex.functionSignature || ex.templateCode) : null;
+            let entradaFormatadaHTML = `<pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.input ? escapeHtml(t.input) : '<em>(Vazio)</em>'}</pre>`;
+            let labelSaida = 'Saída Esperada:';
+
+            if (modoEx === 'function' && parsedSig && parsedSig.params.length > 0) {
+                const linhasInput = String(t.input || '').split(/\r?\n/);
+                const pares = parsedSig.params.map((p, idx) => `${p.name} = ${linhasInput[idx] !== undefined ? linhasInput[idx] : ''}`).join('\n');
+                entradaFormatadaHTML = `<pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${escapeHtml(pares)}</pre>`;
+                labelSaida = 'Retorno Esperado (return):';
+            }
+
             containerTeste.innerHTML = `
                 <div class="row">
                     <div class="col-md-6 mb-1 mb-md-0">
                         <strong class="d-block text-muted">Entrada:</strong>
-                        <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.input ? escapeHtml(t.input) : '<em>(Vazio)</em>'}</pre>
+                        ${entradaFormatadaHTML}
                     </div>
                     <div class="col-md-6">
-                        <strong class="d-block text-muted">Saída Esperada:</strong>
+                        <strong class="d-block text-muted">${labelSaida}</strong>
                         <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.output ? escapeHtml(t.output) : '<em>(Vazio)</em>'}</pre>
                     </div>
                 </div>
@@ -585,6 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <label class="cursor-pointer mb-0 text-truncate ml-1" style="cursor: pointer; min-width: 0;">
                         <strong style="font-size: 1.02rem;">${escapeHtml(ex.title)}</strong>
                         <span class="badge badge-light border ml-1 font-weight-normal">${escapeHtml(ex.timeLimit || 5000)} ms</span>
+                        ${obterBadgeModoExercicio(ex)}
                     </label>
                 </div>
                 <div class="text-nowrap d-flex align-items-center">
@@ -653,6 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="text-truncate mr-2">
                     <strong class="text-dark" style="font-size: 1.02rem;">${escapeHtml(ex.title)}</strong>
                     <span class="badge badge-light border ml-1">${escapeHtml(ex.timeLimit || 5000)} ms</span>
+                    ${obterBadgeModoExercicio(ex)}
                     ${isOficial
                     ? '<span class="badge badge-primary font-weight-bold ml-2 shadow-sm"><i class="fas fa-certificate text-warning mr-1"></i>CodeCheck-RUN</span>'
                     : `<small class="text-muted ml-2"><i class="fas fa-user-edit mr-1"></i>${escapeHtml(ex.authorName || 'Professor')}</small>`
@@ -1237,6 +1479,29 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('modal-tempo-limite').value = '5000';
         }
 
+        const modoEx = normalizarModoExercicio(ex.exerciseMode);
+        const inputTemplate = document.getElementById('modal-template-code');
+        const inputFuncTemplate = document.getElementById('modal-function-template');
+        const inputFuncSig = document.getElementById('modal-function-signature');
+        const inputFloatPrec = document.getElementById('modal-float-precision');
+
+        if (modoEx === 'function') {
+            definirValorTemplateMain('');
+            const tplFunc = (ex.templateCode && String(ex.templateCode).trim())
+                ? ex.templateCode
+                : (ex.functionSignature
+                    ? `***${ex.functionSignature.trim()} {\n    int resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`
+                    : '');
+            definirValorTemplateFuncao(tplFunc);
+        } else {
+            definirValorTemplateMain(ex.templateCode || '');
+            definirValorTemplateFuncao('');
+        }
+        if (inputFuncSig) inputFuncSig.value = ex.functionSignature || '';
+        if (inputFloatPrec) inputFloatPrec.value = (typeof ex.floatPrecision === 'number') ? ex.floatPrecision : 2;
+
+        alternarModoExercicioModal(modoEx);
+
         const containerTestes = document.getElementById('modal-container-testes');
         containerTestes.innerHTML = '';
         if (ex.tests && ex.tests.length > 0) {
@@ -1430,9 +1695,248 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function obterModoExercicioModalAtual() {
+        const el = document.getElementById('modal-exercise-mode');
+        return normalizarModoExercicio(el ? el.value : 'main_default');
+    }
+
+    function obterAssinaturaExtraidaModoFuncao() {
+        const txtFunc = document.getElementById('modal-function-template');
+        const sigInput = document.getElementById('modal-function-signature');
+        const fonte = (txtFunc && txtFunc.value.trim()) ? txtFunc.value : (sigInput ? sigInput.value : '');
+        const parsed = parsearAssinaturaFuncao(fonte);
+        if (sigInput) {
+            sigInput.value = parsed ? parsed.cleanSignature : '';
+        }
+        return parsed;
+    }
+
+    function atualizarVisibilidadeFloatPrecision() {
+        const boxFloat = document.getElementById('box-float-precision');
+        const labelIdentificada = document.getElementById('label-funcao-identificada');
+        const parsed = obterAssinaturaExtraidaModoFuncao();
+
+        if (labelIdentificada) {
+            if (parsed && parsed.params && parsed.params.length > 0) {
+                labelIdentificada.className = 'text-muted font-weight-bold';
+                labelIdentificada.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> Cabeçalho identificado: <strong>${escapeHtml(parsed.cleanSignature)}</strong>`;
+            } else if (parsed) {
+                labelIdentificada.className = 'text-warning font-weight-bold';
+                labelIdentificada.innerHTML = `<i class="fas fa-exclamation-circle mr-1"></i> Declare pelo menos um parâmetro entre os parênteses da função (ex: int somar(int a, int b)).`;
+            } else {
+                labelIdentificada.className = 'text-danger font-weight-bold';
+                labelIdentificada.innerHTML = `<i class="fas fa-exclamation-triangle mr-1"></i> Cabeçalho da função não identificado no código acima.`;
+            }
+        }
+
+        if (!boxFloat) return;
+        const isFloatOrDouble = parsed && (parsed.returnType === 'float' || parsed.returnType === 'double');
+        boxFloat.style.display = isFloatOrDouble ? 'block' : 'none';
+    }
+
+    function sincronizarInputsVariaveisNoItemTeste(item) {
+        if (!item) return;
+        const modo = obterModoExercicioModalAtual();
+        const boxPadrao = item.querySelector('.box-entrada-padrao');
+        const boxVars = item.querySelector('.box-entrada-variaveis');
+        const textareaInput = item.querySelector('.input-val');
+        const textareaOutput = item.querySelector('.output-val');
+        const labelSaida = item.querySelector('.label-saida-teste');
+
+        if (!textareaInput) return;
+
+        if (modo === 'function') {
+            const parsed = obterAssinaturaExtraidaModoFuncao();
+
+            if (labelSaida) {
+                labelSaida.innerText = 'Valor de Retorno Esperado (return):';
+            }
+            if (textareaOutput) {
+                textareaOutput.placeholder = 'Digite o valor de retorno esperado (return)...';
+            }
+
+            if (parsed && parsed.params.length > 0 && boxVars && boxPadrao) {
+                // Antes de reconstruir, se já houver inputs de variáveis preenchidos, garante que textareaInput esteja atualizado
+                const currentVarInputs = boxVars.querySelectorAll('.input-param-var');
+                if (currentVarInputs.length > 0) {
+                    textareaInput.value = Array.from(currentVarInputs).map(inp => inp.value).join('\n');
+                }
+
+                let linhasAtuais = String(textareaInput.value || '').split(/\r?\n/);
+                if (linhasAtuais.length === 1 && parsed.params.length > 1 && linhasAtuais[0].trim().includes(' ')) {
+                    linhasAtuais = linhasAtuais[0].trim().split(/\s+/);
+                }
+                boxPadrao.style.display = 'none';
+                boxVars.style.display = 'block';
+
+                const colClass = parsed.params.length === 1 ? 'col-12' : (parsed.params.length === 2 ? 'col-sm-6' : 'col-sm-6 col-md-4');
+                boxVars.innerHTML = `
+                    <div class="form-row">
+                        ${parsed.params.map((p, idx) => {
+                            const val = linhasAtuais[idx] !== undefined ? linhasAtuais[idx] : '';
+                            return `
+                                <div class="${colClass} mb-2">
+                                    <label class="small font-weight-bold text-muted mb-1">
+                                        Variável <strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.type)}):
+                                    </label>
+                                    <input type="text" class="form-control form-control-sm input-param-var font-monospace"
+                                        data-param-index="${idx}"
+                                        value="${escapeHtml(val)}"
+                                        placeholder="Valor de ${escapeHtml(p.name)}">
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+
+                const novosInputs = boxVars.querySelectorAll('.input-param-var');
+                const atualizarTextareaConcatenado = () => {
+                    textareaInput.value = Array.from(novosInputs).map(inp => inp.value).join('\n');
+                };
+                novosInputs.forEach(inp => {
+                    inp.addEventListener('input', atualizarTextareaConcatenado);
+                });
+                atualizarTextareaConcatenado();
+            } else if (boxPadrao && boxVars) {
+                const currentVarInputs = boxVars.querySelectorAll('.input-param-var');
+                if (currentVarInputs.length > 0) {
+                    textareaInput.value = Array.from(currentVarInputs).map(inp => inp.value).join('\n');
+                }
+                boxPadrao.style.display = 'none';
+                boxVars.style.display = 'block';
+                boxVars.innerHTML = `
+                    <label class="small font-weight-bold text-muted mb-1 d-block">Entrada:</label>
+                    <div class="p-2 px-3 border rounded bg-white text-muted small d-flex align-items-center" style="min-height: 68px;">
+                        <i class="fas fa-info-circle mr-2 text-secondary"></i>
+                        <span>Defina os parâmetros válidos no cabeçalho da função acima para liberar os campos por variável.</span>
+                    </div>
+                `;
+            }
+        } else {
+            if (boxVars && boxVars.style.display !== 'none') {
+                const currentVarInputs = boxVars.querySelectorAll('.input-param-var');
+                if (currentVarInputs.length > 0) {
+                    textareaInput.value = Array.from(currentVarInputs).map(inp => inp.value).join('\n');
+                }
+                boxVars.style.display = 'none';
+                boxVars.innerHTML = '';
+            }
+            if (boxPadrao) {
+                boxPadrao.style.display = 'block';
+                const labelEntrada = boxPadrao.querySelector('.label-entrada-teste');
+                if (labelEntrada) labelEntrada.innerText = 'Entrada:';
+            }
+            if (labelSaida) {
+                labelSaida.innerText = 'Saída Esperada:';
+            }
+            if (textareaOutput) {
+                textareaOutput.placeholder = 'Digite a saída esperada...';
+            }
+        }
+    }
+
+    function atualizarTodosItensTesteModo() {
+        document.querySelectorAll('#modal-container-testes .teste-item').forEach(item => {
+            sincronizarInputsVariaveisNoItemTeste(item);
+        });
+    }
+
+    function alternarModoExercicioModal(modo) {
+        const modoNorm = normalizarModoExercicio(modo);
+        const inputMode = document.getElementById('modal-exercise-mode');
+        if (inputMode) inputMode.value = modoNorm;
+
+        document.querySelectorAll('.mode-selector-btn').forEach(btn => {
+            if (btn.dataset.mode === modoNorm) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        const boxMainDefault = document.getElementById('box-info-modo-main-default');
+        const boxMainCustom = document.getElementById('box-config-modo-main-custom');
+        const boxFunction = document.getElementById('box-config-modo-function');
+
+        if (boxMainDefault) boxMainDefault.style.display = (modoNorm === 'main_default') ? 'block' : 'none';
+        if (boxMainCustom) boxMainCustom.style.display = (modoNorm === 'main_custom') ? 'block' : 'none';
+        if (boxFunction) boxFunction.style.display = (modoNorm === 'function') ? 'block' : 'none';
+
+        if (modoNorm === 'main_custom') {
+            const txtTemplate = document.getElementById('modal-template-code');
+            if (txtTemplate && !txtTemplate.value.trim()) {
+                definirValorTemplateMain(TEMPLATE_PADRAO_MAIN_CUSTOM);
+            } else if (editorTemplateMainCM) {
+                setTimeout(() => editorTemplateMainCM.refresh(), 20);
+            }
+        } else if (modoNorm === 'function') {
+            const txtFuncTemplate = document.getElementById('modal-function-template');
+            if (txtFuncTemplate && !txtFuncTemplate.value.trim()) {
+                definirValorTemplateFuncao(TEMPLATE_PADRAO_MODO_FUNCAO);
+            } else if (editorTemplateFuncCM) {
+                setTimeout(() => editorTemplateFuncCM.refresh(), 20);
+            }
+            atualizarVisibilidadeFloatPrecision();
+        }
+
+        atualizarTodosItensTesteModo();
+    }
+
+    document.querySelectorAll('.mode-selector-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            alternarModoExercicioModal(btn.dataset.mode);
+        });
+    });
+
+    const btnCopiarModeloTemplateEl = document.getElementById('btnCopiarModeloTemplate');
+    if (btnCopiarModeloTemplateEl) {
+        btnCopiarModeloTemplateEl.addEventListener('click', () => {
+            const txtTemplate = document.getElementById('modal-template-code');
+            const conteudo = (txtTemplate && txtTemplate.value.trim()) ? txtTemplate.value : TEMPLATE_PADRAO_MAIN_CUSTOM;
+            copiarParaAreaTransferencia(conteudo, "Modelo de código copiado para a área de transferência!");
+        });
+    }
+
+    const btnRestaurarModeloTemplateEl = document.getElementById('btnRestaurarModeloTemplate');
+    if (btnRestaurarModeloTemplateEl) {
+        btnRestaurarModeloTemplateEl.addEventListener('click', () => {
+            definirValorTemplateMain(TEMPLATE_PADRAO_MAIN_CUSTOM);
+            if (editorTemplateMainCM) editorTemplateMainCM.focus();
+            mostrarToast("Modelo da main() restaurado!", "info", 2000);
+        });
+    }
+
+    const btnCopiarModeloFuncaoEl = document.getElementById('btnCopiarModeloFuncao');
+    if (btnCopiarModeloFuncaoEl) {
+        btnCopiarModeloFuncaoEl.addEventListener('click', () => {
+            const txtFunc = document.getElementById('modal-function-template');
+            const conteudo = (txtFunc && txtFunc.value.trim()) ? txtFunc.value : TEMPLATE_PADRAO_MODO_FUNCAO;
+            copiarParaAreaTransferencia(conteudo, "Modelo da função copiado para a área de transferência!");
+        });
+    }
+
+    const btnRestaurarModeloFuncaoEl = document.getElementById('btnRestaurarModeloFuncao');
+    if (btnRestaurarModeloFuncaoEl) {
+        btnRestaurarModeloFuncaoEl.addEventListener('click', () => {
+            definirValorTemplateFuncao(TEMPLATE_PADRAO_MODO_FUNCAO);
+            atualizarVisibilidadeFloatPrecision();
+            atualizarTodosItensTesteModo();
+            if (editorTemplateFuncCM) editorTemplateFuncCM.focus();
+            mostrarToast("Modelo da função restaurado!", "info", 2000);
+        });
+    }
+
+    const inputFunctionTemplateEl = document.getElementById('modal-function-template');
+    if (inputFunctionTemplateEl) {
+        inputFunctionTemplateEl.addEventListener('input', () => {
+            atualizarVisibilidadeFloatPrecision();
+            atualizarTodosItensTesteModo();
+        });
+    }
+
     function criarItemTesteHTML(idx, inputVal = '', outputVal = '', isVisible = false) {
         const div = document.createElement('div');
-        div.className = 'teste-item border rounded p-2 mb-2 bg-light position-relative';
+        div.className = 'teste-item border rounded p-3 mb-2 bg-light position-relative';
         const uniqueId = 'chk-visivel-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
         div.innerHTML = `
             <button type="button" class="close position-absolute btn-remover-teste" 
@@ -1452,15 +1956,19 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="row">
                 <div class="col-md-6 mb-2 mb-md-0">
-                    <label class="small font-weight-bold text-muted mb-1">Entrada:</label>
-                    <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter...">${escapeHtml(inputVal)}</textarea>
+                    <div class="box-entrada-padrao">
+                        <label class="small font-weight-bold text-muted mb-1 label-entrada-teste">Entrada:</label>
+                        <textarea class="form-control form-control-sm input-val font-monospace" rows="3" placeholder="Digite cada valor ou linha separada por Enter...">${escapeHtml(inputVal)}</textarea>
+                    </div>
+                    <div class="box-entrada-variaveis" style="display: none;"></div>
                 </div>
                 <div class="col-md-6">
-                    <label class="small font-weight-bold text-muted mb-1">Saída Esperada:</label>
+                    <label class="small font-weight-bold text-muted mb-1 label-saida-teste">Saída Esperada:</label>
                     <textarea class="form-control form-control-sm output-val font-monospace" rows="3" placeholder="Digite a saída esperada...">${escapeHtml(outputVal)}</textarea>
                 </div>
             </div>
         `;
+        sincronizarInputsVariaveisNoItemTeste(div);
         return div;
     }
 
@@ -1504,6 +2012,30 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    const btnLimparTodosTestes = document.getElementById('btnLimparTodosTestes');
+    if (btnLimparTodosTestes) {
+        btnLimparTodosTestes.onclick = async () => {
+            const confirmou = await confirmarAcao({
+                titulo: 'Apagar Casos de Teste?',
+                mensagem: 'Deseja realmente apagar todos os casos de teste deste exercício?\n\nTodos os valores de entrada e saída esperada serão removidos.',
+                textoConfirmar: 'Sim, Apagar Tudo',
+                corConfirmar: 'btn-danger',
+                icone: 'fa-trash-alt text-danger'
+            });
+
+            if (!confirmou) return;
+
+            if (modalContainerTestes) {
+                modalContainerTestes.innerHTML = '';
+                const div = criarItemTesteHTML(1, '', '', true);
+                modalContainerTestes.appendChild(div);
+                atualizarContadorTestesVisiveis();
+                renumerarTestes();
+            }
+            mostrarToast("Casos de teste apagados!", "info", 2000);
+        };
+    }
+
     if (modalBtnSalvarEx) {
         modalBtnSalvarEx.onclick = async () => {
             const editId = document.getElementById('modal-exercicio-id')?.value;
@@ -1511,6 +2043,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const description = document.getElementById('modal-desc')?.value.trim();
             const isPrivate = document.getElementById('modal-exercicio-privado')?.checked || false;
             const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
+            const exerciseMode = obterModoExercicioModalAtual();
 
             let timeLimit = 5000;
             if (chkDefinirTempoEl && chkDefinirTempoEl.checked) {
@@ -1531,11 +2064,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            let templateCode = null;
+            let functionSignature = null;
+            let floatPrecision = 2;
+
+            if (exerciseMode === 'main_custom') {
+                const rawTemplate = document.getElementById('modal-template-code')?.value || '';
+                if (!rawTemplate.trim()) {
+                    mostrarToast("Preencha o código-base (template) para o modo Main Personalizada.", "warning");
+                    document.getElementById('modal-template-code')?.focus();
+                    return;
+                }
+                const linhasTemplate = rawTemplate.replace(/\r\n/g, '\n').split('\n');
+                const temPrintOficial = linhasTemplate.some(l => /^\s*###/.test(l) && /\bprintf\s*\(/.test(l));
+                if (!temPrintOficial) {
+                    mostrarToast("No modo Main Personalizada, é obrigatório incluir pelo menos uma linha iniciada com ### contendo printf.", "warning");
+                    document.getElementById('modal-template-code')?.focus();
+                    return;
+                }
+                templateCode = rawTemplate;
+            } else if (exerciseMode === 'function') {
+                const rawFuncTpl = document.getElementById('modal-function-template')?.value || '';
+                const parsedSig = obterAssinaturaExtraidaModoFuncao();
+                if (!parsedSig) {
+                    mostrarToast("Não foi possível identificar o cabeçalho da função no código-base (ex: int somar(int a, int b)).", "warning");
+                    document.getElementById('modal-function-template')?.focus();
+                    return;
+                }
+                if (parsedSig.params.length === 0) {
+                    mostrarToast("No Modo Função, declare pelo menos um parâmetro entre os parênteses da função (ex: int calcular(int n)).", "warning");
+                    document.getElementById('modal-function-template')?.focus();
+                    return;
+                }
+                templateCode = rawFuncTpl.trim()
+                    ? rawFuncTpl
+                    : `***${parsedSig.cleanSignature} {\n    int resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`;
+                functionSignature = parsedSig.cleanSignature;
+                const precVal = parseInt(document.getElementById('modal-float-precision')?.value, 10);
+                if (!isNaN(precVal) && precVal >= 0 && precVal <= 10) {
+                    floatPrecision = precVal;
+                }
+            }
+
             const tests = [];
             let countVisiveis = 0;
             document.querySelectorAll('#modal-container-testes .teste-item').forEach(item => {
-                const input = item.querySelector('.input-val').value;
-                const output = item.querySelector('.output-val').value;
+                let input = item.querySelector('.input-val')?.value || '';
+                if (exerciseMode === 'function') {
+                    const paramInputs = item.querySelectorAll('.input-param-var');
+                    if (paramInputs.length > 0) {
+                        input = Array.from(paramInputs).map(inp => inp.value.trim()).join('\n');
+                        const txtIn = item.querySelector('.input-val');
+                        if (txtIn) txtIn.value = input;
+                    }
+                }
+                const output = item.querySelector('.output-val')?.value || '';
                 const isVisible = item.querySelector('.chk-teste-visivel')?.checked || false;
                 if (isVisible) countVisiveis++;
                 tests.push({ input, output, isVisible });
@@ -1566,7 +2149,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch(comLtik(url), {
                     method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, description, tests, isPrivate, timeLimit })
+                    body: JSON.stringify({
+                        title,
+                        description,
+                        tests,
+                        isPrivate,
+                        timeLimit,
+                        exerciseMode,
+                        templateCode,
+                        functionSignature,
+                        floatPrecision
+                    })
                 });
                 let data = {};
                 try {
@@ -1606,6 +2199,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
     }
+
+    $('#modalNovoExercicio').on('shown.bs.modal', () => {
+        if (editorTemplateMainCM) editorTemplateMainCM.refresh();
+        if (editorTemplateFuncCM) editorTemplateFuncCM.refresh();
+    });
 
     $('#modalNovoExercicio').on('hidden.bs.modal', () => {
         limparModalNovoExercicio();
@@ -1709,6 +2307,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function gerarPromptTestesIA() {
         const titulo = document.getElementById('modal-titulo')?.value.trim();
         const desc = document.getElementById('modal-desc')?.value.trim();
+        const modoAtual = obterModoExercicioModalAtual();
 
         if (!titulo) {
             mostrarToast("O Título do exercício é obrigatório para copiar o prompt.", "warning");
@@ -1722,9 +2321,69 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
+        let contextoModoPrompt = '';
+        if (modoAtual === 'main_custom') {
+            const tpl = document.getElementById('modal-template-code')?.value || '';
+            if (!tpl.trim()) {
+                mostrarToast("Preencha o Código-Base (Template) antes de copiar o prompt no modo Main Personalizada.", "warning");
+                document.getElementById('modal-template-code')?.focus();
+                return null;
+            }
+            contextoModoPrompt = `
+Modo do Exercício: MAIN PERSONALIZADA (Template com *** e ###)
+Código-Base do Professor:
+\`\`\`c
+${tpl}
+\`\`\`
+Regras específicas deste modo:
+- As linhas iniciadas por "***" são travadas (somente leitura) para o aluno.
+- As linhas iniciadas por "###" são os PRINTS OFICIAIS DE CORREÇÃO (também travadas).
+- O juiz avaliará EXCLUSIVAMENTE a saída gerada pelas linhas "###" (qualquer outro printf de debug do aluno será ignorado).
+- Portanto, o campo "saida" de cada caso de teste deve corresponder EXATAMENTE à saída formatada pelos printf marcados com "###" no template acima.`;
+        } else if (modoAtual === 'function') {
+            const tplFunc = document.getElementById('modal-function-template')?.value || '';
+            const parsed = obterAssinaturaExtraidaModoFuncao();
+            if (!parsed || parsed.params.length === 0) {
+                mostrarToast("Defina o cabeçalho da função com pelo menos um parâmetro no código-base antes de copiar o prompt.", "warning");
+                document.getElementById('modal-function-template')?.focus();
+                return null;
+            }
+            const prec = parseInt(document.getElementById('modal-float-precision')?.value, 10);
+            const precFinal = (!isNaN(prec) && prec >= 0 && prec <= 10) ? prec : 2;
+            const listaParams = parsed.params.map((p, i) => `${i + 1}ª linha da entrada: parâmetro "${p.name}" (tipo ${p.type})`).join('\n');
+            const regraFloat = (parsed.returnType === 'float' || parsed.returnType === 'double')
+                ? `\n- Como o retorno da função é "${parsed.returnType}", formate o valor no campo "saida" com exatamente ${precFinal} casas decimais (padrão %.${precFinal}f).`
+                : '';
+
+            contextoModoPrompt = `
+Modo do Exercício: MODO FUNÇÃO (Escopo Fechado / Return)
+Cabeçalho da Função Identificado: ${parsed.cleanSignature}
+Código-Base da Função:
+\`\`\`c
+${tplFunc || parsed.cleanSignature}
+\`\`\`
+Ordem dos parâmetros na "entrada" (separados por quebra de linha \\n):
+${listaParams}
+Regras específicas deste modo:
+- O aluno implementa apenas o corpo da função e retorna o resultado com "return".
+- O campo "entrada" de cada caso de teste deve conter os valores dos parâmetros (${parsed.params.map(p => p.name).join(', ')}) separados por quebra de linha (\\n), exatamente nessa ordem.
+- O campo "saida" de cada caso de teste deve conter EXCLUSIVAMENTE o valor de retorno esperado (return) da função.${regraFloat}`;
+        } else {
+            contextoModoPrompt = `
+Modo do Exercício: MAIN PADRÃO (Livre / Tradicional)
+- O aluno programa o int main() completo, lendo da entrada padrão (stdin) e imprimindo na saída padrão (stdout).`;
+        }
+
         // Puxa todos os casos de teste já preenchidos pelo professor para servirem de base no prompt
         const testesBase = [];
         document.querySelectorAll('#modal-container-testes .teste-item').forEach((item) => {
+            if (modoAtual === 'function') {
+                const paramInputs = item.querySelectorAll('.input-param-var');
+                if (paramInputs.length > 0) {
+                    const txtIn = item.querySelector('.input-val');
+                    if (txtIn) txtIn.value = Array.from(paramInputs).map(inp => inp.value.trim()).join('\n');
+                }
+            }
             const inp = item.querySelector('.input-val')?.value || '';
             const out = item.querySelector('.output-val')?.value || '';
             if (inp.trim() !== '' || out.trim() !== '') {
@@ -1750,6 +2409,7 @@ ${titulo}
 
 Descrição da Atividade:
 ${desc}
+${contextoModoPrompt}
 ${secaoTestesBase}
 IMPORTANTE:
 1. Gere exatamente 50 casos de teste no total.
@@ -2898,6 +3558,10 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
         const chkPrivado = document.getElementById('modal-exercicio-privado');
         const chkDefinirTempoEl = document.getElementById('chk-definir-tempo-limite');
         const boxCampoTempoEl = document.getElementById('box-campo-tempo-limite');
+        const inputTemplate = document.getElementById('modal-template-code');
+        const inputFuncTemplate = document.getElementById('modal-function-template');
+        const inputFuncSig = document.getElementById('modal-function-signature');
+        const inputFloatPrec = document.getElementById('modal-float-precision');
 
         if (inputId) inputId.value = '';
         if (inputTitulo) inputTitulo.value = '';
@@ -2906,6 +3570,12 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
         if (chkPrivado) chkPrivado.checked = false;
         if (chkDefinirTempoEl) chkDefinirTempoEl.checked = false;
         if (boxCampoTempoEl) boxCampoTempoEl.style.display = 'none';
+        definirValorTemplateMain('');
+        definirValorTemplateFuncao('');
+        if (inputFuncSig) inputFuncSig.value = '';
+        if (inputFloatPrec) inputFloatPrec.value = '2';
+
+        alternarModoExercicioModal('main_default');
 
         if (boxImportarTestesIA) boxImportarTestesIA.style.display = 'none';
         if (txtImportarTestesJSON) txtImportarTestesJSON.value = '';

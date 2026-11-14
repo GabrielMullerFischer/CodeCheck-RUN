@@ -1,4 +1,11 @@
 {
+  "name": "codecheck-run",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "deploy": "powershell -ExecutionPolicy Bypass -File ./deploy.ps1"
+  },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
     "connect-mongo": "^6.0.0",

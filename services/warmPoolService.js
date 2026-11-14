@@ -476,7 +476,7 @@ function executarComandoNoPod(podName, scriptBash, timeoutMs) {
     });
 }
 
-function montarScriptJob(code, tests, timeoutAlunoMs, jobId) {
+function montarScriptJob(code, tests, timeoutAlunoMs, jobId, useOfficialOut = false) {
     const b64Code = Buffer.from(code, 'utf-8').toString('base64');
     const limitSec = timeoutAlunoMs / 1000;
     const totalTests = Array.isArray(tests) && tests.length > 0 ? tests.length : 1;
@@ -486,11 +486,13 @@ function montarScriptJob(code, tests, timeoutAlunoMs, jobId) {
     const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
     const compileTimeoutSec = Math.max(1, Math.ceil(compileTimeoutMs / 1000));
     const safeJobId = String(jobId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const flagOfficialOut = useOfficialOut ? '1' : '0';
 
     let scriptTestes = `
 START_TIME_MS=$(date +%s%3N)
 HAD_TIMEOUT=0
 TIMEOUT_COUNT=0
+USE_OFFICIAL_OUT=${flagOfficialOut}
 
 run_step() {
     local i="$1"
@@ -524,6 +526,14 @@ run_step() {
         EXIT_CODE=$?
         pkill -9 -u 65534 2>/dev/null || true
         ipcrm -a 2>/dev/null || true
+
+        if [ "$USE_OFFICIAL_OUT" = "1" ]; then
+            if [ -f "$WORK_DIR/official_got.txt" ]; then
+                cp -f "$WORK_DIR/official_got.txt" "$CTRL_DIR/got_\${i}.txt"
+            else
+                : > "$CTRL_DIR/got_\${i}.txt"
+            fi
+        fi
 
         CPUTIME=$(cat "$CTRL_DIR/time_\${i}.txt" 2>/dev/null || echo "0.000000")
         echo "TIME:$CPUTIME"
@@ -625,12 +635,12 @@ echo "STATUS:ALL_PASSED"
 `;
 }
 
-async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now(), tentativa = 1) {
+async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now(), tentativa = 1, useOfficialOut = false) {
     const podName = await adquirirPod();
     let teveErroGrave = false;
 
     try {
-        const scriptJob = montarScriptJob(code, tests, timeoutAlunoMs, jobId);
+        const scriptJob = montarScriptJob(code, tests, timeoutAlunoMs, jobId, useOfficialOut);
         const b64GzScript = zlib.gzipSync(Buffer.from(scriptJob, 'utf-8')).toString('base64');
         const comando = `echo "${b64GzScript}" | base64 -d | gzip -d | /bin/bash`;
 
@@ -647,7 +657,7 @@ async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now()
         if (tentativa === 1) {
             console.warn(`[WarmPool] Pod ${podName} indisponível ou parado (${err.message}). Auto-recuperando e tentando novamente...`);
             liberarPod(podName, true);
-            return await executarJobNoPool(code, tests, timeoutAlunoMs, jobId, 2);
+            return await executarJobNoPool(code, tests, timeoutAlunoMs, jobId, 2, useOfficialOut);
         }
         throw err;
     } finally {
@@ -765,13 +775,13 @@ async function garantirIsolamentoRede() {
                 namespace: TARGET_NS,
                 body: netPolicyManifest
             });
-            console.log(`🛡️ [Segurança] NetworkPolicy de isolamento total aplicada com sucesso (${TARGET_NS}).`);
+            console.log(`[Segurança] NetworkPolicy de isolamento total aplicada com sucesso (${TARGET_NS}).`);
         } catch (createErr) {
             if (createErr.statusCode === 409 || (createErr.message && (createErr.message.includes('already exists') || createErr.message.includes('Conflict')))) {
                 // Já existe
             } else if (createErr.message && createErr.message.includes('Required parameter')) {
                 await k8sNetworkingApi.createNamespacedNetworkPolicy(TARGET_NS, netPolicyManifest);
-                console.log(`🛡️ [Segurança] NetworkPolicy de isolamento total aplicada com sucesso (${TARGET_NS}).`);
+                console.log(`[Segurança] NetworkPolicy de isolamento total aplicada com sucesso (${TARGET_NS}).`);
             }
         }
     } catch (e) {
@@ -788,12 +798,12 @@ async function garantirNamespace() {
             const nsObj = { metadata: { name: TARGET_NS } };
             try {
                 await k8sApi.createNamespace({ body: nsObj });
-                console.log(`📦 [Kubernetes] Namespace "${TARGET_NS}" criado automaticamente.`);
+                console.log(`[Kubernetes] Namespace "${TARGET_NS}" criado automaticamente.`);
             } catch (createErr) {
                 if (createErr.statusCode !== 409) {
                     try {
                         await k8sApi.createNamespace(nsObj);
-                        console.log(`📦 [Kubernetes] Namespace "${TARGET_NS}" criado automaticamente.`);
+                        console.log(`[Kubernetes] Namespace "${TARGET_NS}" criado automaticamente.`);
                     } catch { }
                 }
             }

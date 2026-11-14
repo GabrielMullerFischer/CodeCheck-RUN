@@ -13,16 +13,16 @@ const BUCKET_NAME = process.env.MINIO_NAME || 'arquivos-alunos';
 
 async function initMinio() {
     try {
-        console.log("🔍 Verificando bucket no MinIO...");
+        console.log("Verificando bucket no MinIO...");
         const exists = await minioClient.bucketExists(BUCKET_NAME);
         if (!exists) {
             await minioClient.makeBucket(BUCKET_NAME, 'us-east-1');
-            console.log(`✅ Bucket '${BUCKET_NAME}' criado com sucesso.`);
+            console.log(`Bucket '${BUCKET_NAME}' criado com sucesso.`);
         } else {
-            console.log(`✅ Bucket '${BUCKET_NAME}' já existe.`);
+            console.log(`Bucket '${BUCKET_NAME}' já existe.`);
         }
     } catch (err) {
-        console.error("❌ Erro de conexão com o MinIO:", err.message);
+        console.error("Erro de conexão com o MinIO:", err.message);
         throw err;
     }
 }

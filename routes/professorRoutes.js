@@ -39,6 +39,183 @@ function ehObjectIdValido(id) {
     return typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id);
 }
 
+function normalizarModoExercicio(mode) {
+    if (mode === 'main_custom' || mode === 'function') return mode;
+    return 'main_default';
+}
+
+function extrairAssinaturaDeTextoC(texto) {
+    if (!texto || typeof texto !== 'string') return null;
+    const regexSig = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)$/;
+    const regexParam = /^((?:unsigned\s+)?(?:long\s+long(?:\s+int)?|long(?:\s+int)?|short(?:\s+int)?|int|float|double|char))\s+([a-zA-Z_][a-zA-Z0-9_]*)$/;
+
+    function testarLinhaCandidata(linhaBruta) {
+        const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
+        const semPrefixo = linhaBruta.replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
+        if (!semPrefixo || semPrefixo.startsWith('#')) return null;
+        const candidata = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
+        const matchSig = candidata.match(regexSig);
+        if (!matchSig) return null;
+        const returnType = matchSig[1].replace(/\s+/g, ' ').trim();
+        const funcName = matchSig[2].trim();
+        if (funcName === 'main') return null;
+        const paramsRaw = matchSig[3].trim();
+        const params = [];
+        if (paramsRaw && paramsRaw !== 'void') {
+            const listaParams = paramsRaw.split(',').map(p => p.trim());
+            for (const p of listaParams) {
+                const mParam = p.match(regexParam);
+                if (!mParam) {
+                    return { invalidParam: p };
+                }
+                params.push({
+                    type: mParam[1].replace(/\s+/g, ' ').trim(),
+                    name: mParam[2].trim()
+                });
+            }
+        }
+        const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
+        return {
+            valido: true,
+            isLocked,
+            returnType,
+            funcName,
+            params,
+            cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`
+        };
+    }
+
+    const linhas = texto.replace(/\r/g, '').split('\n');
+    const candidatos = [];
+    let erroParametro = null;
+    let emComentarioBloco = false;
+    let nivelChaves = 0;
+
+    for (const linhaOriginal of linhas) {
+        let linhaLimpa = '';
+        for (let i = 0; i < linhaOriginal.length; i++) {
+            if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
+                emComentarioBloco = true;
+                i++;
+            } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
+                emComentarioBloco = false;
+                i++;
+            } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
+                break;
+            } else if (!emComentarioBloco) {
+                linhaLimpa += linhaOriginal[i];
+            }
+        }
+
+        if (nivelChaves === 0 && linhaLimpa.trim()) {
+            const res = testarLinhaCandidata(linhaLimpa);
+            if (res) {
+                if (res.invalidParam) {
+                    erroParametro = res.invalidParam;
+                } else if (res.valido) {
+                    candidatos.push(res);
+                }
+            }
+        }
+
+        for (const ch of linhaLimpa) {
+            if (ch === '{') nivelChaves++;
+            else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
+        }
+    }
+
+    if (candidatos.length > 0) {
+        return candidatos.find(c => c.isLocked) || candidatos[0];
+    }
+    if (erroParametro) {
+        return { invalidParam: erroParametro };
+    }
+    return null;
+}
+
+function validarConfiguracaoModoExercicio(body = {}) {
+    const mode = normalizarModoExercicio(body.exerciseMode || body.modo);
+
+    if (mode === 'main_custom') {
+        const rawTpl = typeof (body.templateCode ?? body.codigoBase) === 'string'
+            ? (body.templateCode ?? body.codigoBase).replace(/\r/g, '')
+            : '';
+        if (!rawTpl.trim()) {
+            return {
+                error: "No modo Main Personalizada, o código-base (template) é obrigatório."
+            };
+        }
+        const linhas = rawTpl.split('\n');
+        const temPrintOficial = linhas.some(l => /^\s*###/.test(l) && /\bprintf\s*\(/.test(l));
+        if (!temPrintOficial) {
+            return {
+                error: "No modo Main Personalizada, é obrigatório incluir pelo menos uma linha iniciada com ### contendo printf para avaliação do juiz."
+            };
+        }
+        return {
+            exerciseMode: 'main_custom',
+            templateCode: rawTpl,
+            functionSignature: null,
+            floatPrecision: 2
+        };
+    }
+
+    if (mode === 'function') {
+        const rawTpl = typeof (body.templateCode ?? body.codigoBase) === 'string'
+            ? (body.templateCode ?? body.codigoBase).replace(/\r/g, '')
+            : '';
+        const rawSigInput = typeof (body.functionSignature ?? body.assinaturaFuncao) === 'string'
+            ? (body.functionSignature ?? body.assinaturaFuncao).trim()
+            : '';
+
+        const fonteAssinatura = rawTpl.trim() ? rawTpl : rawSigInput;
+        if (!fonteAssinatura) {
+            return {
+                error: "No Modo Função, preencha o código-base da função (ex: ***int somar(int a, int b) { ... })."
+            };
+        }
+
+        const extraido = extrairAssinaturaDeTextoC(fonteAssinatura) || (rawSigInput ? extrairAssinaturaDeTextoC(rawSigInput) : null);
+        if (!extraido) {
+            return {
+                error: "Não foi possível identificar o cabeçalho da função no código-base. Declare no formato: tipo nomeDaFuncao(tipo param1, tipo param2) — ex: int somar(int a, int b)."
+            };
+        }
+        if (extraido.invalidParam) {
+            return {
+                error: `Parâmetro inválido na declaração da função: "${extraido.invalidParam}". Declare cada parâmetro com tipo e nome (ex: int a, float b).`
+            };
+        }
+        if (!extraido.params || extraido.params.length === 0) {
+            return {
+                error: "No Modo Função, declare pelo menos um parâmetro entre os parênteses da função (ex: int calcular(int n))."
+            };
+        }
+
+        let prec = parseInt(body.floatPrecision ?? body.casasDecimais, 10);
+        if (isNaN(prec) || prec < 0) prec = 2;
+        if (prec > 10) prec = 10;
+
+        const templateFinal = rawTpl.trim()
+            ? rawTpl
+            : `***${extraido.cleanSignature} {\n    int resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`;
+
+        return {
+            exerciseMode: 'function',
+            templateCode: templateFinal,
+            functionSignature: extraido.cleanSignature,
+            floatPrecision: prec
+        };
+    }
+
+    return {
+        exerciseMode: 'main_default',
+        templateCode: null,
+        functionSignature: null,
+        floatPrecision: 2
+    };
+}
+
 function resolverActivityIdProfessor(req, candidateId) {
     const ctx = obterContextoAuth(req);
     if (ctx.activityId) {
@@ -116,6 +293,10 @@ router.get('/atividade/exercicios', async (req, res) => {
 
                 const exObj = exercicioIndividual.toObject ? exercicioIndividual.toObject() : JSON.parse(JSON.stringify(exercicioIndividual));
                 exObj.timeLimit = exObj.timeLimit || DEFAULT_TIME_LIMIT_MS;
+                exObj.exerciseMode = normalizarModoExercicio(exObj.exerciseMode);
+                exObj.templateCode = exObj.templateCode || null;
+                exObj.functionSignature = exObj.functionSignature || null;
+                exObj.floatPrecision = typeof exObj.floatPrecision === 'number' ? exObj.floatPrecision : 2;
                 return res.json({
                     success: true,
                     lista: {
@@ -186,6 +367,10 @@ router.get('/atividade/exercicios', async (req, res) => {
         if (Array.isArray(listaObj.exercises)) {
             listaObj.exercises = listaObj.exercises.map(ex => {
                 ex.timeLimit = ex.timeLimit || DEFAULT_TIME_LIMIT_MS;
+                ex.exerciseMode = normalizarModoExercicio(ex.exerciseMode);
+                ex.templateCode = ex.templateCode || null;
+                ex.functionSignature = ex.functionSignature || null;
+                ex.floatPrecision = typeof ex.floatPrecision === 'number' ? ex.floatPrecision : 2;
                 return ex;
             });
         }
@@ -321,6 +506,11 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
             }
         }
 
+        const configModo = validarConfiguracaoModoExercicio(req.body);
+        if (configModo.error) {
+            return res.status(400).json({ success: false, error: configModo.error });
+        }
+
         const exercicio = await Exercise.create({ 
             title: tituloFormatado, 
             description, 
@@ -329,7 +519,11 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
             authorName, 
             courseId: ctx.courseId || null,
             isPublic: !isPrivate, 
-            timeLimit: timeLimitVal 
+            timeLimit: timeLimitVal,
+            exerciseMode: configModo.exerciseMode,
+            templateCode: configModo.templateCode,
+            functionSignature: configModo.functionSignature,
+            floatPrecision: configModo.floatPrecision
         });
         res.json({ success: true, exercicio });
     } catch (e) {
@@ -403,6 +597,11 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
             }
         }
 
+        const configModo = validarConfiguracaoModoExercicio(req.body);
+        if (configModo.error) {
+            return res.status(400).json({ success: false, error: configModo.error });
+        }
+
         // Proteção entre disciplinas: se o exercício pertencer a outra disciplina,
         // clona uma cópia exclusiva para a disciplina atual para nunca alterar enunciados de outra turma!
         const deveClonarParaDisciplina = !!(ctx.courseId && String(ex.courseId || '') !== String(ctx.courseId));
@@ -416,7 +615,11 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
                 authorName: ctx.userName || ex.authorName || 'Professor',
                 courseId: ctx.courseId,
                 isPublic: !isPrivate,
-                timeLimit: timeLimitVal
+                timeLimit: timeLimitVal,
+                exerciseMode: configModo.exerciseMode,
+                templateCode: configModo.templateCode,
+                functionSignature: configModo.functionSignature,
+                floatPrecision: configModo.floatPrecision
             });
             await ExerciseList.updateMany(
                 { authorId: meuId, courseId: ctx.courseId, exercises: ex._id },
@@ -430,6 +633,10 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
         ex.tests = testesFormatados;
         ex.isPublic = !isPrivate;
         ex.timeLimit = timeLimitVal;
+        ex.exerciseMode = configModo.exerciseMode;
+        ex.templateCode = configModo.templateCode;
+        ex.functionSignature = configModo.functionSignature;
+        ex.floatPrecision = configModo.floatPrecision;
         await ex.save();
 
         res.json({ success: true, exercicio: ex });
@@ -631,6 +838,16 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
                 counter++;
             }
 
+            let configModoIA = validarConfiguracaoModoExercicio(rawEx);
+            if (configModoIA.error) {
+                configModoIA = {
+                    exerciseMode: 'main_default',
+                    templateCode: null,
+                    functionSignature: null,
+                    floatPrecision: 2
+                };
+            }
+
             // Cria o exercício:
             // Regra: timeLimit = DEFAULT_TIME_LIMIT_MS (5000ms padrão do sistema)
             // Regra: isPublic = true (público por padrão)
@@ -642,7 +859,11 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
                 authorName,
                 courseId: ctx.courseId || null,
                 isPublic: true,
-                timeLimit: DEFAULT_TIME_LIMIT_MS
+                timeLimit: DEFAULT_TIME_LIMIT_MS,
+                exerciseMode: configModoIA.exerciseMode,
+                templateCode: configModoIA.templateCode,
+                functionSignature: configModoIA.functionSignature,
+                floatPrecision: configModoIA.floatPrecision
             });
 
             exerciciosCriadosIds.push(novoEx._id);
@@ -928,7 +1149,13 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
         todasListas.forEach(l => {
             if (Array.isArray(l.exercises)) {
                 l.exercises.forEach(ex => {
-                    if (ex && !ex.timeLimit) ex.timeLimit = DEFAULT_TIME_LIMIT_MS;
+                    if (ex) {
+                        if (!ex.timeLimit) ex.timeLimit = DEFAULT_TIME_LIMIT_MS;
+                        ex.exerciseMode = normalizarModoExercicio(ex.exerciseMode);
+                        ex.templateCode = ex.templateCode || null;
+                        ex.functionSignature = ex.functionSignature || null;
+                        ex.floatPrecision = typeof ex.floatPrecision === 'number' ? ex.floatPrecision : 2;
+                    }
                 });
             }
         });
@@ -962,6 +1189,10 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
         const todosExercicios = await Exercise.find({ isArchived: { $ne: true } }).sort({ _id: -1 }).lean();
         todosExercicios.forEach(ex => {
             if (!ex.timeLimit) ex.timeLimit = DEFAULT_TIME_LIMIT_MS;
+            ex.exerciseMode = normalizarModoExercicio(ex.exerciseMode);
+            ex.templateCode = ex.templateCode || null;
+            ex.functionSignature = ex.functionSignature || null;
+            ex.floatPrecision = typeof ex.floatPrecision === 'number' ? ex.floatPrecision : 2;
         });
 
         // Meus Exercícios (isolados estritamente pela disciplina atual)
@@ -1232,7 +1463,11 @@ router.post('/professor/exercicio/importar', verificarProfessor, async (req, res
             authorName: meuNome,
             courseId: ctx.courseId || null,
             isPublic: false,
-            timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS
+            timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS,
+            exerciseMode: normalizarModoExercicio(exOriginal.exerciseMode),
+            templateCode: exOriginal.templateCode || null,
+            functionSignature: exOriginal.functionSignature || null,
+            floatPrecision: typeof exOriginal.floatPrecision === 'number' ? exOriginal.floatPrecision : 2
         });
 
         res.json({ success: true, exercicio: novoExercicio });
@@ -1325,7 +1560,11 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
                 authorName: meuNome,
                 courseId: ctx.courseId || null,
                 isPublic: false,
-                timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS
+                timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS,
+                exerciseMode: normalizarModoExercicio(exOriginal.exerciseMode),
+                templateCode: exOriginal.templateCode || null,
+                functionSignature: exOriginal.functionSignature || null,
+                floatPrecision: typeof exOriginal.floatPrecision === 'number' ? exOriginal.floatPrecision : 2
             });
 
             novosIdsExercicios.push(novoExercicio._id);

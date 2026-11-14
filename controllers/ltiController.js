@@ -133,9 +133,9 @@ async function setup(app) {
                 key: process.env.LTI_KEYSET_ENDPOINT
             }
         });
-        console.log("✅ Plataforma registrada/verificada.");
+        console.log("Plataforma registrada/verificada.");
     } catch (err) {
-        console.log("ℹ️ Plataforma já estava registrada.");
+        console.log("ℹPlataforma já estava registrada.");
     }
 
     lti.whitelist(
@@ -164,8 +164,6 @@ async function setup(app) {
         req.session.courseId = courseId;
         req.session.userName = userName;
         req.auth = construirAuthContext(req, res);
-
-        console.log(`[LOGIN] ${userName} logado como ${isProf ? 'Professor' : 'Aluno'} (Disciplina: ${courseId || 'N/A'} | Atividade: ${activityId})`);
 
         req.session.save(() => {
             renderTemplate(res, req, userName, activityId);

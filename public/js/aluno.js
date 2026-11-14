@@ -174,6 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         mode: 'text/x-csrc',
         theme: temaSalvo,
         lineNumbers: true,
+        gutters: ["CodeMirror-linenumbers", "locked-gutter"],
         autoCloseBrackets: true,
         matchBrackets: true,
         indentUnit: 4,
@@ -183,6 +184,277 @@ document.addEventListener('DOMContentLoaded', async () => {
             "Ctrl-Space": "autocomplete"
         }
     });
+
+    function obterModoExercicio(ex) {
+        if (!ex || !ex.exerciseMode) return 'main_default';
+        if (ex.exerciseMode === 'main_custom' || ex.exerciseMode === 'function') return ex.exerciseMode;
+        return 'main_default';
+    }
+
+    function parsearAssinaturaFuncao(sigOuTemplate) {
+        if (!sigOuTemplate || typeof sigOuTemplate !== 'string') return null;
+
+        function testarLinha(linhaBruta) {
+            const isLocked = /^\s*(?:\*\*\*|###)/.test(linhaBruta);
+            const semPrefixo = String(linhaBruta || '').replace(/^\s*(?:\*\*\*|###)\s*/, '').trim();
+            if (!semPrefixo || semPrefixo.startsWith('#')) return null;
+            const clean = semPrefixo.replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
+            const match = clean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)\s*\(([^)]*)\)$/);
+            if (!match) return null;
+            const returnType = match[1].replace(/\s+/g, ' ').trim();
+            const funcName = match[2].trim();
+            if (funcName === 'main') return null;
+            const paramsRaw = match[3].trim();
+            const params = [];
+
+            if (paramsRaw && paramsRaw !== 'void') {
+                const parts = paramsRaw.split(',');
+                for (const part of parts) {
+                    const pClean = part.trim().replace(/\[\s*\]/g, '');
+                    if (!pClean) continue;
+                    const pMatch = pClean.match(/^([a-zA-Z_][\w\s\*]*?)\s*\b([a-zA-Z_]\w*)$/);
+                    if (!pMatch) return null;
+                    params.push({
+                        type: pMatch[1].replace(/\s+/g, ' ').trim(),
+                        name: pMatch[2].trim()
+                    });
+                }
+            }
+            const paramsFormatados = params.map(p => `${p.type} ${p.name}`).join(', ');
+            return {
+                isLocked,
+                cleanSignature: `${returnType} ${funcName}(${paramsFormatados})`,
+                returnType,
+                funcName,
+                params
+            };
+        }
+
+        const linhas = sigOuTemplate.replace(/\r/g, '').split('\n');
+        const candidatos = [];
+        let emComentarioBloco = false;
+        let nivelChaves = 0;
+
+        for (const linhaOriginal of linhas) {
+            let linhaLimpa = '';
+            for (let i = 0; i < linhaOriginal.length; i++) {
+                if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '*') {
+                    emComentarioBloco = true;
+                    i++;
+                } else if (emComentarioBloco && linhaOriginal[i] === '*' && linhaOriginal[i + 1] === '/') {
+                    emComentarioBloco = false;
+                    i++;
+                } else if (!emComentarioBloco && linhaOriginal[i] === '/' && linhaOriginal[i + 1] === '/') {
+                    break;
+                } else if (!emComentarioBloco) {
+                    linhaLimpa += linhaOriginal[i];
+                }
+            }
+
+            if (nivelChaves === 0 && linhaLimpa.trim()) {
+                const res = testarLinha(linhaLimpa);
+                if (res) candidatos.push(res);
+            }
+
+            for (const ch of linhaLimpa) {
+                if (ch === '{') nivelChaves++;
+                else if (ch === '}') nivelChaves = Math.max(0, nivelChaves - 1);
+            }
+        }
+
+        if (candidatos.length > 0) {
+            return candidatos.find(c => c.isLocked) || candidatos[0];
+        }
+        return null;
+    }
+
+    function obterLabelRestaurarPorModo(ex) {
+        const modo = obterModoExercicio(ex);
+        if (modo === 'function') return 'Restaurar Função';
+        if (modo === 'main_custom') return 'Restaurar Código';
+        return 'Restaurar main()';
+    }
+
+    function gerarCodigoInicialExercicio(ex) {
+        const modo = obterModoExercicio(ex);
+        if ((modo === 'main_custom' || modo === 'function') && ex && ex.templateCode && String(ex.templateCode).trim()) {
+            return String(ex.templateCode)
+                .replace(/\r\n/g, '\n')
+                .split('\n')
+                .map(line => line.replace(/^(\s*)(?:\*\*\*|###)/, '$1'))
+                .join('\n');
+        }
+        if (modo === 'function' && ex && ex.functionSignature) {
+            const parsed = parsearAssinaturaFuncao(ex.functionSignature);
+            const sig = parsed ? parsed.cleanSignature : ex.functionSignature.trim().replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
+            return `${sig} {\n    \n    return ;\n}`;
+        }
+        return MODELO_PADRAO;
+    }
+
+    function criarIconeCadeadoGutter() {
+        const marker = document.createElement('span');
+        marker.className = 'd-inline-flex align-items-center justify-content-center w-100';
+        marker.innerHTML = '<i class="fas fa-lock text-muted" style="font-size: 0.75rem; opacity: 0.65;" title="Linha travada pelo professor"></i>';
+        return marker;
+    }
+
+    function obterIndicesLinhasTravadas(codigo, ex) {
+        const modo = obterModoExercicio(ex);
+        const indices = new Set();
+        if (modo === 'main_default' || !ex) {
+            return { valido: true, indices };
+        }
+
+        const linhasCodigo = String(codigo || '').replace(/\r\n/g, '\n').split('\n');
+
+        if (modo === 'main_custom' || (modo === 'function' && ex.templateCode && String(ex.templateCode).trim())) {
+            if (!ex.templateCode || !String(ex.templateCode).trim()) {
+                return { valido: true, indices };
+            }
+            const tplLines = String(ex.templateCode).replace(/\r\n/g, '\n').split('\n');
+            const entries = tplLines.map(raw => {
+                if (/^\s*\*\*\*/.test(raw) || /^\s*###/.test(raw)) {
+                    return {
+                        isLocked: true,
+                        cleanLine: raw.replace(/^(\s*)(?:\*\*\*|###)/, '$1')
+                    };
+                }
+                return { isLocked: false, cleanLine: raw };
+            });
+
+            let lastLockedIdx = -1;
+            for (let i = entries.length - 1; i >= 0; i--) {
+                if (entries[i].isLocked) {
+                    lastLockedIdx = i;
+                    break;
+                }
+            }
+            if (lastLockedIdx === -1) {
+                return { valido: true, indices };
+            }
+
+            let lastFreeIdx = -1;
+            for (let i = lastLockedIdx - 1; i >= 0; i--) {
+                if (!entries[i].isLocked) {
+                    lastFreeIdx = i;
+                    break;
+                }
+            }
+
+            const prefixEntries = lastFreeIdx === -1 ? entries : entries.slice(0, lastFreeIdx);
+            const suffixEntries = lastFreeIdx === -1 ? [] : entries.slice(lastFreeIdx + 1);
+
+            let sTop = 0;
+            for (const entry of prefixEntries) {
+                if (!entry.isLocked) continue;
+                const targetTrim = entry.cleanLine.trim();
+                let found = -1;
+                while (sTop < linhasCodigo.length) {
+                    if (linhasCodigo[sTop].trim() === targetTrim) {
+                        found = sTop;
+                        sTop++;
+                        break;
+                    }
+                    sTop++;
+                }
+                if (found === -1) {
+                    return { valido: false, indices };
+                }
+                indices.add(found);
+            }
+
+            const minBottomIdx = sTop;
+            let sBot = linhasCodigo.length - 1;
+            for (let k = suffixEntries.length - 1; k >= 0; k--) {
+                const entry = suffixEntries[k];
+                if (!entry.isLocked) continue;
+                const targetTrim = entry.cleanLine.trim();
+                let found = -1;
+                while (sBot >= minBottomIdx) {
+                    if (linhasCodigo[sBot].trim() === targetTrim) {
+                        found = sBot;
+                        sBot--;
+                        break;
+                    }
+                    sBot--;
+                }
+                if (found === -1) {
+                    return { valido: false, indices };
+                }
+                indices.add(found);
+            }
+
+            return { valido: true, indices };
+        }
+
+        if (modo === 'function') {
+            const parsed = parsearAssinaturaFuncao(ex.functionSignature);
+            const sig = parsed ? parsed.cleanSignature : (ex.functionSignature || '').trim().replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
+            if (!sig) return { valido: true, indices };
+
+            let sigLineIdx = -1;
+            const sigCompact = sig.replace(/\s+/g, ' ').trim();
+            for (let i = 0; i < linhasCodigo.length; i++) {
+                const lineCompact = linhasCodigo[i].replace(/\s+/g, ' ').trim();
+                if (lineCompact === `${sigCompact} {` || lineCompact === `${sigCompact}{`) {
+                    sigLineIdx = i;
+                    break;
+                }
+            }
+            if (sigLineIdx === -1) {
+                return { valido: false, indices };
+            }
+
+            let closeBraceIdx = -1;
+            for (let i = linhasCodigo.length - 1; i > sigLineIdx; i--) {
+                if (linhasCodigo[i].trim() === '}') {
+                    closeBraceIdx = i;
+                    break;
+                }
+            }
+            if (closeBraceIdx === -1 || closeBraceIdx <= sigLineIdx + 1) {
+                return { valido: false, indices };
+            }
+
+            for (let i = 0; i <= sigLineIdx; i++) {
+                indices.add(i);
+            }
+            for (let i = closeBraceIdx; i < linhasCodigo.length; i++) {
+                indices.add(i);
+            }
+            return { valido: true, indices };
+        }
+
+        return { valido: true, indices };
+    }
+
+    function aplicarCadeadosNoEditor(exOpcional) {
+        if (!editorCM) return;
+        const ex = exOpcional !== undefined ? exOpcional : listaExercicios[indiceAtual];
+        editorCM.clearGutter('locked-gutter');
+        const total = editorCM.lineCount();
+        for (let i = 0; i < total; i++) {
+            editorCM.removeLineClass(i, 'background', 'cm-locked-line');
+        }
+        if (!ex) return;
+
+        const { indices } = obterIndicesLinhasTravadas(editorCM.getValue(), ex);
+        indices.forEach(lineIdx => {
+            if (lineIdx >= 0 && lineIdx < total) {
+                editorCM.addLineClass(lineIdx, 'background', 'cm-locked-line');
+                editorCM.setGutterMarker(lineIdx, 'locked-gutter', criarIconeCadeadoGutter());
+            }
+        });
+    }
+
+    function linhaEstaTravada(cm, lineIdx) {
+        const info = cm.lineInfo(lineIdx);
+        if (!info) return false;
+        if (info.gutterMarkers && info.gutterMarkers['locked-gutter']) return true;
+        if (info.bgClass && info.bgClass.includes('cm-locked-line')) return true;
+        return false;
+    }
 
     if (selectTemaEditor) {
         selectTemaEditor.addEventListener('change', () => {
@@ -456,6 +728,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     sincronizarLayoutModoFoco();
 
+    editorCM.on('beforeChange', (cm, change) => {
+        if (bloquearEventoChange || change.origin === 'setValue') return;
+        const fromLine = change.from.line;
+        const toLine = change.to.line;
+        for (let i = fromLine; i <= toLine; i++) {
+            if (linhaEstaTravada(cm, i)) {
+                change.cancel();
+                return;
+            }
+        }
+    });
+
     editorCM.on("inputRead", (cm, change) => {
         if (change.text && change.text.length > 0 && /^[a-zA-Z_]$/.test(change.text[0])) {
             cm.showHint({
@@ -502,9 +786,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    function setCodigoNoEditor(codigo) {
+    function setCodigoNoEditor(codigo, exOpcional) {
         bloquearEventoChange = true;
         editorCM.setValue(codigo || '');
+        aplicarCadeadosNoEditor(exOpcional);
         bloquearEventoChange = false;
         atualizarEstadoBotaoCompilar();
         atualizarEstadoBotaoTesteCustom();
@@ -515,15 +800,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => {
             const totalLinhas = editorCM.lineCount();
             for (let i = 0; i < totalLinhas; i++) {
-                const linhaTexto = editorCM.getLine(i);
-                const pos = linhaTexto.indexOf('"');
-                if (pos !== -1) {
-                    editorCM.setCursor({ line: i, ch: pos + 1 });
+                if (!linhaEstaTravada(editorCM, i)) {
+                    const linhaTexto = editorCM.getLine(i) || '';
+                    const pos = linhaTexto.indexOf('"');
+                    if (pos !== -1) {
+                        editorCM.setCursor({ line: i, ch: pos + 1 });
+                        editorCM.focus();
+                        return;
+                    }
+                }
+            }
+            for (let i = 0; i < totalLinhas; i++) {
+                if (!linhaEstaTravada(editorCM, i)) {
+                    const linhaTexto = editorCM.getLine(i) || '';
+                    editorCM.setCursor({ line: i, ch: Math.max(4, linhaTexto.length) });
                     editorCM.focus();
                     return;
                 }
             }
-            editorCM.setCursor({ line: 3, ch: 4 });
+            editorCM.setCursor({ line: Math.min(3, totalLinhas - 1), ch: 4 });
             editorCM.focus();
         }, 50);
     }
@@ -1135,13 +1430,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        const exAtual = listaExercicios[indiceAtual];
+        const labelRestaurar = obterLabelRestaurarPorModo(exAtual);
+
         const elStatusAutoSave = document.getElementById('statusAutoSave');
         if (total === 0) {
             navHistoricoSubmissoes.style.display = 'none';
             if (elStatusAutoSave) elStatusAutoSave.style.display = 'inline-flex';
             editorCM.setOption('readOnly', false);
             if (btnRestaurarCodigo) {
-                btnRestaurarCodigo.innerHTML = '<i class="fas fa-undo-alt mr-1"></i> Restaurar main()';
+                btnRestaurarCodigo.innerHTML = `<i class="fas fa-undo-alt mr-1"></i> ${labelRestaurar}`;
                 btnRestaurarCodigo.className = 'btn btn-sm btn-outline-secondary py-1 px-3 font-weight-bold shadow-sm';
                 btnRestaurarCodigo.title = 'Voltar ao código padrão inicial';
             }
@@ -1162,7 +1460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubAnterior.className = 'btn btn-outline-primary px-2 font-weight-bold';
 
             if (btnRestaurarCodigo) {
-                btnRestaurarCodigo.innerHTML = '<i class="fas fa-undo-alt mr-1"></i> Restaurar main()';
+                btnRestaurarCodigo.innerHTML = `<i class="fas fa-undo-alt mr-1"></i> ${labelRestaurar}`;
                 btnRestaurarCodigo.className = 'btn btn-sm btn-outline-secondary py-1 px-3 font-weight-bold shadow-sm';
                 btnRestaurarCodigo.title = 'Voltar ao código padrão inicial';
             }
@@ -1525,10 +1823,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function validarRascunhoCompativelComExercicio(codigo, ex) {
+        if (!codigo || !String(codigo).trim()) return false;
+        const { valido } = obterIndicesLinhasTravadas(codigo, ex);
+        return valido;
+    }
+
     async function carregarRascunho(exerciseId) {
+        const exObj = listaExercicios.find(e => String(e._id) === String(exerciseId)) || listaExercicios[indiceAtual];
+        const codigoBaseModo = gerarCodigoInicialExercicio(exObj);
+
         if (rascunhosSessao[exerciseId] !== undefined) {
-            setCodigoNoEditor(rascunhosSessao[exerciseId]);
-            return;
+            if (validarRascunhoCompativelComExercicio(rascunhosSessao[exerciseId], exObj)) {
+                setCodigoNoEditor(rascunhosSessao[exerciseId], exObj);
+                return;
+            }
+            delete rascunhosSessao[exerciseId];
         }
 
         // 1. Tenta carregar do cache local (localStorage) imediatamente
@@ -1551,8 +1861,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.warn("Erro ao ler rascunho do localStorage:", e);
         }
 
+        if (rascunhoLocal !== null && !validarRascunhoCompativelComExercicio(rascunhoLocal, exObj)) {
+            rascunhoLocal = null;
+        }
+
         if (rascunhoLocal !== null) {
-            setCodigoNoEditor(rascunhoLocal);
+            setCodigoNoEditor(rascunhoLocal, exObj);
             rascunhosSessao[exerciseId] = rascunhoLocal;
             atualizarStatusAutoSave('local');
         }
@@ -1561,11 +1875,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const res = await fetch(`/judge/get-draft?activityId=${activityId || 'preview'}&exerciseId=${exerciseId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
             const data = await res.json();
-            const codigoServidor = data.code;
+            const codigoServidorBruto = data.code;
+            const codigoServidor = (codigoServidorBruto && validarRascunhoCompativelComExercicio(codigoServidorBruto, exObj))
+                ? codigoServidorBruto
+                : null;
 
             if (rascunhoLocal === null) {
-                const codigoCarregado = codigoServidor || MODELO_PADRAO;
-                setCodigoNoEditor(codigoCarregado);
+                const codigoCarregado = codigoServidor || codigoBaseModo;
+                setCodigoNoEditor(codigoCarregado, exObj);
                 rascunhosSessao[exerciseId] = codigoCarregado;
                 salvarRascunhoLocalImediato(exerciseId, codigoCarregado);
                 if (codigoServidor) {
@@ -1574,9 +1891,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     atualizarStatusAutoSave('local');
                 }
             } else if (codigoServidor && codigoServidor !== rascunhoLocal) {
-                // Se no cache local tiver apenas o modelo padrão ou em branco, e no servidor houver código real
-                if (!rascunhoLocal.trim() || rascunhoLocal === MODELO_PADRAO) {
-                    setCodigoNoEditor(codigoServidor);
+                // Se no cache local tiver apenas o modelo padrão/base ou em branco, e no servidor houver código real
+                if (!rascunhoLocal.trim() || rascunhoLocal === codigoBaseModo || rascunhoLocal === MODELO_PADRAO) {
+                    setCodigoNoEditor(codigoServidor, exObj);
                     rascunhosSessao[exerciseId] = codigoServidor;
                     salvarRascunhoLocalImediato(exerciseId, codigoServidor);
                     atualizarStatusAutoSave('servidor');
@@ -1590,9 +1907,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch {
             if (rascunhoLocal === null) {
-                setCodigoNoEditor(MODELO_PADRAO);
-                rascunhosSessao[exerciseId] = MODELO_PADRAO;
-                salvarRascunhoLocalImediato(exerciseId, MODELO_PADRAO);
+                setCodigoNoEditor(codigoBaseModo, exObj);
+                rascunhosSessao[exerciseId] = codigoBaseModo;
+                salvarRascunhoLocalImediato(exerciseId, codigoBaseModo);
             }
             atualizarStatusAutoSave('local');
         }
@@ -1726,6 +2043,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (containerExemplos) {
             containerExemplos.innerHTML = '';
+            const modoEx = obterModoExercicio(ex);
+            const parsedSig = modoEx === 'function' ? parsearAssinaturaFuncao(ex.functionSignature || ex.templateCode) : null;
             const testesExibiveis = Array.isArray(ex.tests) ? ex.tests.filter(t => t.isVisible !== false) : [];
             const testesParaMostrar = testesExibiveis.length > 0
                 ? testesExibiveis.slice(0, 3)
@@ -1740,10 +2059,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ? `<div class="d-flex justify-content-between align-items-center mb-1"><span class="badge badge-light border text-muted font-weight-bold" style="font-size: 0.75rem;">Exemplo #${i + 1}</span></div>`
                         : '';
                     const divisor = (i > 0) ? '<hr class="my-3 border-dashed">' : '';
-                    const entradaInfo = formatarEntradaComNumeracao(t.input);
+
+                    let textoEntradaExibicao = t.input;
+                    let labelEntrada = 'Entrada:';
+                    let labelSaida = 'Saída Esperada:';
+
+                    if (modoEx === 'function') {
+                        labelEntrada = 'Parâmetros de Entrada:';
+                        labelSaida = 'Retorno esperado:';
+                        if (parsedSig && parsedSig.params.length > 0) {
+                            const linhasIn = String(t.input || '').replace(/\r\n/g, '\n').split('\n');
+                            textoEntradaExibicao = parsedSig.params
+                                .map((p, idx) => `${p.name} = ${linhasIn[idx] !== undefined ? linhasIn[idx] : ''}`)
+                                .join('\n');
+                        }
+                    }
+
+                    const entradaInfo = formatarEntradaComNumeracao(textoEntradaExibicao);
                     const saidaInfo = formatarSaidaComNumeracao(t.output);
+                    const unidadeEntrada = modoEx === 'function'
+                        ? (entradaInfo.totalLeituras === 1 ? 'parâmetro' : 'parâmetros')
+                        : (entradaInfo.totalLeituras === 1 ? 'leitura' : 'leituras');
                     const badgeLeituras = entradaInfo.totalLeituras > 0
-                        ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem; opacity: 0.85;">${entradaInfo.totalLeituras} ${entradaInfo.totalLeituras === 1 ? 'leitura' : 'leituras'}</span>`
+                        ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem; opacity: 0.85;">${entradaInfo.totalLeituras} ${unidadeEntrada}</span>`
                         : '';
                     const badgeLinhasSaida = saidaInfo.totalLinhas > 0
                         ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem; opacity: 0.85;">${saidaInfo.totalLinhas} ${saidaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>`
@@ -1754,7 +2092,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="mb-2">
                             <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
                                 <label class="small font-weight-bold text-muted text-uppercase mb-0" style="font-size: 0.72rem;">
-                                    Entrada:
+                                    ${labelEntrada}
                                 </label>
                                 ${badgeLeituras}
                             </div>
@@ -1763,7 +2101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div>
                             <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
                                 <label class="small font-weight-bold text-muted text-uppercase mb-0" style="font-size: 0.72rem;">
-                                    Saída Esperada:
+                                    ${labelSaida}
                                 </label>
                                 ${badgeLinhasSaida}
                             </div>
@@ -1772,12 +2110,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                     `;
                 });
 
-                htmlExemplos += `
-                    <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.73rem; line-height: 1.45;">
-                        <i class="fas fa-info-circle text-info mr-1"></i>
-                        <strong>Atenção:</strong> As saídas do programa correspondem aos comandos de print. Elas devem seguir <strong>exatamente</strong> o formato do exemplo (atente-se a maiúsculas/minúsculas, espaços e quebras de linha).
-                    </div>
-                `;
+                if (modoEx === 'function') {
+                    htmlExemplos += `
+                        <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
+                            <strong>Atenção:</strong> Programe apenas o corpo da função e retorne o resultado usando "return". As linhas com cadeado são protegidas.
+                        </div>
+                    `;
+                } else if (modoEx === 'main_custom') {
+                    htmlExemplos += `
+                        <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
+                            <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf"). As linhas com cadeado são protegidas e o corretor avalia exclusivamente o que for impresso pelo "printf" oficial travado no código.
+                        </div>
+                    `;
+                } else {
+                    htmlExemplos += `
+                        <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
+                            <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf") e as saídas aos comandos de impressão ("printf"). Elas devem seguir <strong>exatamente</strong> o formato do exemplo (atente-se a maiúsculas/minúsculas, espaços e quebras de linha).
+                        </div>
+                    `;
+                }
 
                 containerExemplos.innerHTML = htmlExemplos;
             }
@@ -2019,6 +2370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rascunhosSessao[exercicioAtual._id] = codigoSubmissao;
                 indiceSubmissaoAtiva = -1;
                 atualizarBotoesHistorico();
+                aplicarCadeadosNoEditor(exercicioAtual);
                 atualizarEstadoBotaoCompilar();
                 atualizarEstadoBotaoTesteCustom();
                 removerDestaqueErro();
@@ -2027,22 +2379,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
+            const modoEx = obterModoExercicio(exercicioAtual);
+            const msgConfirmRestaurar = modoEx === 'function'
+                ? "Deseja realmente restaurar para o esqueleto inicial da função?"
+                : (modoEx === 'main_custom'
+                    ? "Deseja realmente restaurar para o código-base inicial do exercício?"
+                    : "Deseja realmente restaurar para a estrutura inicial main()?");
+
             const confirmar = await pedirConfirmacaoAluno({
                 titulo: "Restaurar Código",
-                mensagem: "Deseja realmente restaurar para a estrutura inicial main()?",
+                mensagem: msgConfirmRestaurar,
                 textoConfirmar: "Restaurar",
                 corConfirmar: "btn-warning text-dark"
             });
             if (!confirmar) return;
 
-            setCodigoNoEditor(MODELO_PADRAO);
-            rascunhosSessao[exercicioAtual._id] = MODELO_PADRAO;
+            const codigoInicialModo = gerarCodigoInicialExercicio(exercicioAtual);
+            setCodigoNoEditor(codigoInicialModo, exercicioAtual);
+            rascunhosSessao[exercicioAtual._id] = codigoInicialModo;
             indiceSubmissaoAtiva = -1;
             atualizarBotoesHistorico();
 
             removerDestaqueErro();
             posicionarCursorAposAspas();
-            flushAutoSave(exercicioAtual._id, MODELO_PADRAO);
+            flushAutoSave(exercicioAtual._id, codigoInicialModo);
         };
     }
 

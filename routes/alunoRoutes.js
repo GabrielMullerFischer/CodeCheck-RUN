@@ -100,9 +100,10 @@ function sanitizarMensagemErroServidor(msg) {
     return msg;
 }
 
-function gerarDicaDidatica(status, details, got, warnings) {
+function gerarDicaDidatica(status, details, got, warnings, exerciseMode = 'main_default') {
     if (status === 'Accepted') return null;
     const txt = `${details || ''} ${warnings || ''} ${got || ''}`;
+    const modo = (exerciseMode === 'main_custom' || exerciseMode === 'function') ? exerciseMode : 'main_default';
 
     if (/SIGSEGV|segmentation fault|core dumped/i.test(txt)) {
         if (/format '%[^']+' expects argument of type '[^']* \*', but argument \d+ has type/i.test(txt)) {
@@ -148,6 +149,14 @@ function gerarDicaDidatica(status, details, got, warnings) {
     }
     if (status === 'Time Limit') {
         return "Tempo limite excedido: Seu programa demorou mais que o permitido para responder. Verifique se não há laços infinitos ou se a condição de parada do laço está correta.";
+    }
+    if (status === 'Wrong Answer') {
+        if (modo === 'function') {
+            return "Valor de retorno incorreto: Verifique se os cálculos realizados com os parâmetros recebidos pela função estão corretos e se a instrução 'return' está devolvendo o resultado esperado para todos os casos de teste.";
+        }
+        if (modo === 'main_custom') {
+            return "Saída oficial incorreta: Como o printf final já está formatado e travado pelo professor, verifique a leitura dos dados e se o cálculo das variáveis passadas ao print oficial está correto.";
+        }
     }
     return null;
 }
@@ -396,6 +405,14 @@ router.post('/submit', submitLimiter, async (req, res) => {
             }
         }
 
+        // Validação anti-burla das linhas travadas pelo professor (modos main_custom e function)
+        const validacaoEstrutura = judgeService.validarCodigoExercicio(code, exercicioAlvo);
+        if (!validacaoEstrutura.valido) {
+            return res.status(400).json({
+                error: validacaoEstrutura.error || "Violação de linha protegida pelo professor."
+            });
+        }
+
         // Bloqueio no servidor para submissões idênticas (impede burlar 'Altere seu código' no F12)
         if (!isModoTeste) {
             const ultimaSub = await Submission.findOne({
@@ -419,12 +436,19 @@ router.post('/submit', submitLimiter, async (req, res) => {
         }
 
         const chaveOrdemTestes = `${userId}_${effectiveActivityId}_${idExercicioFinal}`;
-        const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit, chaveOrdemTestes);
+        const opcoesExercicio = {
+            exerciseMode: exercicioAlvo.exerciseMode,
+            templateCode: exercicioAlvo.templateCode,
+            functionSignature: exercicioAlvo.functionSignature,
+            floatPrecision: exercicioAlvo.floatPrecision,
+            isCustomDebug: false
+        };
+        const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit, chaveOrdemTestes, opcoesExercicio);
 
         const tempoGastoMs = resultado.executionTime || 0;
         const isAccepted = resultado.status === 'Accepted';
         const isTimeLimit = resultado.status === 'Time Limit';
-        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings);
+        const dicaDidatica = gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings, exercicioAlvo.exerciseMode);
 
         let respostaResultado = {
             ...resultado,
@@ -580,22 +604,39 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
         }
 
         let timeLimit = DEFAULT_TIME_LIMIT_MS;
+        let exercicioCustom = null;
         if (exerciseId && ehObjectIdValido(String(exerciseId))) {
-            const ex = await Exercise.findById(exerciseId).lean();
-            if (ex && ex.timeLimit && Number(ex.timeLimit) > 0) {
-                timeLimit = Number(ex.timeLimit);
+            exercicioCustom = await Exercise.findById(exerciseId).lean();
+            if (exercicioCustom && exercicioCustom.timeLimit && Number(exercicioCustom.timeLimit) > 0) {
+                timeLimit = Number(exercicioCustom.timeLimit);
             }
         }
         if (timeLimit > MAX_TIME_LIMIT_MS) {
             timeLimit = MAX_TIME_LIMIT_MS;
         }
 
+        if (exercicioCustom) {
+            const validacaoEstrutura = judgeService.validarCodigoExercicio(code, exercicioCustom);
+            if (!validacaoEstrutura.valido) {
+                return res.status(400).json({
+                    error: validacaoEstrutura.error || "Violação de linha protegida pelo professor."
+                });
+            }
+        }
+
         const testes = [{ input: input || '', output: '' }];
-        const resultado = await judgeService.runTests(code, testes, containerName, timeLimit);
+        const opcoesExercicio = exercicioCustom ? {
+            exerciseMode: exercicioCustom.exerciseMode,
+            templateCode: exercicioCustom.templateCode,
+            functionSignature: exercicioCustom.functionSignature,
+            floatPrecision: exercicioCustom.floatPrecision,
+            isCustomDebug: true
+        } : null;
+        const resultado = await judgeService.runTests(code, testes, containerName, timeLimit, null, opcoesExercicio);
 
         const tempoGastoMs = resultado.executionTime || 0;
         const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
-        const dicaDidatica = isSuccess ? null : gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings);
+        const dicaDidatica = isSuccess ? null : gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings, exercicioCustom?.exerciseMode);
 
         res.json({
             success: true,
