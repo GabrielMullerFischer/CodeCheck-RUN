@@ -8,7 +8,7 @@ const minioClient = new Minio.Client({
     secretKey: process.env.MINIO_SECRET_KEY
 });
 
-const MAX_SUBMISSION_HISTORY = parseInt(process.env.MAX_SUBMISSION_HISTORY, 10) || 10;
+const MAX_SUBMISSION_HISTORY = parseInt(process.env.MAX_SUBMISSION_HISTORY, 10) || 100;
 const BUCKET_NAME = process.env.MINIO_NAME || 'arquivos-alunos';
 
 async function initMinio() {
@@ -55,7 +55,7 @@ async function salvarRascunho(userId, activityId, exerciseId, code, session = nu
     return objectName;
 }
 
-// Lê rascunho isolado por exercício
+// Lê rascunho isolado por exercício e atividade da disciplina
 async function lerRascunho(userId, activityId, exerciseId, session = null) {
     if (isTestUser(userId, session)) return null;
     const uSafe = validarSegmentoCaminho(userId, 'userId');

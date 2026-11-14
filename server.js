@@ -96,13 +96,24 @@ async function start() {
             });
         });
 
-        process.on('SIGTERM', () => {
-            console.log('🛑 [SIGTERM] Sinal de término recebido do Kubernetes. Fechando conexões...');
+        const encerrarGraciosamente = async (sinal) => {
+            console.log(`🛑 [${sinal}] Sinal de término recebido. Limpando pool de workers e fechando conexões...`);
+            try {
+                if (typeof judgeService.encerrarPool === 'function') {
+                    await judgeService.encerrarPool();
+                }
+            } catch (err) {
+                console.warn('⚠️ Erro ao limpar pool no desligamento:', err.message);
+            }
             server.close(() => {
                 console.log('👋 Servidor encerrado com sucesso.');
                 process.exit(0);
             });
-        });
+            setTimeout(() => process.exit(0), 5000).unref();
+        };
+
+        process.on('SIGTERM', () => encerrarGraciosamente('SIGTERM'));
+        process.on('SIGINT', () => encerrarGraciosamente('SIGINT'));
 
     } catch (error) {
         console.error("❌ FALHA CRÍTICA AO INICIAR O SISTEMA:");

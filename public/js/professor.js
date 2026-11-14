@@ -63,6 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCopiarPromptListaIA = document.getElementById('btnCopiarPromptListaIA');
     const btnConfirmarImportarListaIA = document.getElementById('btnConfirmarImportarListaIA');
     const inputImportarListaIATitulo = document.getElementById('inputImportarListaIATitulo');
+    const inputImportarListaIAQtd = document.getElementById('inputImportarListaIAQtd');
+    const inputImportarListaIAAssunto = document.getElementById('inputImportarListaIAAssunto');
     const txtImportarListaJSON = document.getElementById('txtImportarListaJSON');
 
     const btnToggleImportarTestesIA = document.getElementById('btnToggleImportarTestesIA');
@@ -168,6 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let totalExerciciosAtividade = 0;
     let idExercicioParaExcluir = null;
     let maxExecutionTimeLimitMs = 120000;
+    let maxSubmissionHistory = 100;
 
     function formatarTextoTempoMaximo(ms) {
         if (!ms) return '';
@@ -486,6 +489,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     inputTempoEl.max = maxExecutionTimeLimitMs;
                 }
             }
+            if (data.maxSubmissionHistory) {
+                maxSubmissionHistory = data.maxSubmissionHistory;
+            }
 
             window.todosMeusExerciciosCache = data.meusExercicios || [];
             window.minhasListasCache = data.minhasListas || [];
@@ -754,9 +760,9 @@ document.addEventListener('DOMContentLoaded', () => {
             div.className = 'list-group-item list-group-item-action border-0 border-bottom d-flex justify-content-between align-items-center py-3';
 
             div.innerHTML = `
-                <div class="custom-control custom-radio mr-2" style="overflow: visible; padding-left: 1.85rem; margin-left: 4px;">
+                <div class="custom-control custom-radio mr-2 d-inline-flex align-items-center">
                     <input type="radio" id="lista_${listIdSafe}" name="listaSelecionada" class="custom-control-input" value="${listIdSafe}" ${isVinculada ? 'checked' : ''}>
-                    <label class="custom-control-label font-weight-bold" for="lista_${listIdSafe}">
+                    <label class="custom-control-label font-weight-bold d-inline-flex align-items-center flex-wrap" for="lista_${listIdSafe}">
                         <span style="font-size: 1.02rem;">${escapeHtml(lista.title)}</span>
                         <span class="badge badge-light border text-muted ml-2">${lista.exercises ? lista.exercises.length : 0} exercícios</span>
                         ${isVinculada ? '<span class="badge badge-success ml-2 font-weight-bold"><i class="fas fa-check-circle mr-1"></i>Ativa</span>' : ''}
@@ -1722,11 +1728,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let instrucaoTestesBase = '';
         if (testesBase.length > 0) {
             secaoTestesBase = `\nCasos de Teste Base (adicionados pelo professor como exemplo de entrada e saída):\n${JSON.stringify(testesBase, null, 2)}\n`;
-            instrucaoTestesBase = `\n5. Utilize os Casos de Teste Base fornecidos acima como referência obrigatória para o padrão de formatação de entrada e saída esperada, mantendo-os como os primeiros casos do array JSON.`;
+            instrucaoTestesBase = `\n6. Utilize os Casos de Teste Base fornecidos acima como referência obrigatória para o padrão de formatação de entrada e saída esperada, mantendo-os como os primeiros casos do array JSON.`;
         }
 
         const texto = `Você é um assistente especialista em criação de casos de teste para programação competitiva e juízes online (CodeCheck).
-Gere exatamente 50 casos de teste rigorosos (cobrindo entradas normais, casos extremos/edge cases, limites e valores inesperados) exclusivamente para o seguinte exercício de programação:
+Gere exatamente 50 casos de teste rigorosos (cobrindo entradas normais, casos extremos/edge cases, limites e valores inesperados) exclusivamente para o seguinte exercício de programação em linguagem C:
 
 Título do Exercício:
 ${titulo}
@@ -1736,15 +1742,16 @@ ${desc}
 ${secaoTestesBase}
 IMPORTANTE:
 1. Gere exatamente 50 casos de teste no total.
-2. Retorne APENAS um array JSON no formato abaixo, sem nenhum texto explicativo antes ou depois:
+2. ARREDONDAMENTO E PRECISÃO DECIMAL: Em exercícios que envolvam cálculos com números decimais, EVITE entradas que gerem resultados no limiar dúbio de arredondamento (como valores terminados em .xx5, .99, dízimas periódicas ou aproximações em que imprecisões de ponto flutuante na linguagem C possam divergir por centésimos do gabarito, ex.: 99.99 vs 100.00). Escolha entradas cujos cálculos produzam valores matematicamente limpos e determinísticos, garantindo que o código compilado em C gere exatamente a mesma saída cadastrada.
+3. Retorne APENAS um array JSON no formato abaixo, sem nenhum texto explicativo antes ou depois:
 [
   {
     "entrada": "...",
     "saida": "..."
   }
 ]
-3. A separação de múltiplos valores de entrada ou linhas deve ser feita por quebra de linha (\\n).
-4. Não adicione textos nem explicações fora do array JSON.${instrucaoTestesBase}`;
+4. A separação de múltiplos valores de entrada ou linhas deve ser feita por quebra de linha (\\n).
+5. Não adicione textos nem explicações fora do array JSON.${instrucaoTestesBase}`;
 
         return {
             texto,
@@ -1753,27 +1760,53 @@ IMPORTANTE:
     }
 
     function gerarPromptListaIA() {
-        const nomeLista = document.getElementById('inputImportarListaIATitulo')?.value.trim();
-        const tema = nomeLista || "[Defina o tema ou nome da lista]";
+        const nomeLista = inputImportarListaIATitulo?.value.trim();
+        const assuntoLista = inputImportarListaIAAssunto?.value.trim();
+        const qtdBruta = parseInt(inputImportarListaIAQtd?.value, 10);
 
-        return `Você é um professor universitário e criador de questões de programação para juiz online (CodeCheck).
-Crie uma lista de exercícios de programação para a disciplina.
+        if (!nomeLista) {
+            mostrarToast("Informe o Título / Nome da Lista antes de copiar o prompt.", "warning");
+            inputImportarListaIATitulo?.focus();
+            return null;
+        }
+
+        if (isNaN(qtdBruta) || qtdBruta < 1 || qtdBruta > 20) {
+            mostrarToast("Informe uma quantidade válida de exercícios (entre 1 e 20) antes de copiar o prompt.", "warning");
+            inputImportarListaIAQtd?.focus();
+            return null;
+        }
+
+        if (!assuntoLista) {
+            mostrarToast("Informe o Assunto / Conteúdo da Lista antes de copiar o prompt.", "warning");
+            inputImportarListaIAAssunto?.focus();
+            return null;
+        }
+
+        const qtdExercicios = qtdBruta;
+
+        return `Você é um professor universitário e criador de questões de programação em linguagem C para juiz online (CodeCheck).
+Crie uma lista de exercícios de programação para a disciplina seguindo rigorosamente as especificações abaixo.
 
 Instruções da Lista:
-- Tema ou Nome da Lista: ${tema}
-- Quantidade de Exercícios: [Defina a quantidade de exercícios desejada]
-- Quantidade de Testes por Exercício: padrão de exatamente 50 casos de teste por exercício.
-- Dificuldade: Progressiva.
+- Título da Lista: ${nomeLista}
+- Assunto / Conteúdo e Diretrizes Pedagógicas: ${assuntoLista}
+- Quantidade de Exercícios: exatamente ${qtdExercicios} ${qtdExercicios === 1 ? 'exercício' : 'exercícios'}.
+- Quantidade de Testes por Exercício: exatamente 20 casos de teste por exercício.
+- Dificuldade: Progressiva e compatível com o assunto solicitado.
 
 Para CADA exercício, forneça:
-1. Título do exercício
-2. Descrição detalhada da atividade (especificando claramente o formato da entrada e da saída esperada)
-3. Exatamente 50 casos de teste rigorosos (cobrindo entradas normais, casos extremos e limites)
+1. Título claro e objetivo do exercício.
+2. Descrição detalhada da atividade (contextualizando o problema e especificando claramente o formato exato de leitura na entrada padrão stdin e de impressão na saída padrão stdout, sem exigir mensagens de prompt como "Digite um numero:").
+3. Exatamente 20 casos de teste rigorosos (cobrindo entradas normais, casos extremos e limites).
+
+REGRAS DE PRECISÃO E FORMATAÇÃO DOS TESTES:
+- As entradas ("entrada") devem conter APENAS os valores literais que serão lidos pelo scanf/fgets (separados por \\n), sem nomes de variáveis nem textos explicativos.
+- Em exercícios que envolvam cálculos com números decimais, EVITE entradas que gerem resultados no limiar dúbio de arredondamento (como valores terminados em .xx5, .99, dízimas periódicas ou aproximações em que imprecisões de ponto flutuante na linguagem C possam divergir por centésimos do gabarito, ex.: 99.99 vs 100.00). Escolha entradas cujos cálculos produzam valores matematicamente limpos e determinísticos, garantindo que um programa padrão em C compilado com GCC gere exatamente a mesma saída cadastrada no teste.
 
 IMPORTANTE:
-Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou depois:
+Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional antes ou depois:
 {
-  "titulo": "${nomeLista || "Nome da Lista"}",
+  "titulo": "${nomeLista}",
   "exercicios": [
     {
       "titulo": "Título do Exercício 1",
@@ -1913,6 +1946,8 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
                 if (window.$) $('#modalImportarListaIA').modal('hide');
                 if (txtImportarListaJSON) txtImportarListaJSON.value = '';
                 if (inputImportarListaIATitulo) inputImportarListaIATitulo.value = '';
+                if (inputImportarListaIAAssunto) inputImportarListaIAAssunto.value = '';
+                if (inputImportarListaIAQtd) inputImportarListaIAQtd.value = '5';
 
                 mostrarToast(`Lista "${data.lista.title}" criada com sucesso com ${data.totalExercicios} exercícios!`, "success");
 
@@ -1993,7 +2028,10 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
 
     if (btnCopiarPromptListaIA) {
         btnCopiarPromptListaIA.onclick = () => {
-            copiarParaAreaTransferencia(gerarPromptListaIA(), "Prompt para criar lista copiado!");
+            const promptGerado = gerarPromptListaIA();
+            if (promptGerado) {
+                copiarParaAreaTransferencia(promptGerado, "Prompt personalizado da lista copiado com sucesso!");
+            }
         };
     }
 
@@ -2019,6 +2057,8 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
         $('#modalImportarListaIA').on('hidden.bs.modal', () => {
             if (txtImportarListaJSON) txtImportarListaJSON.value = '';
             if (inputImportarListaIATitulo) inputImportarListaIATitulo.value = '';
+            if (inputImportarListaIAAssunto) inputImportarListaIAAssunto.value = '';
+            if (inputImportarListaIAQtd) inputImportarListaIAQtd.value = '5';
         });
     }
 
@@ -2766,7 +2806,7 @@ Retorne APENAS um JSON no formato abaixo, sem nenhum texto adicional antes ou de
             todasSubmissoesEx = [...acertosEx, ...errosEx];
         }
         todasSubmissoesEx.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        const enviosEx = todasSubmissoesEx.slice(0, 10);
+        const enviosEx = todasSubmissoesEx.slice(0, maxSubmissionHistory);
 
         const tbodySubmissoes = document.getElementById('tbody-modal-submissoes');
         if (tbodySubmissoes) {

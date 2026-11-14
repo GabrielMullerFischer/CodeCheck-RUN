@@ -545,5 +545,6 @@ module.exports = {
     liberarTravaUsuario,
     processarResultadoSandbox,
     inicializarPool: warmPoolService.inicializarPool,
+    encerrarPool: warmPoolService.encerrarPool,
     obterStatusPool: warmPoolService.obterStatusPool
 };

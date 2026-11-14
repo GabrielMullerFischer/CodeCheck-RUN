@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const ActivityConfigSchema = new mongoose.Schema({
     activityId: { type: String, required: true, unique: true },
+    rawActivityId: { type: String, default: null },
+    courseId: { type: String, default: null, index: true },
     listId: { type: mongoose.Schema.Types.ObjectId, ref: 'ExerciseList' },
     isEvaluative: { type: Boolean, default: false },
     maxAttempts: { type: Number, default: 3 },

@@ -49,6 +49,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let modalConfirmandoAtivo = false;
 
     const rascunhosSessao = {};
+    let timerSalvarLocal = null;
+    let timerSalvarServidor = null;
+    let temAlteracaoPendenteServidor = false;
+    const JANELA_SALVAR_LOCAL_MS = 1000;       // 1 segundo de janela para salvar no cache local (localStorage) sem perder nada
+    const INTERVALO_SALVAR_SERVIDOR_MS = 30000; // 30 segundos enquanto digita para sincronizar rascunho com o servidor
     let listaExercicios = [];
     let indiceAtual = -1;
     let mapaStatusQuestoes = {};
@@ -186,6 +191,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         atualizarEstadoBotaoCompilar();
         atualizarEstadoBotaoTesteCustom();
+
+        if (!bloquearEventoChange && indiceAtual !== -1 && listaExercicios[indiceAtual] && indiceSubmissaoAtiva === -1) {
+            const exAtual = listaExercicios[indiceAtual];
+            atualizarStatusAutoSave('local');
+            dispararCicloAutoSave(exAtual._id, editorCM.getValue());
+        }
     });
 
     if (customInputStdin) {
@@ -233,6 +244,117 @@ document.addEventListener('DOMContentLoaded', async () => {
             editorCM.setCursor({ line: 3, ch: 4 });
             editorCM.focus();
         }, 50);
+    }
+
+    let timerStatusAutoSave = null;
+    function atualizarStatusAutoSave(tipo) {
+        const el = document.getElementById('statusAutoSave');
+        if (!el) return;
+        if (timerStatusAutoSave) clearTimeout(timerStatusAutoSave);
+
+        if (tipo === 'salvando') {
+            el.innerHTML = '<i class="fas fa-spinner fa-spin text-muted" style="font-size: 0.9rem;"></i>';
+            el.setAttribute('title', 'Salvando na nuvem...');
+            el.style.opacity = '0.7';
+        } else if (tipo === 'servidor') {
+            el.innerHTML = '<i class="fas fa-cloud-upload-alt text-success"></i>';
+            el.setAttribute('title', 'Salvo na nuvem');
+            el.style.opacity = '1';
+        } else if (tipo === 'local' || tipo === 'pendente') {
+            el.innerHTML = '<i class="fas fa-cloud-upload-alt text-muted"></i>';
+            el.setAttribute('title', 'Não sincronizado à nuvem');
+            el.style.opacity = '1';
+        } else if (tipo === 'limpar') {
+            el.innerHTML = '<i class="fas fa-cloud-upload-alt text-muted"></i>';
+            el.setAttribute('title', 'Não sincronizado à nuvem');
+            el.style.opacity = '0.6';
+        }
+    }
+
+    function obterChaveLocalStorage(exerciseId) {
+        const act = activityId || 'preview';
+        return `codecheck_draft_${act}_${exerciseId}`;
+    }
+
+    function salvarRascunhoLocalImediato(exerciseId, codigo) {
+        if (!exerciseId) return;
+        rascunhosSessao[exerciseId] = codigo;
+        try {
+            const payload = JSON.stringify({
+                code: codigo,
+                updatedAt: Date.now()
+            });
+            localStorage.setItem(obterChaveLocalStorage(exerciseId), payload);
+            atualizarStatusAutoSave('local');
+        } catch (e) {
+            console.warn("Não foi possível salvar rascunho no localStorage:", e);
+        }
+    }
+
+    async function salvarRascunhoNoServidor(exerciseId, codigo) {
+        if (!exerciseId || indiceSubmissaoAtiva !== -1) return;
+        try {
+            atualizarStatusAutoSave('salvando');
+            const url = '/judge/save-draft' + (ltiToken ? `?ltik=${ltiToken}` : '');
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    exerciseId,
+                    code: codigo,
+                    activityId: activityId || 'preview'
+                })
+            });
+            if (res.ok) {
+                temAlteracaoPendenteServidor = false;
+                atualizarStatusAutoSave('servidor');
+            } else {
+                atualizarStatusAutoSave('local');
+            }
+        } catch (e) {
+            console.warn("Erro ao sincronizar rascunho com o servidor:", e);
+            atualizarStatusAutoSave('local');
+        }
+    }
+
+    function dispararCicloAutoSave(exerciseId, codigo) {
+        if (!exerciseId || indiceSubmissaoAtiva !== -1 || timerBloqueado) return;
+
+        // 1) Janela de 1 segundo: salva no cache local (localStorage) para não perder nada
+        if (timerSalvarLocal) clearTimeout(timerSalvarLocal);
+        timerSalvarLocal = setTimeout(() => {
+            timerSalvarLocal = null;
+            salvarRascunhoLocalImediato(exerciseId, codigo);
+        }, JANELA_SALVAR_LOCAL_MS);
+
+        // 2) Ciclo de 30 segundos: salva no servidor/MinIO. Quando dispara, se digitar novamente, inicia novo ciclo de 30s
+        temAlteracaoPendenteServidor = true;
+        if (!timerSalvarServidor) {
+            timerSalvarServidor = setTimeout(async () => {
+                timerSalvarServidor = null;
+                if (temAlteracaoPendenteServidor) {
+                    const codigoAtual = editorCM ? editorCM.getValue() : codigo;
+                    await salvarRascunhoNoServidor(exerciseId, codigoAtual);
+                }
+            }, INTERVALO_SALVAR_SERVIDOR_MS);
+        }
+    }
+
+    function flushAutoSave(exerciseId, codigo) {
+        if (!exerciseId) return;
+        if (timerSalvarLocal) {
+            clearTimeout(timerSalvarLocal);
+            timerSalvarLocal = null;
+        }
+        salvarRascunhoLocalImediato(exerciseId, codigo);
+
+        if (timerSalvarServidor) {
+            clearTimeout(timerSalvarServidor);
+            timerSalvarServidor = null;
+        }
+        if (temAlteracaoPendenteServidor && indiceSubmissaoAtiva === -1) {
+            salvarRascunhoNoServidor(exerciseId, codigo);
+        }
     }
 
     function destacarLinhaNoEditor(numeroLinha) {
@@ -717,8 +839,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        const elStatusAutoSave = document.getElementById('statusAutoSave');
         if (total === 0) {
             navHistoricoSubmissoes.style.display = 'none';
+            if (elStatusAutoSave) elStatusAutoSave.style.display = 'inline-flex';
             editorCM.setOption('readOnly', false);
             if (btnRestaurarCodigo) {
                 btnRestaurarCodigo.innerHTML = '<i class="fas fa-undo-alt mr-1"></i> Restaurar main()';
@@ -732,6 +856,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         navHistoricoSubmissoes.style.display = 'inline-flex';
 
         if (indiceSubmissaoAtiva === -1) {
+            if (elStatusAutoSave) elStatusAutoSave.style.display = 'inline-flex';
             editorCM.setOption('readOnly', false);
 
             labelHistoricoSub.innerHTML = '<span class="text-dark"><i class="fas fa-pencil-alt mr-1 text-primary"></i> Rascunho Atual</span>';
@@ -746,6 +871,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 btnRestaurarCodigo.title = 'Voltar ao código padrão inicial';
             }
         } else {
+            if (elStatusAutoSave) elStatusAutoSave.style.display = 'none';
             editorCM.setOption('readOnly', true);
 
             const sub = listaSubmissoesMeta[indiceSubmissaoAtiva];
@@ -1100,15 +1226,70 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        // 1. Tenta carregar do cache local (localStorage) imediatamente
+        let rascunhoLocal = null;
+        try {
+            const raw = localStorage.getItem(obterChaveLocalStorage(exerciseId));
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed.code === 'string') {
+                        rascunhoLocal = parsed.code;
+                    } else {
+                        rascunhoLocal = raw;
+                    }
+                } catch {
+                    rascunhoLocal = raw;
+                }
+            }
+        } catch (e) {
+            console.warn("Erro ao ler rascunho do localStorage:", e);
+        }
+
+        if (rascunhoLocal !== null) {
+            setCodigoNoEditor(rascunhoLocal);
+            rascunhosSessao[exerciseId] = rascunhoLocal;
+            atualizarStatusAutoSave('local');
+        }
+
+        // 2. Sincroniza com o servidor MinIO
         try {
             const res = await fetch(`/judge/get-draft?activityId=${activityId || 'preview'}&exerciseId=${exerciseId}` + (ltiToken ? `&ltik=${ltiToken}` : ''));
             const data = await res.json();
-            const codigoCarregado = data.code || MODELO_PADRAO;
-            setCodigoNoEditor(codigoCarregado);
-            rascunhosSessao[exerciseId] = codigoCarregado;
+            const codigoServidor = data.code;
+
+            if (rascunhoLocal === null) {
+                const codigoCarregado = codigoServidor || MODELO_PADRAO;
+                setCodigoNoEditor(codigoCarregado);
+                rascunhosSessao[exerciseId] = codigoCarregado;
+                salvarRascunhoLocalImediato(exerciseId, codigoCarregado);
+                if (codigoServidor) {
+                    atualizarStatusAutoSave('servidor');
+                } else {
+                    atualizarStatusAutoSave('local');
+                }
+            } else if (codigoServidor && codigoServidor !== rascunhoLocal) {
+                // Se no cache local tiver apenas o modelo padrão ou em branco, e no servidor houver código real
+                if (!rascunhoLocal.trim() || rascunhoLocal === MODELO_PADRAO) {
+                    setCodigoNoEditor(codigoServidor);
+                    rascunhosSessao[exerciseId] = codigoServidor;
+                    salvarRascunhoLocalImediato(exerciseId, codigoServidor);
+                    atualizarStatusAutoSave('servidor');
+                } else {
+                    atualizarStatusAutoSave('local');
+                }
+            } else if (codigoServidor && codigoServidor === rascunhoLocal) {
+                atualizarStatusAutoSave('servidor');
+            } else {
+                atualizarStatusAutoSave('local');
+            }
         } catch {
-            setCodigoNoEditor(MODELO_PADRAO);
-            rascunhosSessao[exerciseId] = MODELO_PADRAO;
+            if (rascunhoLocal === null) {
+                setCodigoNoEditor(MODELO_PADRAO);
+                rascunhosSessao[exerciseId] = MODELO_PADRAO;
+                salvarRascunhoLocalImediato(exerciseId, MODELO_PADRAO);
+            }
+            atualizarStatusAutoSave('local');
         }
     }
 
@@ -1122,7 +1303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await res.json();
 
             if (res.ok && data.success && data.submissoes && data.submissoes.length > 0) {
-                listaSubmissoesMeta = data.submissoes.slice(-10);
+                listaSubmissoesMeta = data.submissoes;
                 navHistoricoSubmissoes.style.display = 'inline-flex';
                 atualizarBotoesHistorico();
 
@@ -1179,7 +1360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!exAtual || listaSubmissoesMeta.length === 0) return;
 
             if (indiceSubmissaoAtiva === -1) {
-                rascunhosSessao[exAtual._id] = editorCM.getValue();
+                flushAutoSave(exAtual._id, editorCM.getValue());
                 indiceSubmissaoAtiva = listaSubmissoesMeta.length - 1;
             } else if (indiceSubmissaoAtiva > 0) {
                 indiceSubmissaoAtiva--;
@@ -1221,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (indiceAtual !== -1 && listaExercicios[indiceAtual] && indiceSubmissaoAtiva === -1) {
             const exAnteriorId = listaExercicios[indiceAtual]._id;
-            rascunhosSessao[exAnteriorId] = editorCM.getValue();
+            flushAutoSave(exAnteriorId, editorCM.getValue());
         }
 
         indiceAtual = index;
@@ -1298,6 +1479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultDiv.innerHTML = '';
         if (resultTesteCustom) resultTesteCustom.innerHTML = '';
         removerDestaqueErro();
+        atualizarStatusAutoSave('limpar');
 
         await carregarRascunho(ex._id);
         await carregarHistoricoSubmissoesExercicio(ex._id);
@@ -1437,6 +1619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!exercicioAtual) return;
 
             rascunhosSessao[exercicioAtual._id] = code;
+            flushAutoSave(exercicioAtual._id, code);
 
             resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="fas fa-spinner fa-spin mr-2"></i> Validando...</div>';
             btnSubmit.disabled = true;
@@ -1512,13 +1695,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 if (!confirmar) return;
 
-                rascunhosSessao[exercicioAtual._id] = editorCM.getValue();
+                const codigoSubmissao = editorCM.getValue();
+                rascunhosSessao[exercicioAtual._id] = codigoSubmissao;
                 indiceSubmissaoAtiva = -1;
                 atualizarBotoesHistorico();
                 atualizarEstadoBotaoCompilar();
                 atualizarEstadoBotaoTesteCustom();
                 removerDestaqueErro();
                 posicionarCursorAposAspas();
+                flushAutoSave(exercicioAtual._id, codigoSubmissao);
                 return;
             }
 
@@ -1537,6 +1722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             removerDestaqueErro();
             posicionarCursorAposAspas();
+            flushAutoSave(exercicioAtual._id, MODELO_PADRAO);
         };
     }
 
@@ -1545,6 +1731,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             atualizarRankingEStatus();
         });
     }
+
+    function salvarEstadoAoSair() {
+        if (indiceAtual !== -1 && listaExercicios[indiceAtual] && indiceSubmissaoAtiva === -1) {
+            const exId = listaExercicios[indiceAtual]._id;
+            const code = editorCM ? editorCM.getValue() : '';
+            if (exId) {
+                salvarRascunhoLocalImediato(exId, code);
+                if (temAlteracaoPendenteServidor && navigator.sendBeacon) {
+                    try {
+                        const url = '/judge/save-draft' + (ltiToken ? `?ltik=${ltiToken}` : '');
+                        const blob = new Blob([JSON.stringify({
+                            exerciseId: exId,
+                            code: code,
+                            activityId: activityId || 'preview'
+                        })], { type: 'application/json' });
+                        navigator.sendBeacon(url, blob);
+                    } catch (e) {
+                        console.warn("Erro ao enviar beacon de rascunho:", e);
+                    }
+                }
+            }
+        }
+    }
+
+    window.addEventListener('beforeunload', salvarEstadoAoSair);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            salvarEstadoAoSair();
+        }
+    });
 
     await checarTimerAtividade();
     if (!timerBloqueado) {

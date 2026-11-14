@@ -5,6 +5,7 @@ const ExerciseSchema = new mongoose.Schema({
     description: { type: String, required: true },
     authorId: { type: String, default: 'sistema' },
     authorName: { type: String, default: 'Professor' },
+    courseId: { type: String, default: null, index: true },
     isPublic: { type: Boolean, default: true },
     timeLimit: { type: Number, default: 5000 },
     isArchived: { type: Boolean, default: false },

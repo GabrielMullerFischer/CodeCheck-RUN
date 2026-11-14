@@ -74,9 +74,42 @@
         }
 
         .custom-control.custom-radio {
+            display: inline-flex;
+            align-items: center;
             padding-left: 1.85rem;
             margin-left: 4px;
+            min-height: 1.6rem;
             overflow: visible !important;
+        }
+
+        .custom-control.custom-radio .custom-control-label {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 0;
+            cursor: pointer;
+            line-height: 1.5;
+        }
+
+        .custom-control.custom-radio .custom-control-label::before,
+        .custom-control.custom-radio .custom-control-label::after {
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            width: 1.15rem !important;
+            height: 1.15rem !important;
+            left: -1.5rem !important;
+            border-radius: 50% !important;
+        }
+
+        .custom-control.custom-radio .custom-control-input:checked ~ .custom-control-label::before {
+            background-color: #007bff !important;
+            border-color: #007bff !important;
+        }
+
+        .custom-control.custom-radio .custom-control-input:checked ~ .custom-control-label::after {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3ccircle cx='8' cy='8' r='3.5' fill='%23ffffff'/%3e%3c/svg%3e") !important;
+            background-size: 100% 100% !important;
+            background-position: center center !important;
+            background-repeat: no-repeat !important;
         }
 
         .card-header-tabs .nav-link {
@@ -1065,41 +1098,57 @@
                         </button>
                     </div>
                     <div class="modal-body p-4">
-                        <div class="card border-0 mb-3" style="background-color: #f0f7ff; border-radius: 8px;">
+                        <div class="card border-0 mb-3" style="background-color: #f0f7ff; border-radius: 10px;">
                             <div class="card-body p-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <h6 class="font-weight-bold text-primary mb-0">
-                                        <i class="fas fa-magic mr-1"></i> Passo 1: Copie o Prompt Modelo
-                                    </h6>
+                                <h6 class="font-weight-bold text-primary mb-2">
+                                    <i class="fas fa-magic mr-1"></i> Passo 1: Configure os Dados e Copie o Prompt
+                                </h6>
+                                <p class="small text-muted mb-3">
+                                    Informe o título, a quantidade de questões e o assunto desejado para gerar o prompt já pronto para uso.
+                                </p>
+
+                                <div class="form-row">
+                                    <div class="form-group col-md-8 mb-2">
+                                        <label class="font-weight-bold text-dark small mb-1">
+                                            Título / Nome da Lista: <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="text" id="inputImportarListaIATitulo" class="form-control form-control-sm"
+                                            style="border-radius: 8px;" placeholder="Ex: Lista 01 - Estruturas Condicionais">
+                                    </div>
+                                    <div class="form-group col-md-4 mb-2">
+                                        <label class="font-weight-bold text-dark small mb-1">
+                                            Qtd. de Exercícios: <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="number" id="inputImportarListaIAQtd" class="form-control form-control-sm"
+                                            style="border-radius: 8px;" min="1" max="20" value="5">
+                                    </div>
+                                </div>
+
+                                <div class="form-group mb-3">
+                                    <label class="font-weight-bold text-dark small mb-1">
+                                        Assunto / Conteúdo da Lista: <span class="text-danger">*</span>
+                                    </label>
+                                    <textarea id="inputImportarListaIAAssunto" class="form-control form-control-sm" rows="2"
+                                        style="border-radius: 8px;"
+                                        placeholder="Descreva os tópicos e restrições (ex: Comandos if/else e switch-case em C, cálculos simples com inteiros, sem usar laços de repetição nem vetores)..."></textarea>
+                                </div>
+
+                                <div class="d-flex justify-content-end">
                                     <button type="button" class="btn btn-sm btn-primary px-3 font-weight-bold shadow-sm"
-                                        id="btnCopiarPromptListaIA">
-                                        <i class="fas fa-copy mr-1"></i> Copiar Prompt Modelo
+                                        id="btnCopiarPromptListaIA" style="border-radius: 8px;">
+                                        <i class="fas fa-copy mr-1"></i> Copiar Prompt Gerado
                                     </button>
                                 </div>
-                                <p class="small text-muted mb-0">
-                                    Copie o prompt modelo abaixo, ajuste o tema e a quantidade de exercícios como
-                                    desejar, e cole a resposta gerada no campo a seguir.
-                                </p>
                             </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="font-weight-bold text-dark">
-                                Nome da Lista: <span class="text-danger">*</span>
-                            </label>
-                            <input type="text" id="inputImportarListaIATitulo" class="form-control"
-                                style="border-radius: 8px;" placeholder="Digite o nome da lista...">
-                            <small class="form-text text-muted">Se você informar o nome antes de copiar o prompt, ele já
-                                será incluído no template.</small>
                         </div>
 
                         <div class="form-group mb-2">
                             <label class="font-weight-bold text-dark">
-                                Cole aqui a resposta do prompt: <span class="text-danger">*</span>
+                                <i class="fas fa-paste text-primary mr-1"></i> Passo 2: Cole aqui a resposta do prompt: <span class="text-danger">*</span>
                             </label>
-                            <textarea id="txtImportarListaJSON" class="form-control font-monospace" rows="9"
+                            <textarea id="txtImportarListaJSON" class="form-control font-monospace" rows="8"
                                 style="border-radius: 8px; font-size: 0.85rem;"
-                                placeholder='Cole aqui a resposta gerada a partir do prompt com a estrutura dos exercícios e casos de teste...'></textarea>
+                                placeholder='Cole aqui o JSON gerado a partir do prompt com a estrutura dos exercícios e casos de teste...'></textarea>
                         </div>
 
                         <div class="alert alert-light border small text-muted mb-0 p-2" style="border-radius: 8px;">
@@ -1661,7 +1710,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
-    <script src="/js/professor.js?v=20261105_1"></script>
+    <script src="/js/professor.js?v=20261114_1"></script>
 </body>
 
 </html>

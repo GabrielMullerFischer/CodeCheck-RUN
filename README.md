@@ -78,33 +78,24 @@ O script configura:
 
 O projeto possui dois fluxos de deploy automatizados, dependendo da topologia do seu cluster:
 
-### Opção A: Cluster Multi-Node (Recomendado para Produção)
-Para clusters com múltiplos nós (ex: nós computacionais `ubuntu00` a `ubuntu11`), onde a imagem precisa ser distribuída para qualquer nó do cluster via registry local:
+### Estratégias de Deploy Automatizado
 
-```bash
-chmod +x deploy-multinode.sh
-./deploy-multinode.sh
-```
+O deploy agora é unificado via script inteligente [deploy.sh](file:///home/ubuntu/CodeCheck-RUN/deploy.sh), que detecta automaticamente se o cluster possui múltiplos nós e se o registry local está disponível. Você também pode utilizar os atalhos dedicados:
 
-O que o `./deploy-multinode.sh` faz:
-* Cria e isola o namespace dedicado `codecheck`.
-* Constrói a imagem da aplicação e publica no Container Registry do cluster (`localhost:32000/codecheck-app:latest`).
-* Garante a distribuição da imagem base do compilador (`localhost:32000/gcc:latest`).
-* Sincroniza a Secret `codecheck-env` de forma sanitizada.
-* Aplica o manifesto unificado `k8s/codecheck.yaml` (Namespace, RBAC, ResourceQuota, NetworkPolicy, Deployment, Service NodePort e Ingress blueprint).
-* Executa o rollout com estratégia `Recreate` para nunca sobrepor limites de memória.
-
----
-
-### Opção B: Servidor Único Standalone (Single-Node)
-Para máquinas de desenvolvimento ou servidores com apenas um nó local MicroK8s:
-
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
-
-O script realiza o build da imagem, importa diretamente para o containerd local (`microk8s ctr image import`) e aplica o manifesto `codecheck.yaml` no namespace `default`.
+* **Modo Automático:**
+  ```bash
+  ./deploy.sh
+  ```
+* **Forçar Multi-Node (Cluster Distribuído):**
+  ```bash
+  ./deploy-multinode.sh
+  # ou: ./deploy.sh --multi-node
+  ```
+* **Forçar Single-Node (Nó Único Local):**
+  ```bash
+  ./deploy-single.sh
+  # ou: ./deploy.sh --single-node
+  ```
 
 ---
 

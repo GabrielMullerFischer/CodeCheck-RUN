@@ -4,6 +4,7 @@ const SubmissionSchema = new mongoose.Schema({
     userId: { type: String, required: true },
     userName: { type: String, default: 'Aluno' },
     activityId: { type: String, required: true },
+    courseId: { type: String, default: null, index: true },
     exerciseId: { type: String, required: true },
     codePath: { type: String, required: true },
     logPath: { type: String, default: null },

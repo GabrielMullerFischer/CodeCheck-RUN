@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const ActivityAttemptSchema = new mongoose.Schema({
     userId: { type: String, required: true },
     activityId: { type: String, required: true },
+    courseId: { type: String, default: null, index: true },
     startedAt: { type: Date, required: true },
     expiresAt: { type: Date, required: true }
 }, { timestamps: true });

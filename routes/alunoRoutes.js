@@ -21,8 +21,18 @@ function obterContextoAuth(req) {
         isProfessor,
         userId: auth.userId || null,
         userName: auth.userName || null,
-        activityId: auth.activityId ? String(auth.activityId) : ''
+        activityId: auth.activityId ? String(auth.activityId) : '',
+        rawActivityId: auth.rawActivityId ? String(auth.rawActivityId) : '',
+        courseId: auth.courseId ? String(auth.courseId) : ''
     };
+}
+
+function pertenceMesmaAtividade(candidateId, ctx) {
+    if (!candidateId || candidateId === 'preview') return true;
+    const cand = String(candidateId);
+    if (ctx.activityId && cand === String(ctx.activityId)) return true;
+    if (ctx.rawActivityId && cand === String(ctx.rawActivityId)) return true;
+    return false;
 }
 
 function ehObjectIdValido(id) {
@@ -179,7 +189,7 @@ router.post('/atividade/iniciar-timer', async (req, res) => {
     }
 
     const userId = ctx.userId;
-    const effectiveActivityId = ctx.activityId;
+    const effectiveActivityId = ctx.activityId || req.body.activityId;
 
     if (!effectiveActivityId || effectiveActivityId === 'preview') {
         return res.status(403).json({ success: false, error: "Atividade inválida." });
@@ -198,6 +208,7 @@ router.post('/atividade/iniciar-timer', async (req, res) => {
             attempt = await ActivityAttempt.create({
                 userId,
                 activityId: effectiveActivityId,
+                courseId: ctx.courseId || null,
                 startedAt,
                 expiresAt
             });
@@ -473,6 +484,7 @@ router.post('/submit', submitLimiter, async (req, res) => {
             userId,
             userName,
             activityId: effectiveActivityId,
+            courseId: ctx.courseId || null,
             exerciseId: idExercicioFinal,
             codePath: caminhoMinio,
             logPath: caminhoLog,
@@ -601,7 +613,7 @@ router.get('/aluno/submissoes', async (req, res) => {
         return res.json({ success: true, submissoes: [] });
     }
 
-    if (isProfessor && ctx.activityId && req.query.activityId && req.query.activityId !== 'preview' && String(req.query.activityId) !== String(ctx.activityId)) {
+    if (isProfessor && ctx.activityId && req.query.activityId && !pertenceMesmaAtividade(req.query.activityId, ctx)) {
         return res.status(403).json({ success: false, error: "Sem permissão para consultar submissões de outra atividade." });
     }
 
@@ -633,7 +645,7 @@ router.get('/aluno/submissoes', async (req, res) => {
             exerciseId
         })
             .sort({ createdAt: -1 })
-            .limit(minioService.MAX_SUBMISSION_HISTORY || 10)
+            .limit(minioService.MAX_SUBMISSION_HISTORY || 100)
             .select('_id status isAccepted executionTime percentage createdAt codePath logPath')
             .lean();
 
@@ -668,10 +680,10 @@ router.get('/aluno/submissao-codigo', async (req, res) => {
             if (String(sub.userId) !== String(ctx.userId)) {
                 return res.status(403).json({ error: "Não autorizado a acessar esta submissão." });
             }
-            if (ctx.activityId && String(sub.activityId) !== String(ctx.activityId)) {
+            if (ctx.activityId && !pertenceMesmaAtividade(sub.activityId, ctx)) {
                 return res.status(403).json({ error: "Submissão pertencente a outra atividade." });
             }
-        } else if (ctx.activityId && String(sub.activityId) !== String(ctx.activityId)) {
+        } else if (ctx.activityId && !pertenceMesmaAtividade(sub.activityId, ctx)) {
             return res.status(403).json({ error: "Não autorizado a acessar submissões de outra atividade." });
         }
 
@@ -733,7 +745,7 @@ router.get('/get-draft', async (req, res) => {
     }
 
     const userId = ctx.userId;
-    const effectiveActivityId = ctx.activityId;
+    const effectiveActivityId = ctx.activityId || req.body.activityId;
 
     if (!effectiveActivityId || effectiveActivityId === 'preview' || !exerciseId || !ehObjectIdValido(String(exerciseId))) {
         return res.status(400).json({ error: "Dados ausentes ou inválidos." });
@@ -753,6 +765,42 @@ router.get('/get-draft', async (req, res) => {
     }
 });
 
+// Salvamento periódico / em segundo plano de rascunho no MinIO
+router.post('/save-draft', async (req, res) => {
+    const { exerciseId, code } = req.body;
+    const ctx = obterContextoAuth(req);
+    const isProfessor = ctx.isProfessor;
+
+    if (isProfessor) {
+        return res.json({ success: true, draftSaved: false });
+    }
+
+    if (!ctx.userId) {
+        return res.status(401).json({ error: "Não autorizado: faça login pelo Moodle." });
+    }
+
+    const userId = ctx.userId;
+    const effectiveActivityId = ctx.activityId || req.body.activityId;
+
+    if (!effectiveActivityId || effectiveActivityId === 'preview' || !exerciseId || !ehObjectIdValido(String(exerciseId))) {
+        return res.status(400).json({ error: "Dados ausentes ou inválidos." });
+    }
+
+    try {
+        const configAtividade = await ActivityConfig.findOne({ activityId: effectiveActivityId }).populate('listId').lean();
+        const idsPermitidos = (configAtividade?.listId?.exercises || []).map(id => String(id._id || id));
+        if (!idsPermitidos.includes(String(exerciseId))) {
+            return res.status(403).json({ error: "Este exercício não pertence à atividade atual." });
+        }
+
+        await minioService.salvarRascunho(userId, effectiveActivityId, exerciseId, code || '', ctx.auth);
+        res.json({ success: true, draftSaved: true });
+    } catch (e) {
+        console.error("Erro ao salvar rascunho no MinIO:", e);
+        res.status(500).json({ error: "Erro interno ao salvar rascunho." });
+    }
+});
+
 router.get('/ranking', async (req, res) => {
     const { exerciseId } = req.query;
     const ctx = obterContextoAuth(req);
@@ -762,7 +810,7 @@ router.get('/ranking', async (req, res) => {
         return res.status(401).json({ success: false, error: "Não autorizado: faça login pelo Moodle." });
     }
 
-    if (isProfessorReal && ctx.activityId && req.query.activityId && req.query.activityId !== 'preview' && String(req.query.activityId) !== String(ctx.activityId)) {
+    if (isProfessorReal && ctx.activityId && req.query.activityId && !pertenceMesmaAtividade(req.query.activityId, ctx)) {
         return res.status(403).json({ success: false, error: "Sem permissão para consultar ranking de outra atividade." });
     }
 

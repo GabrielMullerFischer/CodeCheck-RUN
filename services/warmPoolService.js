@@ -2,10 +2,9 @@ const { k8sApi, k8sNetworkingApi, k8sExec, namespace } = require('../config/kube
 const stream = require('stream');
 const zlib = require('zlib');
 
-const MIN_WARM_PODS = parseInt(process.env.K8S_MIN_WARM_PODS, 10) || 0; // 0: se ninguém usar por 24h, desliga e fica 0 pods
+const MIN_WARM_PODS = parseInt(process.env.K8S_MIN_WARM_PODS, 10) || 1; // 1 pod base sempre pronto e ativo
 const MAX_WARM_PODS = parseInt(process.env.MAX_CONCURRENT_COMPILATIONS, 10) || 6;
 const IDLE_TIMEOUT_MS = parseInt(process.env.K8S_POD_IDLE_TIMEOUT_MS, 10) || (5 * 60 * 1000); // 5 minutos para pods extras
-const BASE_POD_MAX_IDLE_MS = parseInt(process.env.K8S_BASE_POD_MAX_IDLE_MS, 10) || (24 * 60 * 60 * 1000); // 24 horas de ociosidade total para o pod principal
 const TARGET_NS = process.env.K8S_NAMESPACE || namespace || 'default';
 
 const RUNNER_C = `
@@ -86,8 +85,34 @@ const podMap = new Map();
 const filaEsperaExecucao = [];
 let loopManutencao = null;
 let inicializando = false;
+let cachedOwnerReference = null;
+const ORPHAN_TIMEOUT_SEC = parseInt(process.env.K8S_ORPHAN_TIMEOUT_SEC, 10) || (15 * 60); // 15 minutos sem sinal da aplicação principal = auto-desligamento
 
-function gerarManifestoWarmPod(podName) {
+async function obterOwnerRefAppPod() {
+    if (cachedOwnerReference !== null) return cachedOwnerReference || undefined;
+    const hostname = process.env.HOSTNAME || '';
+    if (!process.env.KUBERNETES_SERVICE_HOST || !hostname.startsWith('codecheck-app')) {
+        cachedOwnerReference = false;
+        return undefined;
+    }
+    try {
+        const podStatus = await apiReadPodStatus(hostname);
+        if (podStatus && podStatus.metadata && podStatus.metadata.uid) {
+            cachedOwnerReference = [{
+                apiVersion: 'v1',
+                kind: 'Pod',
+                name: podStatus.metadata.name || hostname,
+                uid: podStatus.metadata.uid,
+                blockOwnerDeletion: false
+            }];
+            return cachedOwnerReference;
+        }
+    } catch { }
+    cachedOwnerReference = false;
+    return undefined;
+}
+
+function gerarManifestoWarmPod(podName, ownerReferences = undefined) {
     const cpuReq = process.env.K8S_CPU_REQUEST || '1000m';
     const cpuLim = process.env.K8S_CPU_LIMIT || '1000m';
     const memReq = process.env.K8S_MEMORY_REQUEST || '512Mi';
@@ -96,7 +121,9 @@ function gerarManifestoWarmPod(podName) {
 
     // Script de inicialização do contêiner:
     // Compila o runner.c uma única vez para /usr/local/bin/runner,
-    // sinaliza prontidão em /tmp/runner_ready e entra em sleep infinity.
+    // sinaliza prontidão em /tmp/runner_ready e mantém vigília de heartbeat (Dead-Man's Switch):
+    // Se a aplicação principal morrer e nunca mais voltar (sem atualizar /tmp/app_heartbeat por ORPHAN_TIMEOUT_SEC),
+    // o próprio contêiner se encerra sozinho (exit 0 com restartPolicy: Never).
     const startupScript = `#!/usr/bin/env bash
 mkdir -p /tmp/runner_build && cd /tmp/runner_build
 echo "${B64_RUNNER}" | base64 -d > runner.c
@@ -104,8 +131,16 @@ gcc -O2 runner.c -o /usr/local/bin/runner
 chmod 555 /usr/local/bin/runner
 cd / && rm -rf /tmp/runner_build
 mkdir -p /sandbox && chmod 711 /sandbox
-touch /tmp/runner_v4_ready /tmp/runner_ready
-exec sleep infinity
+touch /tmp/runner_v4_ready /tmp/runner_ready /tmp/app_heartbeat
+while true; do
+    sleep 30
+    NOW=$(date +%s)
+    LAST=$(stat -c %Y /tmp/app_heartbeat 2>/dev/null || echo $NOW)
+    if [ $((NOW - LAST)) -gt ${ORPHAN_TIMEOUT_SEC} ]; then
+        echo "[OrphanGuard] Aplicacao principal ausente ha mais de ${ORPHAN_TIMEOUT_SEC}s. Encerrando pod orfao..."
+        exit 0
+    fi
+done
 `;
     const b64Startup = Buffer.from(startupScript, 'utf-8').toString('base64');
 
@@ -118,10 +153,11 @@ exec sleep infinity
             labels: {
                 app: 'codecheck-worker',
                 role: 'judge-sandbox'
-            }
+            },
+            ...(ownerReferences ? { ownerReferences } : {})
         },
         spec: {
-            restartPolicy: 'Always',
+            restartPolicy: 'Never',
             automountServiceAccountToken: false,
             ...(process.env.K8S_WORKER_NODE ? {
                 nodeSelector: {
@@ -300,24 +336,16 @@ function programarDesalocacaoSeExtra(entry) {
         entry.idleTimer = null;
     }
 
-    // 1. Pods extras (> 1): morrem após 5 minutos de ociosidade
-    if (podMap.size > 1) {
+    // Apenas pods extras (> MIN_WARM_PODS) são desalocados por ociosidade (após 5 minutos).
+    // O pod principal mantido pelo pool nunca morre por ociosidade, ficando sempre pronto.
+    if (podMap.size > MIN_WARM_PODS) {
         entry.idleTimer = setTimeout(async () => {
-            if (entry.status === 'idle' && podMap.size > 1) {
+            if (entry.status === 'idle' && podMap.size > MIN_WARM_PODS) {
                 console.log(`[WarmPool] Pod extra ${entry.name} permaneceu ocioso por ${IDLE_TIMEOUT_MS / 60000} minutos. Desalocando...`);
                 await destruirPod(entry.name, 'timeout_ocioso_5min');
             }
         }, IDLE_TIMEOUT_MS);
-        return;
     }
-
-    // 2. Pod principal (único): se ninguém compilar nele por 24 horas consecutivas, desliga e fica em 0 pods!
-    entry.idleTimer = setTimeout(async () => {
-        if (entry.status === 'idle') {
-            console.log(`[WarmPool] Nenhuma compilação ocorreu nas últimas 24h. Desalocando pod principal ${entry.name}. Pool em repouso (0 pods).`);
-            await destruirPod(entry.name, 'sem_uso_24h');
-        }
-    }, BASE_POD_MAX_IDLE_MS);
 }
 
 async function adquirirPod() {
@@ -334,12 +362,10 @@ async function adquirirPod() {
         }
     }
 
-    // 2. Se o pool estiver vazio (0 pods após 24h desligado) ou todos ocupados:
-    // Sobe um novo pod sob demanda instantaneamente a hora que alguém compilar!
+    // 2. Se todos os pods estiverem ocupados e não atingiu o máximo, cria pod extra sob demanda
     if (podMap.size < MAX_WARM_PODS) {
-        const motivo = podMap.size === 0 ? "Pool acordando de repouso (0 pods)" : `Todos os ${podMap.size} pods ocupados`;
-        console.log(`[WarmPool] ${motivo}. Criando novo pod worker sob demanda...`);
-        const novoPod = await criarPodWorker(podMap.size > 0);
+        console.log(`[WarmPool] Todos os ${podMap.size} pods ocupados. Criando novo pod worker sob demanda...`);
+        const novoPod = await criarPodWorker(true);
         novoPod.status = 'busy';
         novoPod.lastUsedAt = Date.now();
         return novoPod.name;
@@ -665,13 +691,16 @@ async function verificarEManterPool() {
 
             const isHealthy = isPodReady(pod);
             const isDeleting = !!pod.metadata?.deletionTimestamp;
-            const isFailed = pod.status?.phase === 'Failed';
+            const phase = pod.status?.phase;
+            const isFailedOrSucceeded = phase === 'Failed' || phase === 'Succeeded';
 
-            // Se o pod falhou, está sendo terminado ou não está saudável, descarta
-            if (!isHealthy && (isDeleting || isFailed || podMap.has(name))) {
+            // Se o pod falhou, terminou (ex: auto-desligamento órfão), está sendo terminado ou não está saudável, descarta do cluster
+            if (!isHealthy && (isDeleting || isFailedOrSucceeded || podMap.has(name))) {
                 if (podMap.has(name) && podMap.get(name).status !== 'starting') {
                     console.log(`[WarmPool] Detectado pod inativo/parado no cluster: ${name}. Removendo...`);
                     await destruirPod(name, 'pod_inativo_ou_falho');
+                } else if (!podMap.has(name) && isFailedOrSucceeded && !isDeleting) {
+                    await apiDeletePod(name);
                 }
                 continue;
             }
@@ -687,12 +716,20 @@ async function verificarEManterPool() {
                         status: 'idle',
                         createdAt: criacao,
                         lastUsedAt: Date.now(),
+                        lastHeartbeatAt: 0,
                         idleTimer: null,
                         isExtra: podMap.size >= MIN_WARM_PODS
                     };
                     podMap.set(name, novaEntrada);
                     console.log(`[WarmPool] Pod existente ${name} adotado no pool (Idade: ${Math.round((Date.now() - criacao) / 3600000)}h).`);
                     programarDesalocacaoSeExtra(novaEntrada);
+                }
+
+                // Envia sinal de vida (heartbeat) periódico a cada ~2 min para renovar o Dead-Man's Switch interno do pod (15 min)
+                const entry = podMap.get(name);
+                if (entry && entry.status === 'idle' && (Date.now() - (entry.lastHeartbeatAt || 0) > 120000)) {
+                    entry.lastHeartbeatAt = Date.now();
+                    executarComandoNoPod(name, 'touch /tmp/app_heartbeat 2>/dev/null || true', 5000).catch(() => { });
                 }
             }
         }
@@ -705,9 +742,9 @@ async function verificarEManterPool() {
             }
         }
 
-        // Se estiver abaixo do mínimo de pods (MIN_WARM_PODS > 0), sobe os que faltam
+        // Se estiver abaixo do mínimo de pods (MIN_WARM_PODS), sobe os que faltam
         const podsValidos = podMap.size;
-        if (MIN_WARM_PODS > 0 && podsValidos < MIN_WARM_PODS) {
+        if (podsValidos < MIN_WARM_PODS) {
             const faltam = MIN_WARM_PODS - podsValidos;
             console.log(`[WarmPool] Iniciando ${faltam} pod(s) que faltam (Ativos: ${podsValidos} | Teto Máximo: ${MAX_WARM_PODS})...`);
             for (let i = 0; i < faltam; i++) {
@@ -819,8 +856,21 @@ function obterStatusPool() {
     };
 }
 
+async function encerrarPool() {
+    if (loopManutencao) {
+        clearInterval(loopManutencao);
+        loopManutencao = null;
+    }
+    const nomes = Array.from(podMap.keys());
+    if (nomes.length > 0) {
+        console.log(`[WarmPool] Encerrando ${nomes.length} pod(s) worker ativos antes de desligar a aplicação...`);
+        await Promise.allSettled(nomes.map(name => destruirPod(name, 'shutdown_aplicacao')));
+    }
+}
+
 module.exports = {
     inicializarPool,
+    encerrarPool,
     executarJobNoPool,
     adquirirPod,
     liberarPod,

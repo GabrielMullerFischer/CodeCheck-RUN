@@ -4,7 +4,7 @@ const lti = require('ltijs').Provider;
 const ActivityConfig = require('../models/ActivityConfig');
 const ExerciseList = require('../models/ExerciseList');
 const ActivityAttempt = require('../models/ActivityAttempt');
-const { construirAuthContext, extrairRolesIsProfessor } = require('../config/authContext');
+const { construirAuthContext, extrairRolesIsProfessor, comporIdentificadorAtividade } = require('../config/authContext');
 
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -151,16 +151,21 @@ async function setup(app) {
         const roles = token.platformContext.roles || [];
         const isProf = extrairRolesIsProfessor(roles);
 
-        const activityId = token.platformContext?.resource?.id || '';
+        const rawActivityId = token.platformContext?.resource?.id ? String(token.platformContext.resource.id) : '';
+        const courseId = token.platformContext?.context?.id ? String(token.platformContext.context.id) : '';
         const userName = token.userInfo?.name || token.userInfo?.given_name || (isProf ? 'Professor' : 'Aluno');
+
+        const activityId = comporIdentificadorAtividade(rawActivityId, courseId);
 
         req.session.userId = token.user;
         req.session.isProfessor = !!isProf;
         req.session.activityId = activityId;
+        req.session.rawActivityId = rawActivityId;
+        req.session.courseId = courseId;
         req.session.userName = userName;
         req.auth = construirAuthContext(req, res);
 
-        console.log(`[LOGIN] ${userName} logado como ${isProf ? 'Professor' : 'Aluno'}`);
+        console.log(`[LOGIN] ${userName} logado como ${isProf ? 'Professor' : 'Aluno'} (Disciplina: ${courseId || 'N/A'} | Atividade: ${activityId})`);
 
         req.session.save(() => {
             renderTemplate(res, req, userName, activityId);

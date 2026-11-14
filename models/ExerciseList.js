@@ -4,6 +4,7 @@ const ExerciseListSchema = new mongoose.Schema({
     title: { type: String, required: true },
     authorId: { type: String, default: 'sistema' },
     authorName: { type: String, default: 'Professor' },
+    courseId: { type: String, default: null, index: true },
     isPublic: { type: Boolean, default: true },
     isEvaluative: { type: Boolean, default: false },
     maxAttempts: { type: Number, default: 3 },

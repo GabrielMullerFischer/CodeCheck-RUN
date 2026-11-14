@@ -22,8 +22,17 @@ function obterContextoAuth(req) {
         isProfessor,
         userId: auth.userId || null,
         userName: auth.userName || null,
-        activityId: auth.activityId ? String(auth.activityId) : ''
+        activityId: auth.activityId ? String(auth.activityId) : '',
+        rawActivityId: auth.rawActivityId ? String(auth.rawActivityId) : '',
+        courseId: auth.courseId ? String(auth.courseId) : ''
     };
+}
+
+function construirFiltroDisciplina(courseId) {
+    if (courseId) {
+        return { courseId: String(courseId) };
+    }
+    return { $or: [{ courseId: null }, { courseId: '' }, { courseId: { $exists: false } }] };
 }
 
 function ehObjectIdValido(id) {
@@ -33,15 +42,16 @@ function ehObjectIdValido(id) {
 function resolverActivityIdProfessor(req, candidateId) {
     const ctx = obterContextoAuth(req);
     if (ctx.activityId) {
-        if (candidateId && candidateId !== 'preview' && String(candidateId) !== String(ctx.activityId)) {
+        const cand = candidateId ? String(candidateId) : '';
+        if (cand && cand !== 'preview' && cand !== String(ctx.activityId) && cand !== String(ctx.rawActivityId)) {
             return {
                 error: "Acesso negado: você não tem permissão para gerenciar outra atividade.",
                 status: 403
             };
         }
-        return { activityId: ctx.activityId };
+        return { activityId: ctx.activityId, courseId: ctx.courseId, rawActivityId: ctx.rawActivityId };
     }
-    return { activityId: candidateId ? String(candidateId) : '' };
+    return { activityId: candidateId ? String(candidateId) : '', courseId: ctx.courseId, rawActivityId: ctx.rawActivityId };
 }
 
 // Rota para consulta dos exercícios da atividade (acessível por alunos e professores)
@@ -258,9 +268,10 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
         const authorName = ctx.userName || 'Professor';
 
         const tituloFormatado = (title || '').trim();
-        const existe = await Exercise.findOne({ title: tituloFormatado, authorId, isArchived: { $ne: true } });
+        const filtroCurso = construirFiltroDisciplina(ctx.courseId);
+        const existe = await Exercise.findOne({ title: tituloFormatado, authorId, ...filtroCurso, isArchived: { $ne: true } });
         if (existe) {
-            return res.status(400).json({ success: false, error: "Você já possui um exercício cadastrado com este título." });
+            return res.status(400).json({ success: false, error: "Você já possui um exercício cadastrado com este título nesta disciplina." });
         }
 
         if (!Array.isArray(tests) || tests.length === 0) {
@@ -316,6 +327,7 @@ router.post('/exercicio', verificarProfessor, async (req, res) => {
             tests: testesFormatados, 
             authorId, 
             authorName, 
+            courseId: ctx.courseId || null,
             isPublic: !isPrivate, 
             timeLimit: timeLimitVal 
         });
@@ -391,6 +403,28 @@ router.put('/exercicio/:id', verificarProfessor, async (req, res) => {
             }
         }
 
+        // Proteção entre disciplinas: se o exercício pertencer a outra disciplina,
+        // clona uma cópia exclusiva para a disciplina atual para nunca alterar enunciados de outra turma!
+        const deveClonarParaDisciplina = !!(ctx.courseId && String(ex.courseId || '') !== String(ctx.courseId));
+
+        if (deveClonarParaDisciplina) {
+            const novoEx = await Exercise.create({
+                title: (title || ex.title).trim(),
+                description,
+                tests: testesFormatados,
+                authorId: meuId,
+                authorName: ctx.userName || ex.authorName || 'Professor',
+                courseId: ctx.courseId,
+                isPublic: !isPrivate,
+                timeLimit: timeLimitVal
+            });
+            await ExerciseList.updateMany(
+                { authorId: meuId, courseId: ctx.courseId, exercises: ex._id },
+                { $set: { "exercises.$": novoEx._id } }
+            );
+            return res.json({ success: true, exercicio: novoEx, cloned: true });
+        }
+
         ex.title = (title || '').trim();
         ex.description = description;
         ex.tests = testesFormatados;
@@ -420,12 +454,18 @@ router.delete('/exercicio/:id', verificarProfessor, async (req, res) => {
 
         const objId = new mongoose.Types.ObjectId(id);
 
-        // Se for exercício oficial (codecheck_oficial) ou de outro autor:
-        // O original permanece intacto no banco universal para sempre,
-        // mas é removido imediatamente de todas as listas e do workspace deste professor sem erro.
-        if (ex.authorId === 'codecheck_oficial' || (String(ex.authorId) !== meuId && meuId !== 'preview_user')) {
-            await ExerciseList.updateMany({ authorId: meuId, exercises: objId }, { $pull: { exercises: objId } });
-            return res.json({ success: true, message: "Exercício removido das suas listas com sucesso." });
+        // Se for exercício oficial (codecheck_oficial), de outro autor, ou de outra disciplina:
+        // O original permanece intacto para não afetar outras turmas, sendo apenas removido das listas da disciplina atual.
+        if (
+            ex.authorId === 'codecheck_oficial' ||
+            (String(ex.authorId) !== meuId && meuId !== 'preview_user') ||
+            (ctx.courseId && String(ex.courseId || '') !== String(ctx.courseId))
+        ) {
+            const filtroLista = ctx.courseId
+                ? { authorId: meuId, courseId: ctx.courseId, exercises: objId }
+                : { authorId: meuId, exercises: objId };
+            await ExerciseList.updateMany(filtroLista, { $pull: { exercises: objId } });
+            return res.json({ success: true, message: "Exercício removido das listas desta disciplina com sucesso." });
         }
 
         if (removeFromAllLists === 'true') {
@@ -472,9 +512,10 @@ router.post('/lista', verificarProfessor, async (req, res) => {
         }
 
         const tituloFormatado = (title || '').trim();
-        const existe = await ExerciseList.findOne({ title: tituloFormatado, authorId });
+        const filtroCurso = construirFiltroDisciplina(ctx.courseId);
+        const existe = await ExerciseList.findOne({ title: tituloFormatado, authorId, ...filtroCurso });
         if (existe) {
-            return res.status(400).json({ success: false, error: "Você já possui uma lista cadastrada com este título." });
+            return res.status(400).json({ success: false, error: "Você já possui uma lista cadastrada com este título nesta disciplina." });
         }
 
         const lista = await ExerciseList.create({ 
@@ -482,6 +523,7 @@ router.post('/lista', verificarProfessor, async (req, res) => {
             exercises: idsValidos, 
             authorId, 
             authorName, 
+            courseId: ctx.courseId || null,
             isPublic: !isPrivate 
         });
         res.json({ success: true, lista });
@@ -497,6 +539,7 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
         const ctx = obterContextoAuth(req);
         const authorId = ctx.userId || 'preview_user';
         const authorName = ctx.userName || 'Professor';
+        const filtroCurso = construirFiltroDisciplina(ctx.courseId);
 
         const rawTitulo = (title || titulo || '').trim();
         const rawExercicios = exercises || exercicios;
@@ -571,10 +614,10 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
                 testesValidos[k].isVisible = false;
             }
 
-            // Evita erro de duplicação de título no mesmo autor
+            // Evita erro de duplicação de título no mesmo autor dentro da mesma disciplina
             let tituloFinal = exTitulo;
             let counter = 1;
-            while (await Exercise.findOne({ title: tituloFinal, authorId, isArchived: { $ne: true } })) {
+            while (await Exercise.findOne({ title: tituloFinal, authorId, ...filtroCurso, isArchived: { $ne: true } })) {
                 tituloFinal = `${exTitulo} (${counter})`;
                 counter++;
             }
@@ -588,6 +631,7 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
                 tests: testesValidos,
                 authorId,
                 authorName,
+                courseId: ctx.courseId || null,
                 isPublic: true,
                 timeLimit: DEFAULT_TIME_LIMIT_MS
             });
@@ -603,10 +647,10 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
             });
         }
 
-        // Evita colisão de título na lista para o mesmo autor
+        // Evita colisão de título na lista para o mesmo autor na mesma disciplina
         let tituloListaFinal = listaTitulo;
         let listCounter = 1;
-        while (await ExerciseList.findOne({ title: tituloListaFinal, authorId })) {
+        while (await ExerciseList.findOne({ title: tituloListaFinal, authorId, ...filtroCurso })) {
             tituloListaFinal = `${listaTitulo} (${listCounter})`;
             listCounter++;
         }
@@ -617,6 +661,7 @@ router.post('/lista-ia', verificarProfessor, async (req, res) => {
             exercises: exerciciosCriadosIds,
             authorId,
             authorName,
+            courseId: ctx.courseId || null,
             isPublic: isPrivate === true ? false : true
         });
 
@@ -664,18 +709,24 @@ router.put('/lista/:id', verificarProfessor, async (req, res) => {
             }
         }
 
-        // Se o professor estiver editando uma lista oficial ou criada por outro docente:
-        // Mantém a original intacta no banco universal e cria automaticamente a sua própria cópia com as alterações!
-        if (lista.authorId === 'codecheck_oficial' || (String(lista.authorId) !== meuId && meuId !== 'preview_user')) {
+        // Verifica se a lista é oficial, de outro docente ou de outra disciplina
+        const deveClonarLista = lista.authorId === 'codecheck_oficial' ||
+            (String(lista.authorId) !== meuId && meuId !== 'preview_user') ||
+            (ctx.courseId && String(lista.courseId || '') !== String(ctx.courseId));
+
+        if (deveClonarLista) {
             const novaLista = await ExerciseList.create({
                 title: (title || lista.title).trim(),
                 authorId: meuId,
                 authorName: ctx.userName || 'Professor',
+                courseId: ctx.courseId || null,
                 exercises: idsValidos,
                 isPublic: !isPrivate
             });
 
-            await ActivityConfig.updateMany({ listId: lista._id }, { $set: { listId: novaLista._id } });
+            if (ctx.activityId) {
+                await ActivityConfig.updateOne({ activityId: ctx.activityId, listId: lista._id }, { $set: { listId: novaLista._id } });
+            }
             return res.json({ success: true, lista: novaLista, cloned: true });
         }
 
@@ -706,15 +757,25 @@ router.delete('/lista/:id', verificarProfessor, async (req, res) => {
 
         const objId = new mongoose.Types.ObjectId(id);
 
-        // Se for lista oficial ou de outro docente vinculada à atividade:
-        // Mantém o original no banco universal, mas desvincula do contexto deste professor sem erro
-        if (lista.authorId === 'codecheck_oficial' || (String(lista.authorId) !== meuId && meuId !== 'preview_user')) {
-            await ActivityConfig.updateMany({ listId: objId }, { $unset: { listId: "" } });
+        // Se for lista oficial, de outro docente ou de outra disciplina:
+        // Mantém o original intacto e apenas desvincula da atividade atual
+        if (
+            lista.authorId === 'codecheck_oficial' ||
+            (String(lista.authorId) !== meuId && meuId !== 'preview_user') ||
+            (ctx.courseId && lista.courseId && String(lista.courseId) !== String(ctx.courseId))
+        ) {
+            if (ctx.activityId) {
+                await ActivityConfig.updateOne({ activityId: ctx.activityId, listId: objId }, { $unset: { listId: "" } });
+            }
             return res.json({ success: true, message: "Lista desvinculada com sucesso." });
         }
 
         await ExerciseList.findByIdAndDelete(objId);
-        await ActivityConfig.updateMany({ listId: objId }, { $unset: { listId: "" } });
+        if (ctx.courseId) {
+            await ActivityConfig.updateMany({ listId: objId, $or: [{ courseId: ctx.courseId }, { activityId: ctx.activityId }] }, { $unset: { listId: "" } });
+        } else {
+            await ActivityConfig.updateMany({ listId: objId }, { $unset: { listId: "" } });
+        }
 
         res.json({ success: true });
     } catch (e) {
@@ -768,6 +829,8 @@ router.post('/atividade/vincular', verificarProfessor, async (req, res) => {
             { activityId },
             { 
                 listId, 
+                courseId: ctx.courseId || null,
+                rawActivityId: ctx.rawActivityId || activityId,
                 isEvaluative: isEvalBool, 
                 maxAttempts: maxAttInt, 
                 hasTimeLimit: hasTimeLimitBool, 
@@ -800,12 +863,15 @@ router.post('/atividade/config', verificarProfessor, async (req, res) => {
         const activityId = resolvido.activityId;
         if (!activityId) return res.status(400).json({ success: false, error: "activityId ausente." });
 
+        const ctx = obterContextoAuth(req);
         const duracaoMinutos = parseInt(timeLimitMinutes, 10) || 0;
         const temLimiteTempo = hasTimeLimit === true || hasTimeLimit === 'true';
 
         const config = await ActivityConfig.findOneAndUpdate(
             { activityId },
             {
+                courseId: ctx.courseId || null,
+                rawActivityId: ctx.rawActivityId || activityId,
                 isEvaluative: isEvaluative === true || isEvaluative === 'true',
                 maxAttempts: parseInt(maxAttempts, 10) || 3,
                 hasTimeLimit: temLimiteTempo,
@@ -841,6 +907,13 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
         const activityId = resolvido.activityId;
         const ctx = obterContextoAuth(req);
         const meuId = String(ctx.userId || 'preview_user');
+        const crsAtual = ctx.courseId ? String(ctx.courseId) : '';
+
+        const vinculo = activityId ? await ActivityConfig.findOne({ activityId }).populate({
+            path: 'listId',
+            populate: { path: 'exercises' }
+        }) : null;
+        const idListaVinculadaStr = vinculo && vinculo.listId ? String(vinculo.listId._id || vinculo.listId) : null;
 
         const todasListas = await ExerciseList.find().populate('exercises').sort({ _id: -1 }).lean();
         todasListas.forEach(l => {
@@ -850,24 +923,53 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
                 });
             }
         });
-        const minhasListas = todasListas.filter(l => String(l.authorId) === meuId);
-        
-        let bancoUniversalListas = todasListas.filter(l => String(l.authorId) !== meuId && l.isPublic !== false);
+
+        // Minhas Listas (isoladas estritamente pela disciplina atual)
+        const minhasListas = todasListas.filter(l => {
+            if (String(l.authorId) !== meuId) return false;
+            if (!crsAtual) return true;
+            if (String(l.courseId) === crsAtual) return true;
+            if (idListaVinculadaStr && String(l._id) === idListaVinculadaStr) return true;
+            return false;
+        });
+        const idsMinhasListas = new Set(minhasListas.map(l => String(l._id)));
+
+        // Banco Universal de Listas (inclui listas públicas de outros docentes e listas do próprio docente em outras disciplinas para importação)
+        let bancoUniversalListas = todasListas.filter(l => {
+            if (idsMinhasListas.has(String(l._id))) return false;
+            return l.isPublic !== false || String(l.authorId) === meuId;
+        });
         bancoUniversalListas.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
+
+        const idsExerciciosEmMinhasListas = new Set();
+        minhasListas.forEach(l => {
+            if (Array.isArray(l.exercises)) {
+                l.exercises.forEach(ex => {
+                    if (ex) idsExerciciosEmMinhasListas.add(String(ex._id || ex));
+                });
+            }
+        });
 
         const todosExercicios = await Exercise.find({ isArchived: { $ne: true } }).sort({ _id: -1 }).lean();
         todosExercicios.forEach(ex => {
             if (!ex.timeLimit) ex.timeLimit = DEFAULT_TIME_LIMIT_MS;
         });
-        const meusExercicios = todosExercicios.filter(e => String(e.authorId) === meuId);
 
-        let bancoUniversalExercicios = todosExercicios.filter(e => String(e.authorId) !== meuId && e.isPublic !== false);
+        // Meus Exercícios (isolados estritamente pela disciplina atual)
+        const meusExercicios = todosExercicios.filter(e => {
+            if (String(e.authorId) !== meuId) return false;
+            if (!crsAtual) return true;
+            if (String(e.courseId) === crsAtual) return true;
+            if (idsExerciciosEmMinhasListas.has(String(e._id))) return true;
+            return false;
+        });
+        const idsMeusExercicios = new Set(meusExercicios.map(e => String(e._id)));
+
+        let bancoUniversalExercicios = todosExercicios.filter(e => {
+            if (idsMeusExercicios.has(String(e._id))) return false;
+            return e.isPublic !== false || String(e.authorId) === meuId;
+        });
         bancoUniversalExercicios.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
-
-        const vinculo = activityId ? await ActivityConfig.findOne({ activityId }).populate({
-            path: 'listId',
-            populate: { path: 'exercises' }
-        }) : null;
 
         res.json({
             success: true,
@@ -882,7 +984,8 @@ router.get('/professor/dados', verificarProfessor, async (req, res) => {
             hasTimeLimit: vinculo ? !!vinculo.hasTimeLimit : false,
             timeLimitMinutes: vinculo && vinculo.timeLimitMinutes ? vinculo.timeLimitMinutes : 0,
             maxExecutionTimeLimitMs: MAX_TIME_LIMIT_MS,
-            defaultExecutionTimeLimitMs: DEFAULT_TIME_LIMIT_MS
+            defaultExecutionTimeLimitMs: DEFAULT_TIME_LIMIT_MS,
+            maxSubmissionHistory: minioService.MAX_SUBMISSION_HISTORY
         });
     } catch (e) {
         console.error("❌ [Erro /atividade/exercicios]:", e?.message || e);
@@ -1054,7 +1157,8 @@ exercicios.forEach(ex => {
             taxaGeralAcertos,
             tempoMedioMs,
             ranking,
-            rankingPorExercicio
+            rankingPorExercicio,
+            maxSubmissionHistory: minioService.MAX_SUBMISSION_HISTORY
         });
     } catch (e) {
         console.error("Erro nas métricas:", e);
@@ -1087,10 +1191,12 @@ router.post('/professor/exercicio/importar', verificarProfessor, async (req, res
         }
 
         const tituloDesejado = (customTitle || exOriginal.title).trim();
+        const filtroCurso = construirFiltroDisciplina(ctx.courseId);
 
         const exJaExiste = await Exercise.findOne({
             title: tituloDesejado,
             authorId: meuId,
+            ...filtroCurso,
             isArchived: { $ne: true }
         });
 
@@ -1105,7 +1211,7 @@ router.post('/professor/exercicio/importar', verificarProfessor, async (req, res
         if (exJaExiste && customTitle) {
             return res.status(400).json({
                 success: false,
-                error: `Você já possui um exercício chamado "${tituloDesejado}". Escolha outro nome.`
+                error: `Você já possui um exercício chamado "${tituloDesejado}" nesta disciplina. Escolha outro nome.`
             });
         }
 
@@ -1115,6 +1221,7 @@ router.post('/professor/exercicio/importar', verificarProfessor, async (req, res
             tests: exOriginal.tests,
             authorId: meuId,
             authorName: meuNome,
+            courseId: ctx.courseId || null,
             isPublic: false,
             timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS
         });
@@ -1133,6 +1240,7 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
         const ctx = obterContextoAuth(req);
         const meuId = String(ctx.userId || 'preview_user');
         const meuNome = ctx.userName || 'Professor';
+        const filtroCurso = construirFiltroDisciplina(ctx.courseId);
 
         if (!listId || !ehObjectIdValido(String(listId))) {
             return res.status(400).json({ success: false, error: "ID de lista inválido." });
@@ -1152,13 +1260,13 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
 
         const tituloListaDesejado = (customTitle || listaOriginal.title).trim();
 
-        const listaJaExiste = await ExerciseList.findOne({ title: tituloListaDesejado, authorId: meuId });
+        const listaJaExiste = await ExerciseList.findOne({ title: tituloListaDesejado, authorId: meuId, ...filtroCurso });
         const listConflict = !!(listaJaExiste && !customTitle);
 
         if (listaJaExiste && customTitle) {
             return res.status(400).json({
                 success: false,
-                error: `Você já possui uma lista chamada "${tituloListaDesejado}". Escolha outro título.`
+                error: `Você já possui uma lista chamada "${tituloListaDesejado}" nesta disciplina. Escolha outro título.`
             });
         }
 
@@ -1172,6 +1280,7 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
             const exExiste = await Exercise.findOne({
                 title: tituloFinalEx,
                 authorId: meuId,
+                ...filtroCurso,
                 isArchived: { $ne: true }
             });
 
@@ -1205,6 +1314,7 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
                 tests: exOriginal.tests,
                 authorId: meuId,
                 authorName: meuNome,
+                courseId: ctx.courseId || null,
                 isPublic: false,
                 timeLimit: exOriginal.timeLimit || DEFAULT_TIME_LIMIT_MS
             });
@@ -1216,6 +1326,7 @@ router.post('/professor/lista/importar', verificarProfessor, async (req, res) =>
             title: tituloListaDesejado,
             authorId: meuId,
             authorName: meuNome,
+            courseId: ctx.courseId || null,
             exercises: novosIdsExercicios,
             isPublic: false
         });
@@ -1280,7 +1391,7 @@ async function carregarSubmissaoProfessor(req, res, params) {
         }
 
         // Restringe estritamente à atividade autenticada via LTI do professor
-        if (ctx.activityId && String(sub.activityId) !== String(ctx.activityId)) {
+        if (ctx.activityId && String(sub.activityId) !== String(ctx.activityId) && String(sub.activityId) !== String(ctx.rawActivityId)) {
             return res.status(403).json({
                 success: false,
                 error: "Sem permissão para acessar submissões de outra atividade."
