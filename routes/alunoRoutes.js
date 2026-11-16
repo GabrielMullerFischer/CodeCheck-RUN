@@ -105,17 +105,43 @@ function gerarDicaDidatica(status, details, got, warnings, exerciseMode = 'main_
     const txt = `${details || ''} ${warnings || ''} ${got || ''}`;
     const modo = (exerciseMode === 'main_custom' || exerciseMode === 'function') ? exerciseMode : 'main_default';
 
-    if (/SIGSEGV|segmentation fault|core dumped/i.test(txt)) {
+    if (/Saída truncada ao atingir o limite de 256 KiB|Saída truncada em 256 KiB|limite de 256 KiB/i.test(txt)) {
+        return "Saída truncada em 256 KiB: Seu programa imprimiu dados em excesso e atingiu o limite de exibição. Verifique possíveis laços de repetição ou loops infinitos com comandos de impressão (printf).";
+    }
+
+    if (status === 'Time Limit') {
+        return "Tempo limite excedido: Seu programa demorou mais que o permitido para responder aos testes. Verifique se não há laços de repetição infinitos (como 'while(true)') ou se a condição de parada dos laços está correta.";
+    }
+
+    if (/\[SIGFPE\]|SIGFPE|floating point exception|divis[aã]o por zero/i.test(txt)) {
+        return "Erro aritmético de execução (SIGFPE): Ocorreu uma operação aritmética inválida, muito provavelmente uma divisão inteira por zero (x / 0) ou resto de divisão por zero (x % 0). Verifique os valores das variáveis divisor antes de realizar a operação.";
+    }
+
+    if (/\[SIGXFSZ\]|SIGXFSZ|file size limit exceeded|limite.*grava[cç][aã]o/i.test(txt)) {
+        return "Limite de gravação em arquivo excedido (~50 MB): Seu programa tentou criar ou gravar um arquivo que ultrapassou a cota máxima permitida em disco (ulimit -f 50000). Verifique laços de repetição que gravam dados em arquivo (fprintf/fwrite) sem condição de parada.";
+    }
+
+    if (/\[SIGKILL\]|SIGKILL|OOM-Killer|OOMKilled|limite de mem[oó]ria|memory limit exceeded/i.test(txt)) {
+        return "Limite de memória RAM excedido (512 MiB): Seu programa consumiu mais memória do que o limite permitido e foi encerrado pelo mecanismo de proteção do sistema (OOM-Killer). Verifique se há alocações dinâmicas excessivas (malloc) ou vazamentos de memória (ausência de free em laços).";
+    }
+
+    if (/\[SIGABRT\]|SIGABRT|aborted|stack smashing/i.test(txt)) {
+        return "Execução abortada (SIGABRT): Possível escrita fora dos limites de um vetor/string na memória ou violação de integridade da pilha. Verifique o tamanho dos seus vetores.";
+    }
+
+    if (/\[SIGSEGV\]|SIGSEGV|segmentation fault/i.test(txt)) {
         if (/format '%[^']+' expects argument of type '[^']* \*', but argument \d+ has type/i.test(txt)) {
             return "Falha de segmentação por falta do '&' no scanf: Você esqueceu de colocar o operador '&' antes do nome da variável no scanf (ex: use scanf(\"%d\", &x);).";
         }
         return "Falha de segmentação (Segmentation Fault): Seu código tentou acessar um endereço de memória inválido. Verifique se não ultrapassou o tamanho de um vetor (índice fora dos limites), se não usou ponteiro não inicializado ou se não esqueceu o '&' no scanf.";
     }
-    if (/SIGFPE|floating point exception/i.test(txt)) {
-        return "Erro aritmético de execução: Provavelmente ocorreu uma divisão por zero (x / 0) ou resto de divisão por zero (x % 0). Verifique os valores do divisor.";
+
+    if (/\[SIGBUS\]|SIGBUS|bus error/i.test(txt)) {
+        return "Erro de barramento (SIGBUS): Tentativa de acesso a memória física inválida ou desalinhamento severo de ponteiro.";
     }
-    if (/SIGABRT|aborted|stack smashing/i.test(txt)) {
-        return "Execução abortada (SIGABRT): Possível escrita fora dos limites de um vetor/string na memória. Verifique o tamanho dos seus vetores.";
+
+    if (/\[SIGILL\]|SIGILL|illegal instruction/i.test(txt)) {
+        return "Instrução ilegal (SIGILL): O processador tentou executar uma instrução de máquina inválida ou corrompida na memória.";
     }
     if (/Tempo limite de compilacao excedido/i.test(txt)) {
         return "Tempo limite de compilação excedido: O compilador demorou mais que o permitido para compilar seu código. Verifique diretivas #include ou macros.";
@@ -443,6 +469,11 @@ router.post('/submit', submitLimiter, async (req, res) => {
             floatPrecision: exercicioAlvo.floatPrecision,
             isCustomDebug: false
         };
+        const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+        const totalTimeoutEsperadoMs = timeLimit + compileTimeoutMs + 15000;
+        if (typeof req.setTimeout === 'function') req.setTimeout(totalTimeoutEsperadoMs + 15000);
+        if (typeof res.setTimeout === 'function') res.setTimeout(totalTimeoutEsperadoMs + 15000);
+
         const resultado = await judgeService.runTests(code, testesParaExecutar, containerName, timeLimit, chaveOrdemTestes, opcoesExercicio);
 
         const tempoGastoMs = resultado.executionTime || 0;
@@ -637,10 +668,17 @@ router.post('/test-custom', submitLimiter, async (req, res) => {
             floatPrecision: exercicioCustom.floatPrecision,
             isCustomDebug: true
         } : null;
+        const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
+        const totalTimeoutEsperadoMs = timeLimit + compileTimeoutMs + 15000;
+        if (typeof req.setTimeout === 'function') req.setTimeout(totalTimeoutEsperadoMs + 15000);
+        if (typeof res.setTimeout === 'function') res.setTimeout(totalTimeoutEsperadoMs + 15000);
+
         const resultado = await judgeService.runTests(code, testes, containerName, timeLimit, null, opcoesExercicio);
 
         const tempoGastoMs = resultado.executionTime || 0;
-        const isSuccess = resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details);
+        const estaTruncado = (resultado.got && String(resultado.got).includes('256 KiB')) ||
+            (resultado.details && String(resultado.details).includes('256 KiB'));
+        const isSuccess = (resultado.status === 'Accepted' || (resultado.status === 'Wrong Answer' && !resultado.details)) && !estaTruncado;
         const dicaDidatica = isSuccess ? null : gerarDicaDidatica(resultado.status, resultado.details, resultado.got, resultado.warnings, exercicioCustom?.exerciseMode);
 
         res.json({

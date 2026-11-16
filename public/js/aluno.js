@@ -78,6 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let mapaRankingsPorExercicio = {};
 
     const mapaUltimoCodigoCompilado = {};
+    const mapaUltimoStatusCompilado = {};
     const mapaUltimoTesteCustom = {};
     const wrapperBtnTesteCustom = document.getElementById('wrapperBtnTesteCustom');
 
@@ -221,35 +222,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         return MODELO_PADRAO;
     }
 
-    function criarIconeCadeadoGutter() {
+    function criarIconeCadeadoGutter(isHash = false) {
         const marker = document.createElement('span');
         marker.className = 'd-inline-flex align-items-center justify-content-center w-100';
-        marker.innerHTML = '<i class="fas fa-lock text-muted" style="font-size: 0.75rem; opacity: 0.65;" title="Linha travada pelo professor"></i>';
+        if (isHash) {
+            marker.innerHTML = `
+                <span class="d-inline-flex align-items-center justify-content-center" style="gap: 3px;" title="Esse print é usado para a validação">
+                    <i class="fas fa-lock text-success" style="font-size: 0.72rem; opacity: 0.9;"></i>
+                    <span style="display:inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: #28a745; box-shadow: 0 0 3px #28a745;"></span>
+                </span>
+            `;
+        } else {
+            marker.innerHTML = '<i class="fas fa-lock text-muted" style="font-size: 0.75rem; opacity: 0.65;" title="Linha travada pelo professor"></i>';
+        }
         return marker;
     }
 
     function obterIndicesLinhasTravadas(codigo, ex) {
         const modo = obterModoExercicio(ex);
         const indices = new Set();
+        const hashIndices = new Set();
         if (modo === 'main_default' || !ex) {
-            return { valido: true, indices };
+            return { valido: true, indices, hashIndices };
         }
 
         const linhasCodigo = String(codigo || '').replace(/\r\n/g, '\n').split('\n');
 
         if (modo === 'main_custom' || (modo === 'function' && ex.templateCode && String(ex.templateCode).trim())) {
             if (!ex.templateCode || !String(ex.templateCode).trim()) {
-                return { valido: true, indices };
+                return { valido: true, indices, hashIndices };
             }
             const tplLines = String(ex.templateCode).replace(/\r\n/g, '\n').split('\n');
             const entries = tplLines.map(raw => {
-                if (/^\s*\*\*\*/.test(raw) || /^\s*###/.test(raw)) {
+                const isHash = /^\s*###/.test(raw);
+                const isStar = /^\s*\*\*\*/.test(raw);
+                if (isHash || isStar) {
                     return {
                         isLocked: true,
+                        isHash,
                         cleanLine: raw.replace(/^(\s*)(?:\*\*\*|###)/, '$1')
                     };
                 }
-                return { isLocked: false, cleanLine: raw };
+                return { isLocked: false, isHash: false, cleanLine: raw };
             });
 
             let lastLockedIdx = -1;
@@ -260,7 +274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
             if (lastLockedIdx === -1) {
-                return { valido: true, indices };
+                return { valido: true, indices, hashIndices };
             }
 
             let lastFreeIdx = -1;
@@ -288,9 +302,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     sTop++;
                 }
                 if (found === -1) {
-                    return { valido: false, indices };
+                    return { valido: false, indices, hashIndices };
                 }
                 indices.add(found);
+                if (entry.isHash) {
+                    hashIndices.add(found);
+                }
             }
 
             const minBottomIdx = sTop;
@@ -309,18 +326,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                     sBot--;
                 }
                 if (found === -1) {
-                    return { valido: false, indices };
+                    return { valido: false, indices, hashIndices };
                 }
                 indices.add(found);
+                if (entry.isHash) {
+                    hashIndices.add(found);
+                }
             }
 
-            return { valido: true, indices };
+            return { valido: true, indices, hashIndices };
         }
 
         if (modo === 'function') {
             const parsed = parsearAssinaturaFuncao(ex.functionSignature);
             const sig = parsed ? parsed.cleanSignature : (ex.functionSignature || '').trim().replace(/\{[\s\S]*$/, '').replace(/;+\s*$/, '').trim();
-            if (!sig) return { valido: true, indices };
+            if (!sig) return { valido: true, indices, hashIndices };
 
             let sigLineIdx = -1;
             const sigCompact = sig.replace(/\s+/g, ' ').trim();
@@ -332,7 +352,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
             if (sigLineIdx === -1) {
-                return { valido: false, indices };
+                return { valido: false, indices, hashIndices };
             }
 
             let closeBraceIdx = -1;
@@ -343,7 +363,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
             if (closeBraceIdx === -1 || closeBraceIdx <= sigLineIdx + 1) {
-                return { valido: false, indices };
+                return { valido: false, indices, hashIndices };
             }
 
             for (let i = 0; i <= sigLineIdx; i++) {
@@ -352,10 +372,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             for (let i = closeBraceIdx; i < linhasCodigo.length; i++) {
                 indices.add(i);
             }
-            return { valido: true, indices };
+            return { valido: true, indices, hashIndices };
         }
 
-        return { valido: true, indices };
+        return { valido: true, indices, hashIndices };
     }
 
     function aplicarCadeadosNoEditor(exOpcional) {
@@ -365,14 +385,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         const total = editorCM.lineCount();
         for (let i = 0; i < total; i++) {
             editorCM.removeLineClass(i, 'background', 'cm-locked-line');
+            editorCM.removeLineClass(i, 'background', 'cm-output-locked-line');
         }
         if (!ex) return;
 
-        const { indices } = obterIndicesLinhasTravadas(editorCM.getValue(), ex);
+        const { indices, hashIndices } = obterIndicesLinhasTravadas(editorCM.getValue(), ex);
         indices.forEach(lineIdx => {
             if (lineIdx >= 0 && lineIdx < total) {
-                editorCM.addLineClass(lineIdx, 'background', 'cm-locked-line');
-                editorCM.setGutterMarker(lineIdx, 'locked-gutter', criarIconeCadeadoGutter());
+                const isHash = hashIndices && hashIndices.has(lineIdx);
+                editorCM.addLineClass(lineIdx, 'background', isHash ? 'cm-output-locked-line' : 'cm-locked-line');
+                editorCM.setGutterMarker(lineIdx, 'locked-gutter', criarIconeCadeadoGutter(isHash));
             }
         });
     }
@@ -936,6 +958,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function formatarSaidaComNumeracao(rawOutput, classeCor = 'text-dark') {
         const textoOriginal = (rawOutput !== null && rawOutput !== undefined) ? String(rawOutput) : '';
+
         if (!textoOriginal.trim()) {
             return {
                 html: `
@@ -975,6 +998,277 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
+    function normalizarParaLaranjaDiff(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\s+/g, '');
+    }
+
+    function extrairLinhasDiff(str) {
+        if (str === null || str === undefined) return [];
+        const s = String(str)
+            .replace(/\[Saída truncada ao atingir o limite de 256 KiB[^\]]*\]/gi, '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
+        const trimmed = s.endsWith('\n') ? s.slice(0, -1) : s;
+        if (trimmed === '') return [];
+        return trimmed.split('\n');
+    }
+
+    function renderizarDiffVisualSaida(gotRaw, expectedRaw) {
+        const gotLines = extrairLinhasDiff(gotRaw);
+        const expLines = extrairLinhasDiff(expectedRaw);
+
+        if (gotLines.length === 0 && expLines.length === 0) {
+            return {
+                html: `<div class="d-flex align-items-stretch"><div class="io-gutter-placeholder"></div><div class="flex-grow-1" style="min-width: 0;"><pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">(vazio)</pre></div></div>`,
+                placarHtml: '',
+                totalLinhas: 0,
+                linhasVerdes: 0,
+                linhasLaranjas: 0,
+                totalEsperado: 0
+            };
+        }
+
+        let gotIdx = 0;
+        let expIdx = 0;
+        let linhasVerdes = 0;
+        let linhasLaranjas = 0;
+        let numAluno = 0;
+
+        const rows = [];
+
+        function adicionarLinha({ tipo, num, icone, val, ehPlaceholder = false }) {
+            rows.push({ tipo, num, icone, val, ehPlaceholder });
+        }
+
+        while (gotIdx < gotLines.length && expIdx < expLines.length) {
+            const gLine = gotLines[gotIdx];
+            const eLine = expLines[expIdx];
+
+            // 1. Verde: gotLine === expLine (100% idêntico)
+            if (gLine === eLine) {
+                linhasVerdes++;
+                numAluno++;
+                adicionarLinha({
+                    tipo: 'green',
+                    num: numAluno,
+                    icone: '✓',
+                    val: gLine === '' ? '(linha em branco)' : gLine,
+                    ehPlaceholder: gLine === ''
+                });
+                gotIdx++;
+                expIdx++;
+                continue;
+            }
+
+            // 2. Falta de Linha em Branco no aluno: expLines[expIdx] === "" && gotLines[gotIdx] !== ""
+            // Injete uma linha vermelha artificial em "Sua Saída" e NÃO avance o gotIdx!
+            if (eLine === '' && gLine !== '') {
+                adicionarLinha({
+                    tipo: 'red',
+                    num: '—',
+                    icone: '✗',
+                    val: '(linha em branco)',
+                    ehPlaceholder: true
+                });
+                expIdx++;
+                continue;
+            }
+
+            // 3. Falta de \n colando duas respostas na mesma linha
+            if (expIdx + 1 < expLines.length) {
+                const normGot = normalizarParaLaranjaDiff(gLine);
+                const normConcat = normalizarParaLaranjaDiff(eLine + expLines[expIdx + 1]);
+                if (normGot.length > 0 && normGot === normConcat) {
+                    numAluno++;
+                    adicionarLinha({
+                        tipo: 'red',
+                        num: numAluno,
+                        icone: '✗',
+                        val: gLine
+                    });
+                    gotIdx++;
+                    expIdx += 2;
+                    continue;
+                }
+            }
+
+            // 4. Quebra de linha sobrando: gotLines[gotIdx] === "" && expLines[expIdx] !== ""
+            if (gLine === '' && eLine !== '') {
+                numAluno++;
+                adicionarLinha({
+                    tipo: 'red',
+                    num: numAluno,
+                    icone: '✗',
+                    val: '(linha em branco)',
+                    ehPlaceholder: true
+                });
+                gotIdx++;
+                continue;
+            }
+
+            // 5. Laranja: Igual após remover espaços, acentos e converter para minúsculas (Erro de formatação)
+            if (normalizarParaLaranjaDiff(gLine) === normalizarParaLaranjaDiff(eLine)) {
+                // Se houver um match 100% EXATO logo adiante, prefere o exato e deixa a linha atual ser tratada pelo lookahead
+                let temExatoAdiante = false;
+                const maxLhExato = Math.min(gotLines.length, gotIdx + 20);
+                for (let k = gotIdx + 1; k < maxLhExato; k++) {
+                    if (gotLines[k] === eLine) {
+                        temExatoAdiante = true;
+                        break;
+                    }
+                }
+                if (!temExatoAdiante) {
+                    linhasLaranjas++;
+                    numAluno++;
+                    adicionarLinha({
+                        tipo: 'orange',
+                        num: numAluno,
+                        icone: '⚠️',
+                        val: gLine
+                    });
+                    gotIdx++;
+                    expIdx++;
+                    continue;
+                }
+            }
+
+            // 6. Prints Extras / Repetições Indevidas no meio
+            let lookaheadIdx = -1;
+            const maxLookahead = Math.min(gotLines.length, gotIdx + 20);
+            // 6a. Prioridade 1: Procurar match 100% EXATO (Verde)
+            for (let k = gotIdx + 1; k < maxLookahead; k++) {
+                if (gotLines[k] === eLine) {
+                    lookaheadIdx = k;
+                    break;
+                }
+            }
+            // 6b. Prioridade 2: Se não houver exato, procurar match APROXIMADO (Laranja)
+            if (lookaheadIdx === -1) {
+                for (let k = gotIdx + 1; k < maxLookahead; k++) {
+                    if (normalizarParaLaranjaDiff(gotLines[k]) === normalizarParaLaranjaDiff(eLine)) {
+                        lookaheadIdx = k;
+                        break;
+                    }
+                }
+            }
+
+            if (lookaheadIdx !== -1) {
+                for (let m = gotIdx; m < lookaheadIdx; m++) {
+                    numAluno++;
+                    adicionarLinha({
+                        tipo: 'red',
+                        num: numAluno,
+                        icone: '✗',
+                        val: gotLines[m] === '' ? '(linha em branco)' : gotLines[m],
+                        ehPlaceholder: gotLines[m] === ''
+                    });
+                }
+                const matchLine = gotLines[lookaheadIdx];
+                numAluno++;
+                if (matchLine === eLine) {
+                    linhasVerdes++;
+                    adicionarLinha({
+                        tipo: 'green',
+                        num: numAluno,
+                        icone: '✓',
+                        val: matchLine === '' ? '(linha em branco)' : matchLine,
+                        ehPlaceholder: matchLine === ''
+                    });
+                } else {
+                    linhasLaranjas++;
+                    adicionarLinha({
+                        tipo: 'orange',
+                        num: numAluno,
+                        icone: '⚠️',
+                        val: matchLine
+                    });
+                }
+                gotIdx = lookaheadIdx + 1;
+                expIdx++;
+                continue;
+            }
+
+            // 7. Valor Incorreto
+            numAluno++;
+            adicionarLinha({
+                tipo: 'red',
+                num: numAluno,
+                icone: '✗',
+                val: gLine === '' ? '(linha em branco)' : gLine,
+                ehPlaceholder: gLine === ''
+            });
+            gotIdx++;
+            expIdx++;
+        }
+
+        // Saídas faltantes no final
+        while (expIdx < expLines.length) {
+            adicionarLinha({
+                tipo: 'red',
+                num: '—',
+                icone: '✗',
+                val: '(não impresso)',
+                ehPlaceholder: true
+            });
+            expIdx++;
+        }
+
+        // Prints extras ao final da execução do aluno
+        while (gotIdx < gotLines.length) {
+            numAluno++;
+            const gExtra = gotLines[gotIdx];
+            adicionarLinha({
+                tipo: 'red',
+                num: numAluno,
+                icone: '✗',
+                val: gExtra === '' ? '(linha em branco)' : gExtra,
+                ehPlaceholder: gExtra === ''
+            });
+            gotIdx++;
+        }
+
+        // Montar HTML das linhas e do gutter
+        const gutterHtml = rows.map(r => {
+            const titleAttr = r.num !== '—' ? `Linha de saída #${r.num}` : 'Saída omitida pelo seu código';
+            const classeNum = r.num === '—' ? 'text-danger font-weight-bold' : '';
+            return `<span class="io-gutter-num ${classeNum}" title="${titleAttr}">${r.num}</span>`;
+        }).join('');
+
+        const rowsHtml = rows.map(r => {
+            const classeLinha = r.tipo === 'green' ? 'diff-line-green' : (r.tipo === 'orange' ? 'diff-line-orange' : 'diff-line-red');
+            const classeIcone = r.tipo === 'green' ? 'diff-line-icon-green' : (r.tipo === 'orange' ? 'diff-line-icon-orange' : 'diff-line-icon-red');
+            const classeTexto = r.ehPlaceholder ? 'diff-placeholder-line' : '';
+            return `<div class="diff-line ${classeLinha}"><span class="diff-line-icon ${classeIcone}">${r.icone}</span><span class="diff-text ${classeTexto}">${escapeHtml(r.val)}</span></div>`;
+        }).join('');
+
+        const containerHtml = `<div class="io-numbered-wrapper"><div class="io-gutter" aria-hidden="true" title="Ordem das linhas de saída (stdout)">${gutterHtml}</div><div class="io-box-container"><div class="diff-box border rounded bg-white font-monospace mb-0">${rowsHtml}</div></div></div>`;
+
+        // Placar de Progresso (se expLines.length > 1)
+        let placarHtml = '';
+        if (expLines.length > 1) {
+            const textoLaranjas = linhasLaranjas > 0 ? ` (+ ${linhasLaranjas} com erro de formatação)` : '';
+            placarHtml = `
+                <div class="diff-placar alert alert-secondary py-1 px-2 mb-2 border shadow-sm small d-flex align-items-center" style="font-size: 0.8rem; background-color: #f8f9fa; border-color: #ced4da; color: #212529;">
+                    <span>📊 <strong>Progresso neste caso de teste:</strong> <strong>${linhasVerdes} de ${expLines.length}</strong> saída(s) idêntica(s) ao esperado${textoLaranjas}.</span>
+                </div>
+            `;
+        }
+
+        return {
+            html: containerHtml,
+            placarHtml: placarHtml,
+            totalLinhas: numAluno,
+            linhasVerdes,
+            linhasLaranjas,
+            totalEsperado: expLines.length
+        };
+    }
+
     function formatarTempoExecucao(ms) {
         if (ms === null || ms === undefined || ms === '') return '-';
         const num = Number(ms);
@@ -1000,11 +1294,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        let dicaTexto = data.didacticHint || '';
+        const estaTruncado = (data.got && String(data.got).includes('256 KiB')) ||
+                             (data.output && String(data.output).includes('256 KiB')) ||
+                             (data.details && String(data.details).includes('256 KiB'));
+        if (estaTruncado && !dicaTexto.includes('256 KiB')) {
+            const avisoTruncado = 'Saída truncada em 256 KiB: Seu programa imprimiu dados em excesso e atingiu o limite de exibição — verifique possíveis loops infinitos com comandos de impressão (printf).';
+            dicaTexto = dicaTexto ? `${avisoTruncado}\n\n${dicaTexto}` : avisoTruncado;
+        }
+
         let cardDica = '';
-        if (data.didacticHint) {
+        if (dicaTexto) {
             cardDica = `
-                <div class="alert alert-warning py-2 mb-2">
-                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica:</strong> ${escapeHtml(data.didacticHint)}
+                <div class="alert alert-warning py-2 mb-2 border-warning shadow-sm font-weight-bold">
+                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica:</strong> ${escapeHtml(dicaTexto)}
                 </div>
             `;
         }
@@ -1075,8 +1378,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (data.status === 'Wrong Answer') {
             removerDestaqueErro();
             const entradaInfo = formatarEntradaComNumeracao(data.input);
-            const suaSaidaInfo = formatarSaidaComNumeracao(data.got || '', 'text-danger');
+            const suaSaidaInfo = renderizarDiffVisualSaida(data.got || '', data.expected || '');
             const esperadaInfo = formatarSaidaComNumeracao(data.expected, 'text-success');
+
+            const legendaHtml = `
+                <div class="diff-legend mb-2 p-1 px-2 rounded border bg-light small d-flex flex-wrap align-items-center shadow-sm" style="gap: 12px; font-size: 0.78rem; border-color: #dee2e6;">
+                    <span><span class="mr-1">🟢</span><strong>Correto</strong></span>
+                    <span class="text-muted">|</span>
+                    <span><span class="mr-1">🟠</span><strong>Erro de formatação</strong></span>
+                    <span class="text-muted">|</span>
+                    <span><span class="mr-1">🔴</span><strong>Incorreto</strong></span>
+                </div>
+            `;
 
             resultDiv.innerHTML = `
                 <div class="alert alert-danger py-2">
@@ -1085,6 +1398,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <strong>Resposta Incorreta</strong>
                         ${badgePorcentagem}
                     </div>
+                    ${legendaHtml}
                     <div class="small mt-2">
                         <div class="d-flex align-items-center mb-1" style="padding-left: 24px;">
                             <strong>Entrada:</strong>
@@ -1095,6 +1409,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <strong>Sua saída:</strong>
                             ${suaSaidaInfo.totalLinhas > 0 ? `<span class="badge badge-light border text-muted ml-auto font-weight-normal" style="font-size: 0.68rem;">${suaSaidaInfo.totalLinhas} ${suaSaidaInfo.totalLinhas === 1 ? 'linha' : 'linhas'}</span>` : ''}
                         </div>
+                        ${suaSaidaInfo.placarHtml}
                         ${suaSaidaInfo.html}
                         <div class="d-flex align-items-center mb-1 mt-2" style="padding-left: 24px;">
                             <strong>Saída Esperada:</strong>
@@ -1325,11 +1640,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubmit.classList.remove('btn-primary');
             btnSubmit.classList.add('btn-secondary');
             btnSubmit.style.opacity = '0.65';
-            btnSubmit.innerHTML = '<i class="fas fa-check fa-fw mr-2"></i> Compilado';
+            const ultimoStatus = exId ? mapaUltimoStatusCompilado[exId] : null;
+            if (ultimoStatus === 'Compilation Error') {
+                btnSubmit.innerHTML = '<i class="fas fa-times-circle fa-fw mr-2"></i> Erro de Compilação';
+            } else {
+                btnSubmit.innerHTML = '<i class="fas fa-check fa-fw mr-2"></i> Compilado';
+            }
 
             if (wrapperBtnSubmit) {
                 wrapperBtnSubmit.style.cursor = 'not-allowed';
-                wrapperBtnSubmit.title = 'Altere seu código no editor para poder compilar novamente.';
+                wrapperBtnSubmit.title = ultimoStatus === 'Compilation Error'
+                    ? 'Corrija o erro de compilação no editor para poder compilar novamente.'
+                    : 'Altere seu código no editor para poder compilar novamente.';
             }
             return;
         }
@@ -1994,7 +2316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     if (modoEx === 'function') {
                         labelEntrada = 'Parâmetros de Entrada:';
-                        labelSaida = (parsedSig && parsedSig.returnType === 'void') ? 'Valores após a chamada:' : 'Retorno esperado:';
+                        labelSaida = 'Retorno esperado:';
                         if (parsedSig && parsedSig.params.length > 0) {
                             textoEntradaExibicao = window.FuncaoC.formatarEntradaExibicao(t.input, parsedSig);
                         }
@@ -2036,24 +2358,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 if (modoEx === 'function') {
-                    const avisoRetorno = (parsedSig && parsedSig.returnType === 'void')
-                        ? 'Como a função é do tipo void, o juiz avalia as alterações feitas diretamente nos vetores/matrizes.'
-                        : 'Programe apenas o corpo da função e retorne o resultado usando "return".';
                     htmlExemplos += `
                         <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
-                            <strong>Atenção:</strong> ${avisoRetorno} As linhas com cadeado são protegidas.
+                            <i class="fas fa-info-circle text-info mr-1"></i> <strong>Atenção:</strong> Programe apenas o corpo da função e retorne o resultado usando "return". As linhas com cadeado são protegidas.
                         </div>
                     `;
                 } else if (modoEx === 'main_custom') {
                     htmlExemplos += `
                         <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
-                            <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf"). As linhas com cadeado são protegidas e o corretor avalia exclusivamente o que for impresso pelo "printf" oficial travado no código.
+                            <i class="fas fa-info-circle text-info mr-1"></i> <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf"). As linhas com cadeado são protegidas e o corretor avalia exclusivamente o que for impresso pelo(s) "printf" travado(s) no código.
                         </div>
                     `;
                 } else {
                     htmlExemplos += `
                         <div class="alert alert-light border small text-muted p-2 mt-3 mb-0" style="font-size: 0.78rem; line-height: 1.45;">
-                            <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf") e as saídas aos comandos de impressão ("printf"). Elas devem seguir <strong>exatamente</strong> o formato do exemplo (atente-se a maiúsculas/minúsculas, espaços e quebras de linha).
+                            <i class="fas fa-info-circle text-info mr-1"></i> <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf") e as saídas aos comandos de impressão ("printf"). Elas devem seguir <strong>exatamente</strong> o formato do exemplo (atente-se a maiúsculas/minúsculas, espaços e quebras de linha).
                         </div>
                     `;
                 }
@@ -2125,8 +2444,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnExecutarTesteCustom.disabled = true;
             btnExecutarTesteCustom.style.pointerEvents = 'none';
 
+            const compileTimeoutMsTeste = 30000;
+            const timeLimitMsTeste = (exercicioAtual && exercicioAtual.timeLimit && Number(exercicioAtual.timeLimit) > 0)
+                ? Number(exercicioAtual.timeLimit)
+                : 5000;
+            const folgaSegurancaMsTeste = 15000;
+            const timeoutRequisicaoMsTeste = compileTimeoutMsTeste + timeLimitMsTeste + folgaSegurancaMsTeste;
+
             const controllerTeste = new AbortController();
-            const timerAbortTeste = setTimeout(() => controllerTeste.abort(), 45000);
+            const timerAbortTeste = setTimeout(() => controllerTeste.abort(), timeoutRequisicaoMsTeste);
 
             try {
                 const res = await fetch('/judge/test-custom' + (ltiToken ? `?ltik=${ltiToken}` : ''), {
@@ -2148,11 +2474,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (exercicioAtual) {
                         mapaUltimoTesteCustom[exercicioAtual._id] = { code, input };
                     }
+                    let dicaCustomTexto = data.didacticHint || '';
+                    const estaTruncadoCustom = (data.output && String(data.output).includes('256 KiB')) ||
+                                               (data.details && String(data.details).includes('256 KiB'));
+                    if (estaTruncadoCustom && !dicaCustomTexto.includes('256 KiB')) {
+                        const avisoTruncado = 'Saída truncada em 256 KiB: Seu programa imprimiu dados em excesso e atingiu o limite de exibição — verifique possíveis loops infinitos com comandos de impressão (printf).';
+                        dicaCustomTexto = dicaCustomTexto ? `${avisoTruncado}\n\n${dicaCustomTexto}` : avisoTruncado;
+                    }
+
                     let cardDica = '';
-                    if (data.didacticHint) {
+                    if (dicaCustomTexto) {
                         cardDica = `
-                            <div class="alert alert-warning py-1 small mb-1">
-                                <i class="fas fa-lightbulb mr-1"></i> ${escapeHtml(data.didacticHint)}
+                            <div class="alert alert-warning py-2 mb-2 border-warning shadow-sm font-weight-bold">
+                                <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica:</strong> ${escapeHtml(dicaCustomTexto)}
                             </div>
                         `;
                     }
@@ -2162,7 +2496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="alert alert-light border p-2 mb-2 small shadow-sm">
                                 ${cardDica}
                                 <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <span class="badge badge-success font-weight-bold">Saída Gerada:</span>
+                                     <span class="badge badge-success font-weight-bold">Saída Gerada:</span>
                                     <small class="text-muted">${formatarTempoExecucao(data.executionTime)}</small>
                                 </div>
                                 <pre class="bg-dark text-white p-2 rounded mb-0 pre-io">${escapeHtml(data.output) || '<em>(Sem saída gerada)</em>'}</pre>
@@ -2196,7 +2530,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (errTeste) {
                 const msgErroTeste = errTeste && errTeste.name === 'AbortError'
-                    ? 'A execução demorou mais que o esperado. Tente compilar novamente.'
+                    ? 'O processamento do teste demorou mais que o esperado para responder. Tente novamente.'
                     : 'Erro de conexão ao executar teste.';
                 resultTesteCustom.innerHTML = `<div class="alert alert-danger py-1 small mb-2">${msgErroTeste}</div>`;
             } finally {
@@ -2234,8 +2568,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             btnSubmit.disabled = true;
             btnSubmit.style.pointerEvents = 'none';
 
+            const compileTimeoutMs = 30000;
+            const timeLimitMs = (exercicioAtual && exercicioAtual.timeLimit && Number(exercicioAtual.timeLimit) > 0)
+                ? Number(exercicioAtual.timeLimit)
+                : 5000;
+            const folgaSegurancaMs = 15000;
+            const timeoutRequisicaoMs = compileTimeoutMs + timeLimitMs + folgaSegurancaMs;
+
             const controllerSubmit = new AbortController();
-            const timerAbortSubmit = setTimeout(() => controllerSubmit.abort(), 45000);
+            const timerAbortSubmit = setTimeout(() => controllerSubmit.abort(), timeoutRequisicaoMs);
 
             try {
                 const url = '/judge/submit' + (ltiToken ? `?ltik=${ltiToken}` : '');
@@ -2257,6 +2598,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (res.ok) {
                     if (exercicioAtual) {
                         mapaUltimoCodigoCompilado[exercicioAtual._id] = code;
+                        mapaUltimoStatusCompilado[exercicioAtual._id] = data.status;
                     }
                     renderizarFeedbackJuiz(data);
 
@@ -2284,7 +2626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (err) {
                 const msgErro = err && err.name === 'AbortError'
-                    ? 'A compilação demorou mais que o esperado para responder. Tente clicar em Compilar novamente.'
+                    ? 'O processamento da submissão demorou mais que o esperado para responder. Tente clicar em Compilar novamente.'
                     : 'Erro de conexão com o servidor.';
                 resultDiv.innerHTML = `<div class="alert alert-danger py-2">${msgErro}</div>`;
             } finally {

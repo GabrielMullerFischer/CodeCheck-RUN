@@ -25,6 +25,11 @@ static void sig_handler(int sig) {
     if (child_pid > 0) {
         kill(child_pid, SIGKILL);
     }
+    if (sig == SIGTERM || sig == SIGALRM) {
+        fprintf(stderr, "Tempo limite de execucao excedido [HARD_TIME_LIMIT]\\n");
+        fflush(stderr);
+        _exit(124);
+    }
     _exit(128 + sig);
 }
 
@@ -43,6 +48,11 @@ int main(int argc, char *argv[]) {
         prctl(PR_SET_PDEATHSIG, SIGKILL);
         setgroups(0, NULL);
         if (setgid(65534) != 0 || setuid(65534) != 0) _exit(1);
+        clearenv();
+        setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 1);
+        setenv("HOME", "/sandbox", 1);
+        setenv("USER", "nobody", 1);
+        setenv("TMPDIR", "/sandbox", 1);
         execv(argv[1], &argv[1]);
         _exit(1);
     } else {
@@ -59,7 +69,7 @@ int main(int argc, char *argv[]) {
             fclose(f);
         }
         
-        if (WIFEXITED(status)) return 0;
+        if (WIFEXITED(status)) return WEXITSTATUS(status);
         if (WIFSIGNALED(status)) {
             int sig = WTERMSIG(status);
             if (sig == SIGSEGV) fprintf(stderr, "Segmentation fault (core dumped) [SIGSEGV]\\n");
@@ -68,6 +78,7 @@ int main(int argc, char *argv[]) {
             else if (sig == SIGBUS) fprintf(stderr, "Bus error (core dumped) [SIGBUS]\\n");
             else if (sig == SIGILL) fprintf(stderr, "Illegal instruction [SIGILL]\\n");
             else if (sig == SIGXFSZ) fprintf(stderr, "File size limit exceeded [SIGXFSZ]\\n");
+            else if (sig == SIGKILL) fprintf(stderr, "Killed (process memory limit exceeded or OOM-Killer) [SIGKILL]\\n");
             else fprintf(stderr, "Terminated by signal %d\\n", sig);
             fflush(stderr);
             return 128 + sig;
@@ -100,17 +111,19 @@ function gerarManifestoWarmPod(podName) {
     // Se a aplicação principal morrer e nunca mais voltar (sem atualizar /tmp/app_heartbeat por ORPHAN_TIMEOUT_SEC),
     // o próprio contêiner se encerra sozinho (exit 0 com restartPolicy: Never).
     const startupScript = `#!/usr/bin/env bash
+mkdir -p /var/run/codecheck && chmod 700 /var/run/codecheck
 mkdir -p /tmp/runner_build && cd /tmp/runner_build
 echo "${B64_RUNNER}" | base64 -d > runner.c
 gcc -O2 runner.c -o /usr/local/bin/runner
 chmod 555 /usr/local/bin/runner
 cd / && rm -rf /tmp/runner_build
 mkdir -p /sandbox && chmod 711 /sandbox
-touch /tmp/runner_v4_ready /tmp/runner_ready /tmp/app_heartbeat
+chmod 755 /tmp
+touch /var/run/codecheck/runner_v6_ready /var/run/codecheck/runner_ready /var/run/codecheck/app_heartbeat
 while true; do
     sleep 30
     NOW=$(date +%s)
-    LAST=$(stat -c %Y /tmp/app_heartbeat 2>/dev/null || echo $NOW)
+    LAST=$(stat -c %Y /var/run/codecheck/app_heartbeat 2>/dev/null || echo $NOW)
     if [ $((NOW - LAST)) -gt ${ORPHAN_TIMEOUT_SEC} ]; then
         echo "[OrphanGuard] Aplicacao principal ausente ha mais de ${ORPHAN_TIMEOUT_SEC}s. Encerrando pod orfao..."
         exit 0
@@ -133,6 +146,7 @@ done
         spec: {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
+            enableServiceLinks: false,
             ...(process.env.K8S_WORKER_NODE ? {
                 nodeSelector: {
                     'kubernetes.io/hostname': process.env.K8S_WORKER_NODE
@@ -151,7 +165,7 @@ done
                     args: [`echo "${b64Startup}" | base64 -d | /bin/bash`],
                     readinessProbe: {
                         exec: {
-                            command: ['cat', '/tmp/runner_ready']
+                            command: ['cat', '/var/run/codecheck/runner_ready']
                         },
                         initialDelaySeconds: 1,
                         periodSeconds: 1,
@@ -483,6 +497,7 @@ function montarScriptJob(code, tests, timeoutAlunoMs, jobId, useOfficialOut = fa
     const firstTimeoutSec = totalTests === 1
         ? Math.max(1, Number(limitSec.toFixed(2)))
         : Math.max(1, Number((limitSec * 0.85).toFixed(2)));
+    const firstTimeoutMs = Math.max(100, Math.round(firstTimeoutSec * 1000));
     const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
     const compileTimeoutSec = Math.max(1, Math.ceil(compileTimeoutMs / 1000));
     const safeJobId = String(jobId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -493,6 +508,21 @@ START_TIME_MS=$(date +%s%3N)
 HAD_TIMEOUT=0
 TIMEOUT_COUNT=0
 USE_OFFICIAL_OUT=${flagOfficialOut}
+
+format_got() {
+    local f="$1"
+    if [ -f "$f" ]; then
+        local sz
+        sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+        if [ "$sz" -gt 262144 ]; then
+            (head -c 262144 "$f"; printf "\n\n[Saída truncada ao atingir o limite de 256 KiB — verifique possíveis loops infinitos de impressão]\n") | base64 -w 0
+        else
+            base64 -w 0 < "$f"
+        fi
+    else
+        echo -n ""
+    fi
+}
 
 run_step() {
     local i="$1"
@@ -513,17 +543,24 @@ run_step() {
     else
         if [ $HAD_TIMEOUT -eq 1 ]; then
             STEP_TIMEOUT="0.15s"
+            STEP_TIMEOUT_MS=150
         else
             STEP_TIMEOUT="${firstTimeoutSec}s"
+            STEP_TIMEOUT_MS=${firstTimeoutMs}
         fi
 
         find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
         cd "$WORK_DIR"
         echo "$b64In" | base64 -d > "$CTRL_DIR/in_\${i}.txt"
 
-        rm -f "$CTRL_DIR/time_\${i}.txt"
-        timeout -k 0.2s -s 9 $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_\${i}.txt" < "$CTRL_DIR/in_\${i}.txt" > "$CTRL_DIR/got_\${i}.txt" 2> "$CTRL_DIR/err_\${i}.txt"
+        rm -f "$CTRL_DIR/time_\${i}.txt" "$CTRL_DIR/err_\${i}.txt" "$CTRL_DIR/got_\${i}.txt"
+        STEP_START_MS=$(date +%s%3N)
+        timeout -k 0.5s $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_\${i}.txt" < "$CTRL_DIR/in_\${i}.txt" > "$CTRL_DIR/got_\${i}.txt" 2> "$CTRL_DIR/err_\${i}.txt"
         EXIT_CODE=$?
+        STEP_END_MS=$(date +%s%3N)
+        STEP_ELAPSED_MS=$(( STEP_END_MS - STEP_START_MS ))
+        NOW_MS=$(date +%s%3N)
+        ELAPSED_TOTAL=$(( NOW_MS - START_TIME_MS ))
         pkill -9 -u 65534 2>/dev/null || true
         ipcrm -a 2>/dev/null || true
 
@@ -534,22 +571,45 @@ run_step() {
                 : > "$CTRL_DIR/got_\${i}.txt"
             fi
         fi
+        find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
 
         CPUTIME=$(cat "$CTRL_DIR/time_\${i}.txt" 2>/dev/null || echo "0.000000")
         echo "TIME:$CPUTIME"
 
-        if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
+        ERR_CONTENT=$(cat "$CTRL_DIR/err_\${i}.txt" 2>/dev/null || echo "")
+
+        IS_TIMEOUT=0
+        if [ $EXIT_CODE -eq 124 ]; then
+            IS_TIMEOUT=1
+        elif echo "$ERR_CONTENT" | grep -q "HARD_TIME_LIMIT"; then
+            IS_TIMEOUT=1
+        elif [ $ELAPSED_TOTAL -ge ${timeoutAlunoMs} ]; then
+            IS_TIMEOUT=1
+        elif [ $STEP_ELAPSED_MS -ge $(( STEP_TIMEOUT_MS - 250 )) ] && [ $EXIT_CODE -eq 137 ]; then
+            IS_TIMEOUT=1
+        elif [ $HAD_TIMEOUT -eq 1 ] || [ $TIMEOUT_COUNT -gt 0 ]; then
+            IS_TIMEOUT=1
+        fi
+
+        if [ $IS_TIMEOUT -eq 1 ]; then
             HAD_TIMEOUT=1
             TIMEOUT_COUNT=$(( TIMEOUT_COUNT + 1 ))
             echo "STATUS:HARD_TIME_LIMIT"
-            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_\${i}.txt")"
+        elif [ $EXIT_CODE -eq 137 ]; then
+            echo "STATUS:RUNTIME_ERROR"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_\${i}.txt")"
+            if ! echo "$ERR_CONTENT" | grep -q "SIGKILL"; then
+                ERR_CONTENT="Killed (process memory limit exceeded or OOM-Killer) [SIGKILL]"$'\n'"$ERR_CONTENT"
+            fi
+            echo "ERR_B64:$(echo -n "$ERR_CONTENT" | head -c 262144 | base64 -w 0)"
         elif [ $EXIT_CODE -ne 0 ]; then
             echo "STATUS:RUNTIME_ERROR"
-            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
-            echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_\${i}.txt")"
+            echo "ERR_B64:$(echo -n "$ERR_CONTENT" | head -c 262144 | base64 -w 0)"
         else
             echo "STATUS:OK"
-            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_\${i}.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_\${i}.txt")"
         fi
         rm -f "$CTRL_DIR/in_\${i}.txt" "$CTRL_DIR/got_\${i}.txt" "$CTRL_DIR/err_\${i}.txt" "$CTRL_DIR/time_\${i}.txt"
     fi
@@ -567,6 +627,7 @@ export https_proxy="http://127.0.0.1:0"
 export HTTP_PROXY="http://127.0.0.1:0"
 export HTTPS_PROXY="http://127.0.0.1:0"
 export all_proxy="http://127.0.0.1:0"
+unset $(env | cut -d= -f1 | grep -E '^(CODECHECK|KUBERNETES|MONGO|MINIO|LTI|AWS|SECRET|TOKEN|KEY|PASS)') 2>/dev/null || true
 
 CTRL_DIR="/root/ctrl_${safeJobId}"
 BIN_DIR="/var/run/judge_${safeJobId}"
@@ -586,18 +647,20 @@ pkill -9 -u 65534 2>/dev/null || true
 ipcrm -a 2>/dev/null || true
 find /tmp /var/tmp /dev/shm -mindepth 1 -user 65534 -exec rm -rf {} + 2>/dev/null || true
 
+mkdir -p /var/run/codecheck && chmod 700 /var/run/codecheck
+chmod 755 /tmp 2>/dev/null || true
 mkdir -p /sandbox && chmod 711 /sandbox
 mkdir -p "$CTRL_DIR" && chmod 700 "$CTRL_DIR"
 mkdir -p "$BIN_DIR" && chmod 755 "$BIN_DIR"
 mkdir -p "$WORK_DIR" && chown 65534:65534 "$WORK_DIR" && chmod 700 "$WORK_DIR"
 
 # Garante que o binário do runner esteja presente e atualizado (inclusive em Warm Pods adotados)
-if [ ! -f /usr/local/bin/runner ] || [ ! -f /tmp/runner_v4_ready ]; then
+if [ ! -f /usr/local/bin/runner ] || [ ! -f /var/run/codecheck/runner_v6_ready ]; then
     echo "${B64_RUNNER}" | base64 -d > "$CTRL_DIR/runner.c"
     gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
     chmod 555 /usr/local/bin/runner
     rm -f "$CTRL_DIR/runner.c"
-    touch /tmp/runner_v4_ready
+    touch /var/run/codecheck/runner_v6_ready
 fi
 
 cd "$WORK_DIR"
@@ -606,12 +669,13 @@ chown 65534:65534 main.c
 chmod 600 main.c
 
 set +e
-COMPILE_ERR=$(timeout -k 1s -s 9 ${compileTimeoutSec}s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc -Wall main.c -o prog -lm' 2>&1)
+COMPILE_START_MS=$(date +%s%3N)
+COMPILE_ERR=$(timeout -k 1s ${compileTimeoutSec}s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'export TMPDIR="'"$WORK_DIR"'"; ulimit -u 50; ulimit -f 50000; exec gcc -Wall main.c -o prog -lm' 2>&1)
 COMPILE_STATUS=$?
 
 if [ $COMPILE_STATUS -ne 0 ]; then
     if [ $COMPILE_STATUS -eq 124 ] || [ $COMPILE_STATUS -eq 137 ]; then
-        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (${compileTimeoutSec}s). Verifique diretivas #include ou macros."
+        COMPILE_ERR="main.c:1:1: error: Falha na compilação: tempo limite excedido (${compileTimeoutSec}s) ou esgotamento de memória ao processar o código-fonte (verifique diretivas #include ou macros infinitas como #include </dev/zero>)."
     fi
     echo "STATUS:COMPILATION_ERROR"
     echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
@@ -620,6 +684,8 @@ fi
 if [ -n "$COMPILE_ERR" ]; then
     echo "WARN_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
 fi
+
+echo "STATUS:COMPILED_OK"
 
 mv "$WORK_DIR/prog" "$BIN_DIR/prog"
 chown 0:0 "$BIN_DIR/prog"
@@ -638,18 +704,59 @@ echo "STATUS:ALL_PASSED"
 async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now(), tentativa = 1, useOfficialOut = false) {
     const podName = await adquirirPod();
     let teveErroGrave = false;
+    const inicioJobMs = Date.now();
 
     try {
         const scriptJob = montarScriptJob(code, tests, timeoutAlunoMs, jobId, useOfficialOut);
         const b64GzScript = zlib.gzipSync(Buffer.from(scriptJob, 'utf-8')).toString('base64');
         const comando = `echo "${b64GzScript}" | base64 -d | gzip -d | /bin/bash`;
 
-        // Teto de execução: tempo limite configurado para o teste + margem de compilação do .env (COMPILE_TIMEOUT)
+        // Teto de execução: tempo limite configurado para o teste + margem de compilação do .env (COMPILE_TIMEOUT) + folga de rede/segurança
         const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
-        const timeoutExecMs = Math.min(Math.max(timeoutAlunoMs + compileTimeoutMs + 5000, 15000), 200000);
+        const timeoutExecMs = Math.max(timeoutAlunoMs + compileTimeoutMs + 15000, 45000);
 
         const resultado = await executarComandoNoPod(podName, comando, timeoutExecMs);
-        return (resultado.stdout || resultado.stderr || '').toString();
+        let outputStr = (resultado.stdout || resultado.stderr || '').toString();
+
+        // Se o output foi interrompido sem emitir STATUS:, o contêiner ou processo sofreu morte abrupta (ex: OOM-Killer do kernel/K8s)
+        if (!outputStr.includes('STATUS:')) {
+            teveErroGrave = true;
+            try {
+                const podStatus = await apiGetPod(podName);
+                const isOom = podStatus?.status?.containerStatuses?.some(cs => 
+                    cs.state?.terminated?.reason === 'OOMKilled' || 
+                    cs.lastState?.terminated?.reason === 'OOMKilled'
+                );
+                const compilarOk = outputStr.includes('STATUS:COMPILED_OK');
+                const tempoTotalDecorrido = Date.now() - inicioJobMs;
+
+                if (!compilarOk) {
+                    const msgComp = (isOom || tempoTotalDecorrido < compileTimeoutMs)
+                        ? "main.c:1:1: error: Falha na compilação: limite de memória excedido (512 MiB) durante o processamento do código-fonte (verifique diretivas #include ou macros infinitas como #include </dev/zero>)."
+                        : `main.c:1:1: error: Falha na compilação: tempo limite de compilação excedido (${Math.ceil(compileTimeoutMs / 1000)}s) ou esgotamento de recursos ao compilar.`;
+                    outputStr = `STATUS:COMPILATION_ERROR\nERR_B64:${Buffer.from(msgComp).toString('base64')}\n`;
+                } else if (tempoTotalDecorrido >= timeoutAlunoMs) {
+                    outputStr = `---STEP---\nINDEX:0\nSTATUS:HARD_TIME_LIMIT\nGOT_B64:\n`;
+                } else {
+                    outputStr = `---STEP---\nINDEX:0\nSTATUS:RUNTIME_ERROR\nERR_B64:${Buffer.from('O processo foi encerrado abruptamente pelo sistema (possível esgotamento do limite de memória de 512 MiB ou OOM-Killer). [SIGKILL]').toString('base64')}\n`;
+                }
+            } catch {
+                const compilarOk = outputStr.includes('STATUS:COMPILED_OK');
+                const tempoTotalDecorrido = Date.now() - inicioJobMs;
+                if (!compilarOk) {
+                    const msgComp = tempoTotalDecorrido < compileTimeoutMs
+                        ? "main.c:1:1: error: Falha na compilação: limite de memória excedido (512 MiB) durante o processamento do código-fonte (verifique diretivas #include ou macros infinitas como #include </dev/zero>)."
+                        : `main.c:1:1: error: Falha na compilação: tempo limite de compilação excedido (${Math.ceil(compileTimeoutMs / 1000)}s) ou esgotamento de recursos ao compilar.`;
+                    outputStr = `STATUS:COMPILATION_ERROR\nERR_B64:${Buffer.from(msgComp).toString('base64')}\n`;
+                } else if (tempoTotalDecorrido >= timeoutAlunoMs) {
+                    outputStr = `---STEP---\nINDEX:0\nSTATUS:HARD_TIME_LIMIT\nGOT_B64:\n`;
+                } else {
+                    outputStr = `---STEP---\nINDEX:0\nSTATUS:RUNTIME_ERROR\nERR_B64:${Buffer.from('O processo foi encerrado abruptamente pelo sistema (possível esgotamento do limite de memória de 512 MiB ou OOM-Killer). [SIGKILL]').toString('base64')}\n`;
+                }
+            }
+        }
+
+        return outputStr;
     } catch (err) {
         teveErroGrave = true;
         // Se foi a 1ª tentativa e o pod falhou na comunicação (ex: pod parado externamente no Docker/K8s),
@@ -661,7 +768,7 @@ async function executarJobNoPool(code, tests, timeoutAlunoMs, jobId = Date.now()
         }
         throw err;
     } finally {
-        if (!teveErroGrave || tentativa > 1) {
+        if (podMap.has(podName)) {
             liberarPod(podName, teveErroGrave);
         }
     }
@@ -716,7 +823,7 @@ async function verificarEManterPool() {
                 const entry = podMap.get(name);
                 if (entry && entry.status === 'idle' && (Date.now() - (entry.lastHeartbeatAt || 0) > 120000)) {
                     entry.lastHeartbeatAt = Date.now();
-                    executarComandoNoPod(name, 'touch /tmp/app_heartbeat 2>/dev/null || true', 5000).catch(() => { });
+                    executarComandoNoPod(name, 'touch /var/run/codecheck/app_heartbeat 2>/dev/null || true', 5000).catch(() => { });
                 }
             }
         }

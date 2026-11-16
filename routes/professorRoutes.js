@@ -49,6 +49,7 @@ function extrairAssinaturaDeTextoC(texto) {
     if (!texto || typeof texto !== 'string') return null;
     const res = FuncaoC.parsearAssinatura(texto);
     if (res.valido) return res;
+    if (res.isVoid) return { isVoid: true };
     if (res.invalidParam) return { invalidParam: res.invalidParam };
     return null;
 }
@@ -66,10 +67,17 @@ function validarConfiguracaoModoExercicio(body = {}) {
             };
         }
         const linhas = rawTpl.split('\n');
-        const temPrintOficial = linhas.some(l => /^\s*###/.test(l) && /\bprintf\s*\(/.test(l));
+        const linhasComHash = linhas.filter(l => /^\s*###/.test(l));
+        const temPrintOficial = linhasComHash.some(l => /\bprintf\s*\(/.test(l));
         if (!temPrintOficial) {
             return {
                 error: "No modo Main Personalizada, é obrigatório incluir pelo menos uma linha iniciada com ### contendo printf para avaliação do juiz."
+            };
+        }
+        const hashSemPrintf = linhasComHash.find(l => !/\bprintf\s*\(/.test(l));
+        if (hashSemPrintf) {
+            return {
+                error: `O marcador ### é exclusivo para comandos printf de avaliação. A linha "${hashSemPrintf.trim()}" não possui printf. Para travar outras linhas (como variáveis ou chamadas), utilize o marcador ***.`
             };
         }
         return {
@@ -101,6 +109,11 @@ function validarConfiguracaoModoExercicio(body = {}) {
                 error: "Não foi possível identificar o cabeçalho da função no código-base. Declare no formato: tipo nomeDaFuncao(tipo param1, tipo param2) — ex: int somar(int a, int b)."
             };
         }
+        if (extraido.isVoid || extraido.returnType === 'void') {
+            return {
+                error: "No Modo Função, a função deve possuir um tipo de retorno (ex: int, float, double, char). Para funções do tipo void que alteram valores por referência, utilize o Modo Main Personalizada."
+            };
+        }
         if (extraido.invalidParam) {
             return {
                 error: `Parâmetro inválido na declaração da função: "${extraido.invalidParam}". Use tipos simples (int a, float b), vetores (int v[]), textos (char s[]) ou matrizes (int m[][3], int **m). O tamanho das colunas deve ser um número.`
@@ -118,9 +131,7 @@ function validarConfiguracaoModoExercicio(body = {}) {
 
         const templateFinal = rawTpl.trim()
             ? rawTpl
-            : (extraido.returnType === 'void'
-                ? `***${extraido.cleanSignature} {\n    // Espaco livre para o aluno programar\n    \n***}`
-                : `***${extraido.cleanSignature} {\n    ${extraido.returnType} resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`);
+            : `***${extraido.cleanSignature} {\n    ${extraido.returnType} resultado = 0;\n    // Espaco livre para o aluno programar\n    \n***    return resultado;\n***}`;
 
         return {
             exerciseMode: 'function',

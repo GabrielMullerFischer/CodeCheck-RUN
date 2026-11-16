@@ -360,46 +360,9 @@ function gerarMainOcultaFuncao(sig, floatPrecision, isCustomDebug) {
     });
 
     const chamada = `${sig.funcName}(${args.join(', ')})`;
-    const impressoes = [];
-
-    if (sig.returnType === 'void') {
-        FuncaoC.parametrosDeSaida(sig).forEach(p => {
-            const idx = sig.params.indexOf(p);
-            const v = `__cc_p${idx}`;
-            if (p.kind === 'string') {
-                impressoes.push(`        fprintf(__cc_out, "%s\\n", ${v});`);
-                return;
-            }
-            const el = obterFormatadorPrintRetornoC(p.type, floatPrecision);
-            if (p.kind === 'vector') {
-                impressoes.push('        fputc(\'{\', __cc_out);');
-                impressoes.push(`        for (int __cc_k = 0; __cc_k < __cc_len${idx}; __cc_k++) {`);
-                impressoes.push('            if (__cc_k) fputs(", ", __cc_out);');
-                impressoes.push(`            fprintf(__cc_out, "${el.fmt}", ${el.cast}${v}[__cc_k]);`);
-                impressoes.push('        }');
-                impressoes.push('        fputs("}\\n", __cc_out);');
-                return;
-            }
-            impressoes.push('        fputc(\'{\', __cc_out);');
-            impressoes.push(`        for (int __cc_a = 0; __cc_a < __cc_rows${idx}; __cc_a++) {`);
-            impressoes.push('            if (__cc_a) fputs(", ", __cc_out);');
-            impressoes.push('            fputc(\'{\', __cc_out);');
-            impressoes.push(`            for (int __cc_b = 0; __cc_b < __cc_cols${idx}; __cc_b++) {`);
-            impressoes.push('                if (__cc_b) fputs(", ", __cc_out);');
-            impressoes.push(`                fprintf(__cc_out, "${el.fmt}", ${el.cast}${v}[__cc_a][__cc_b]);`);
-            impressoes.push('            }');
-            impressoes.push('            fputc(\'}\', __cc_out);');
-            impressoes.push('        }');
-            impressoes.push('        fputs("}\\n", __cc_out);');
-        });
-    } else {
-        const retPrint = obterFormatadorPrintRetornoC(sig.returnType, floatPrecision);
-        impressoes.push(`        fprintf(__cc_out, "${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`);
-    }
-
-    const linhaChamada = sig.returnType === 'void'
-        ? `    ${chamada};`
-        : `    ${sig.returnType} __cc_ret = ${chamada};`;
+    const retPrint = obterFormatadorPrintRetornoC(sig.returnType, floatPrecision);
+    const impressaoRetorno = `        fprintf(__cc_out, "${retPrint.fmt}\\n", ${retPrint.cast}__cc_ret);`;
+    const linhaChamada = `    ${sig.returnType} __cc_ret = ${chamada};`;
 
     const abertura = isCustomDebug
         ? '    FILE *__cc_out = stdout;'
@@ -414,7 +377,7 @@ function gerarMainOcultaFuncao(sig, floatPrecision, isCustomDebug) {
         abertura,
         '    if (__cc_out) {',
         isCustomDebug ? '        fflush(stdout);' : '        setbuf(__cc_out, NULL);',
-        ...impressoes,
+        impressaoRetorno,
         '        if (__cc_out != stdout) fclose(__cc_out);',
         '    }',
         '    return 0;',
@@ -424,7 +387,13 @@ function gerarMainOcultaFuncao(sig, floatPrecision, isCustomDebug) {
 
 function prepararCodigoModoFuncao(code, functionSignature, floatPrecision = 2, isCustomDebug = false, templateCode = null) {
     const sig = extrairAssinaturaFuncaoC(functionSignature || templateCode);
-    if (!sig.valido) {
+    if (!sig || !sig.valido) {
+        if (sig && (sig.isVoid || sig.returnType === 'void')) {
+            return {
+                valido: false,
+                error: "No Modo Função, a função deve possuir um tipo de retorno (ex: int, float, double, char). Para funções do tipo void, utilize o Modo Main Personalizada."
+            };
+        }
         return { valido: true, codeFinal: code, useOfficialOut: false };
     }
 
@@ -689,6 +658,7 @@ async function executarProcessoDeTesteK8sIndividual(code, tests, containerName, 
         spec: {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
+            enableServiceLinks: false,
             ...(process.env.K8S_WORKER_NODE ? {
                 nodeSelector: {
                     'kubernetes.io/hostname': process.env.K8S_WORKER_NODE
@@ -774,6 +744,7 @@ function gerarScriptSandbox(code, tests, timeLimitMs, useOfficialOut = false) {
     const firstTimeoutSec = totalTests === 1
         ? Math.max(1, Number(limitSec.toFixed(2)))
         : Math.max(1, Number((limitSec * 0.85).toFixed(2)));
+    const firstTimeoutMs = Math.max(100, Math.round(firstTimeoutSec * 1000));
     const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT) || 30000;
     const compileTimeoutSec = Math.max(1, Math.ceil(compileTimeoutMs / 1000));
     const flagOfficialOut = useOfficialOut ? '1' : '0';
@@ -785,11 +756,29 @@ START_TIME_MS=$(date +%s%3N)
 HAD_TIMEOUT=0
 TIMEOUT_COUNT=0
 USE_OFFICIAL_OUT=${flagOfficialOut}
-if [ ! -f /usr/local/bin/runner ]; then
+
+format_got() {
+    local f="$1"
+    if [ -f "$f" ]; then
+        local sz
+        sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+        if [ "$sz" -gt 262144 ]; then
+            (head -c 262144 "$f"; printf "\n\n[Saída truncada ao atingir o limite de 256 KiB — verifique possíveis loops infinitos de impressão]\n") | base64 -w 0
+        else
+            base64 -w 0 < "$f"
+        fi
+    else
+        echo -n ""
+    fi
+}
+
+if [ ! -f /usr/local/bin/runner ] || [ ! -f /var/run/codecheck/runner_v6_ready ]; then
     echo "${b64Runner}" | base64 -d > "$CTRL_DIR/runner.c"
     gcc -O2 "$CTRL_DIR/runner.c" -o /usr/local/bin/runner
     chmod 555 /usr/local/bin/runner
     rm -f "$CTRL_DIR/runner.c"
+    mkdir -p /var/run/codecheck && chmod 700 /var/run/codecheck
+    touch /var/run/codecheck/runner_v6_ready
 fi
 
 run_step() {
@@ -811,17 +800,24 @@ run_step() {
     else
         if [ $HAD_TIMEOUT -eq 1 ]; then
             STEP_TIMEOUT="0.15s"
+            STEP_TIMEOUT_MS=150
         else
             STEP_TIMEOUT="${firstTimeoutSec}s"
+            STEP_TIMEOUT_MS=${firstTimeoutMs}
         fi
 
         find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
         cd "$WORK_DIR"
         echo "$b64In" | base64 -d > "$CTRL_DIR/in_$i.txt"
 
-        rm -f "$CTRL_DIR/time_$i.txt"
-        timeout -k 0.2s -s 9 $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_$i.txt" < "$CTRL_DIR/in_$i.txt" > "$CTRL_DIR/got_$i.txt" 2> "$CTRL_DIR/err_$i.txt"
+        rm -f "$CTRL_DIR/time_$i.txt" "$CTRL_DIR/err_$i.txt" "$CTRL_DIR/got_$i.txt"
+        STEP_START_MS=$(date +%s%3N)
+        timeout -k 0.5s $STEP_TIMEOUT stdbuf -o0 -e0 /usr/local/bin/runner "$BIN_DIR/prog" "$CTRL_DIR/time_$i.txt" < "$CTRL_DIR/in_$i.txt" > "$CTRL_DIR/got_$i.txt" 2> "$CTRL_DIR/err_$i.txt"
         EXIT_CODE=$?
+        STEP_END_MS=$(date +%s%3N)
+        STEP_ELAPSED_MS=$(( STEP_END_MS - STEP_START_MS ))
+        NOW_MS=$(date +%s%3N)
+        ELAPSED_TOTAL=$(( NOW_MS - START_TIME_MS ))
         pkill -9 -u 65534 2>/dev/null || true
         ipcrm -a 2>/dev/null || true
 
@@ -832,22 +828,45 @@ run_step() {
                 : > "$CTRL_DIR/got_$i.txt"
             fi
         fi
+        find "$WORK_DIR" -mindepth 1 -delete 2>/dev/null || true
 
         CPUTIME=$(cat "$CTRL_DIR/time_$i.txt" 2>/dev/null || echo "0.000000")
         echo "TIME:$CPUTIME"
 
-        if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
+        ERR_CONTENT=$(cat "$CTRL_DIR/err_$i.txt" 2>/dev/null || echo "")
+
+        IS_TIMEOUT=0
+        if [ $EXIT_CODE -eq 124 ]; then
+            IS_TIMEOUT=1
+        elif echo "$ERR_CONTENT" | grep -q "HARD_TIME_LIMIT"; then
+            IS_TIMEOUT=1
+        elif [ $ELAPSED_TOTAL -ge ${timeLimitMs} ]; then
+            IS_TIMEOUT=1
+        elif [ $STEP_ELAPSED_MS -ge $(( STEP_TIMEOUT_MS - 250 )) ] && [ $EXIT_CODE -eq 137 ]; then
+            IS_TIMEOUT=1
+        elif [ $HAD_TIMEOUT -eq 1 ] || [ $TIMEOUT_COUNT -gt 0 ]; then
+            IS_TIMEOUT=1
+        fi
+
+        if [ $IS_TIMEOUT -eq 1 ]; then
             HAD_TIMEOUT=1
             TIMEOUT_COUNT=$(( TIMEOUT_COUNT + 1 ))
             echo "STATUS:HARD_TIME_LIMIT"
-            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_$i.txt")"
+        elif [ $EXIT_CODE -eq 137 ]; then
+            echo "STATUS:RUNTIME_ERROR"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_$i.txt")"
+            if ! echo "$ERR_CONTENT" | grep -q "SIGKILL"; then
+                ERR_CONTENT="Killed (process memory limit exceeded or OOM-Killer) [SIGKILL]"$'\n'"$ERR_CONTENT"
+            fi
+            echo "ERR_B64:$(echo -n "$ERR_CONTENT" | head -c 262144 | base64 -w 0)"
         elif [ $EXIT_CODE -ne 0 ]; then
             echo "STATUS:RUNTIME_ERROR"
-            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
-            echo "ERR_B64:$(head -c 262144 "$CTRL_DIR/err_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_$i.txt")"
+            echo "ERR_B64:$(echo -n "$ERR_CONTENT" | head -c 262144 | base64 -w 0)"
         else
             echo "STATUS:OK"
-            echo "GOT_B64:$(head -c 262144 "$CTRL_DIR/got_$i.txt" 2>/dev/null | base64 -w 0 || echo '')"
+            echo "GOT_B64:$(format_got "$CTRL_DIR/got_$i.txt")"
         fi
         rm -f "$CTRL_DIR/in_$i.txt" "$CTRL_DIR/got_$i.txt" "$CTRL_DIR/err_$i.txt" "$CTRL_DIR/time_$i.txt"
     fi
@@ -865,11 +884,14 @@ export https_proxy="http://127.0.0.1:0"
 export HTTP_PROXY="http://127.0.0.1:0"
 export HTTPS_PROXY="http://127.0.0.1:0"
 export all_proxy="http://127.0.0.1:0"
+unset $(env | cut -d= -f1 | grep -E '^(CODECHECK|KUBERNETES|MONGO|MINIO|LTI|AWS|SECRET|TOKEN|KEY|PASS)') 2>/dev/null || true
 
 CTRL_DIR="/root/ctrl_ephemeral"
 BIN_DIR="/var/run/judge_ephemeral"
 WORK_DIR="/sandbox/work"
 
+mkdir -p /var/run/codecheck && chmod 700 /var/run/codecheck
+chmod 755 /tmp 2>/dev/null || true
 mkdir -p /sandbox && chmod 711 /sandbox
 mkdir -p "$CTRL_DIR" && chmod 700 "$CTRL_DIR"
 mkdir -p "$BIN_DIR" && chmod 755 "$BIN_DIR"
@@ -881,12 +903,13 @@ chown 65534:65534 main.c
 chmod 600 main.c
 
 set +e
-COMPILE_ERR=$(timeout -k 1s -s 9 ${compileTimeoutSec}s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'ulimit -u 50; ulimit -f 50000; exec gcc -Wall main.c -o prog -lm' 2>&1)
+COMPILE_START_MS=$(date +%s%3N)
+COMPILE_ERR=$(timeout -k 1s ${compileTimeoutSec}s setpriv --reuid=65534 --regid=65534 --clear-groups bash -c 'export TMPDIR="'"$WORK_DIR"'"; ulimit -u 50; ulimit -f 50000; exec gcc -Wall main.c -o prog -lm' 2>&1)
 COMPILE_STATUS=$?
 
 if [ $COMPILE_STATUS -ne 0 ]; then
     if [ $COMPILE_STATUS -eq 124 ] || [ $COMPILE_STATUS -eq 137 ]; then
-        COMPILE_ERR="main.c:1:1: error: Tempo limite de compilacao excedido (${compileTimeoutSec}s). Verifique diretivas #include ou macros."
+        COMPILE_ERR="main.c:1:1: error: Falha na compilação: tempo limite excedido (${compileTimeoutSec}s) ou esgotamento de memória ao processar o código-fonte (verifique diretivas #include ou macros infinitas como #include </dev/zero>)."
     fi
     echo "STATUS:COMPILATION_ERROR"
     echo "ERR_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
@@ -895,6 +918,8 @@ fi
 if [ -n "$COMPILE_ERR" ]; then
     echo "WARN_B64:$(echo -n "$COMPILE_ERR" | base64 -w 0)"
 fi
+
+echo "STATUS:COMPILED_OK"
 
 mv "$WORK_DIR/prog" "$BIN_DIR/prog"
 chown 0:0 "$BIN_DIR/prog"
@@ -944,14 +969,18 @@ async function aguardarPodFinalizar(podName, ns, timeoutMs) {
 function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (Number(process.env.COMPILE_TIMEOUT) || 10000)) {
     const totalCount = Array.isArray(testsOriginais) ? testsOriginais.length : 0;
 
-    if (!rawOutput) {
-        return { status: 'Runtime Error', details: 'Nenhum retorno gerado pelo Pod.', executionTime: 0, percentage: 0, passedCount: 0, totalCount };
+    if (!rawOutput || rawOutput.trim().length === 0) {
+        return { status: 'Compilation Error', details: 'main.c:1:1: error: Falha na compilação: tempo limite excedido (30s) ou esgotamento de memória (512 MiB) ao processar o código-fonte (verifique diretivas #include ou macros infinitas como #include </dev/zero>).', executionTime: 0, percentage: 0, passedCount: 0, totalCount };
     }
 
     if (rawOutput.includes('STATUS:COMPILATION_ERROR')) {
         const match = rawOutput.match(/ERR_B64:([A-Za-z0-9+/=]+)/);
         const details = match ? Buffer.from(match[1], 'base64').toString('utf-8') : 'Erro de compilação.';
         return { status: 'Compilation Error', details, executionTime: 0, percentage: 0, passedCount: 0, totalCount };
+    }
+
+    if (!rawOutput.includes('STATUS:COMPILED_OK') && !rawOutput.includes('---STEP---')) {
+        return { status: 'Compilation Error', details: 'main.c:1:1: error: Falha na compilação: esgotamento de recursos (512 MiB de RAM ou tempo limite) durante a compilação do código-fonte (verifique diretivas #include ou macros infinitas como #include </dev/zero>).', executionTime: 0, percentage: 0, passedCount: 0, totalCount };
     }
 
     const warnMatch = rawOutput.match(/WARN_B64:([A-Za-z0-9+/=]*)/);
@@ -994,13 +1023,16 @@ function processarResultadoSandbox(rawOutput, testsOriginais, timeoutAlunoMs = (
                     executionTime: durMs > 0 ? durMs : timeoutAlunoMs
                 };
             }
-        } else if (stepStatus === 'RUNTIME_ERROR') {
+        } else if (stepStatus === 'RUNTIME_ERROR' || !stepStatus) {
             const errMatch = step.match(/ERR_B64:([A-Za-z0-9+/=]*)/);
-            const details = errMatch && errMatch[1] ? Buffer.from(errMatch[1], 'base64').toString('utf-8') : 'Runtime Error.';
+            let details = errMatch && errMatch[1] ? Buffer.from(errMatch[1], 'base64').toString('utf-8') : '';
+            if (!stepStatus && !details) {
+                details = 'O processo foi encerrado abruptamente pelo sistema (possível esgotamento do limite de memória de 512 MiB ou OOM-Killer). [SIGKILL]';
+            }
             if (!primeiroErro) {
                 primeiroErro = {
                     status: 'Runtime Error',
-                    details,
+                    details: details || 'Erro de execução.',
                     input: testItem.inputOriginal !== undefined ? testItem.inputOriginal : (testItem.input || ''),
                     got: got,
                     expected: expected,

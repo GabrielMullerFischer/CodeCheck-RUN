@@ -151,6 +151,14 @@
         const funcName = match[2].trim();
         if (funcName === 'main') return null;
 
+        if (returnType === 'void') {
+            return {
+                valido: false,
+                isVoid: true,
+                error: 'Funções com retorno void devem ser configuradas no Modo Main Personalizada.'
+            };
+        }
+
         const paramsRaw = match[3].trim();
         const params = [];
 
@@ -189,6 +197,7 @@
         const linhas = texto.split('\n');
         const candidatos = [];
         let erroParametro = null;
+        let erroVoid = false;
         let emComentarioBloco = false;
         let nivelChaves = 0;
 
@@ -213,6 +222,8 @@
                 if (res) {
                     if (res.invalidParam) {
                         erroParametro = res.invalidParam;
+                    } else if (res.isVoid) {
+                        erroVoid = true;
                     } else if (res.valido) {
                         candidatos.push(res);
                     }
@@ -230,6 +241,9 @@
         }
         if (erroParametro) {
             return { valido: false, invalidParam: erroParametro };
+        }
+        if (erroVoid) {
+            return { valido: false, isVoid: true };
         }
         return { valido: false };
     }

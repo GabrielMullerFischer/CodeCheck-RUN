@@ -118,7 +118,14 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = 0; i < total; i++) {
             const texto = cmInstance.getLine(i) || '';
             cmInstance.removeLineClass(i, 'background', 'cm-prof-locked-line');
-            if (/^\s*(?:\*\*\*|###)/.test(texto)) {
+            cmInstance.removeLineClass(i, 'background', 'cm-prof-output-line');
+            if (/^\s*###/.test(texto)) {
+                const marker = document.createElement('div');
+                marker.style.textAlign = 'center';
+                marker.innerHTML = '<span class="d-inline-flex align-items-center justify-content-center" style="gap: 3px;" title="Esse print é usado para a validação"><i class="fas fa-lock text-success" style="font-size: 0.72rem;"></i><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#28a745;box-shadow:0 0 3px #28a745;"></span></span>';
+                cmInstance.setGutterMarker(i, 'locked-gutter', marker);
+                cmInstance.addLineClass(i, 'background', 'cm-prof-output-line');
+            } else if (/^\s*\*\*\*/.test(texto)) {
                 const marker = document.createElement('div');
                 marker.style.textAlign = 'center';
                 marker.innerHTML = '<i class="fas fa-lock text-muted" style="font-size: 0.72rem; opacity: 0.75;" title="Linha travada para o aluno"></i>';
@@ -443,7 +450,9 @@ int main() {
     function parsearAssinaturaFuncao(sigOuTemplate) {
         if (!sigOuTemplate || typeof sigOuTemplate !== 'string' || !window.FuncaoC) return null;
         const r = window.FuncaoC.parsearAssinatura(sigOuTemplate);
-        return r && r.valido ? r : null;
+        if (r && r.valido) return r;
+        if (r && r.isVoid) return { isVoid: true, error: 'Funções do tipo void não são suportadas no Modo Função. Utilize o Modo Main Personalizada.' };
+        return null;
     }
 
     function habilitarTabEmTextarea(textareaEl) {
@@ -480,7 +489,16 @@ int main() {
             if (modoEx === 'function' && parsedSig && parsedSig.params.length > 0) {
                 const pares = window.FuncaoC.formatarEntradaExibicao(t.input, parsedSig);
                 entradaFormatadaHTML = `<pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${escapeHtml(pares)}</pre>`;
-                labelSaida = parsedSig.returnType === 'void' ? 'Valores Após a Chamada:' : 'Retorno Esperado (return):';
+                labelSaida = 'Retorno Esperado (return):';
+            }
+
+            let avisoProfessor = '';
+            if (modoEx === 'function') {
+                avisoProfessor = '<div class="alert alert-light border small text-muted p-2 mt-2 mb-0" style="font-size: 0.78rem;"><i class="fas fa-info-circle text-info mr-1"></i> <strong>Atenção:</strong> O aluno implementa apenas o corpo da função e retorna o resultado com "return". As linhas com cadeado são protegidas.</div>';
+            } else if (modoEx === 'main_custom') {
+                avisoProfessor = '<div class="alert alert-light border small text-muted p-2 mt-2 mb-0" style="font-size: 0.78rem;"><i class="fas fa-info-circle text-info mr-1"></i> <strong>Atenção:</strong> As entradas correspondem aos comandos de leitura ("scanf"). As linhas com cadeado são protegidas e o corretor avalia exclusivamente o que for impresso pelo(s) "printf" travado(s) no código.</div>';
+            } else {
+                avisoProfessor = '<div class="alert alert-light border small text-muted p-2 mt-2 mb-0" style="font-size: 0.78rem;"><i class="fas fa-info-circle text-info mr-1"></i> <strong>Atenção:</strong> As entradas do programa correspondem aos comandos de leitura ("scanf") e as saídas aos comandos de impressão ("printf").</div>';
             }
 
             containerTeste.innerHTML = `
@@ -494,6 +512,7 @@ int main() {
                         <pre class="bg-light p-2 border rounded mb-0 text-dark" style="font-size: 0.85rem;">${t.output ? escapeHtml(t.output) : '<em>(Vazio)</em>'}</pre>
                     </div>
                 </div>
+                ${avisoProfessor}
             `;
         } else {
             containerTeste.innerHTML = '<span class="text-muted">Nenhum caso de teste disponível para exibição.</span>';
@@ -1657,10 +1676,13 @@ int main() {
         const parsed = obterAssinaturaExtraidaModoFuncao();
 
         if (labelIdentificada) {
-            if (parsed && parsed.params && parsed.params.length > 0) {
+            if (parsed && parsed.isVoid) {
+                labelIdentificada.className = 'text-warning font-weight-bold';
+                labelIdentificada.innerHTML = `<i class="fas fa-exclamation-circle mr-1"></i> Funções do tipo void devem ser configuradas no Modo Main Personalizada. Declare um tipo de retorno (ex: int, float, double, char).`;
+            } else if (parsed && parsed.params && parsed.params.length > 0) {
                 labelIdentificada.className = 'text-muted font-weight-bold';
                 labelIdentificada.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> Cabeçalho identificado: <strong>${escapeHtml(parsed.cleanSignature)}</strong>`;
-            } else if (parsed) {
+            } else if (parsed && parsed.valido) {
                 labelIdentificada.className = 'text-warning font-weight-bold';
                 labelIdentificada.innerHTML = `<i class="fas fa-exclamation-circle mr-1"></i> Declare pelo menos um parâmetro entre os parênteses da função (ex: int somar(int a, int b)).`;
             } else {
@@ -1689,14 +1711,10 @@ int main() {
             const parsed = obterAssinaturaExtraidaModoFuncao();
 
             if (labelSaida) {
-                labelSaida.innerText = (parsed && parsed.returnType === 'void')
-                    ? 'Valores Esperados Após a Execução (saída):'
-                    : 'Valor de Retorno Esperado (return):';
+                labelSaida.innerText = 'Valor de Retorno Esperado (return):';
             }
             if (textareaOutput) {
-                textareaOutput.placeholder = (parsed && parsed.returnType === 'void')
-                    ? 'Valores esperados dos vetores/matrizes após a chamada (ex: {1, 2, 4})...'
-                    : 'Digite o valor de retorno esperado (return)...';
+                textareaOutput.placeholder = 'Digite o valor de retorno esperado (return)...';
             }
 
             if (parsed && parsed.params.length > 0 && boxVars && boxPadrao) {
@@ -2048,9 +2066,16 @@ int main() {
                     return;
                 }
                 const linhasTemplate = rawTemplate.replace(/\r\n/g, '\n').split('\n');
-                const temPrintOficial = linhasTemplate.some(l => /^\s*###/.test(l) && /\bprintf\s*\(/.test(l));
+                const linhasComHash = linhasTemplate.filter(l => /^\s*###/.test(l));
+                const temPrintOficial = linhasComHash.some(l => /\bprintf\s*\(/.test(l));
                 if (!temPrintOficial) {
                     mostrarToast("No modo Main Personalizada, é obrigatório incluir pelo menos uma linha iniciada com ### contendo printf.", "warning");
+                    document.getElementById('modal-template-code')?.focus();
+                    return;
+                }
+                const hashSemPrintf = linhasComHash.find(l => !/\bprintf\s*\(/.test(l));
+                if (hashSemPrintf) {
+                    mostrarToast(`O marcador ### é exclusivo para comandos printf de avaliação. A linha "${hashSemPrintf.trim()}" não possui printf. Use *** para travar outras linhas.`, "warning");
                     document.getElementById('modal-template-code')?.focus();
                     return;
                 }
@@ -2058,8 +2083,12 @@ int main() {
             } else if (exerciseMode === 'function') {
                 const rawFuncTpl = document.getElementById('modal-function-template')?.value || '';
                 const parsedSig = obterAssinaturaExtraidaModoFuncao();
-                if (!parsedSig) {
-                    mostrarToast("Não foi possível identificar o cabeçalho da função no código-base (ex: int somar(int a, int b)).", "warning");
+                if (!parsedSig || !parsedSig.valido) {
+                    if (parsedSig && parsedSig.isVoid) {
+                        mostrarToast("No Modo Função, a função deve possuir um tipo de retorno (ex: int, float, double, char). Para funções void, utilize o Modo Main Personalizada.", "warning");
+                    } else {
+                        mostrarToast("Não foi possível identificar o cabeçalho da função no código-base (ex: int somar(int a, int b)).", "warning");
+                    }
                     document.getElementById('modal-function-template')?.focus();
                     return;
                 }
@@ -2315,7 +2344,16 @@ Regras específicas deste modo:
         } else if (modoAtual === 'function') {
             const tplFunc = document.getElementById('modal-function-template')?.value || '';
             const parsed = obterAssinaturaExtraidaModoFuncao();
-            if (!parsed || parsed.params.length === 0) {
+            if (!parsed || !parsed.valido) {
+                if (parsed && parsed.isVoid) {
+                    mostrarToast("No Modo Função, a função deve possuir um tipo de retorno. Para funções void, utilize o Modo Main Personalizada.", "warning");
+                } else {
+                    mostrarToast("Defina o cabeçalho da função com pelo menos um parâmetro no código-base antes de copiar o prompt.", "warning");
+                }
+                document.getElementById('modal-function-template')?.focus();
+                return null;
+            }
+            if (parsed.params.length === 0) {
                 mostrarToast("Defina o cabeçalho da função com pelo menos um parâmetro no código-base antes de copiar o prompt.", "warning");
                 document.getElementById('modal-function-template')?.focus();
                 return null;
@@ -2334,9 +2372,7 @@ Regras específicas deste modo:
                 ? `\n- Como o retorno da função é "${parsed.returnType}", formate o valor no campo "saida" com exatamente ${precFinal} casas decimais (padrão %.${precFinal}f).`
                 : '';
 
-            const regraVoid = (parsed.returnType === 'void')
-                ? `\n- ATENÇÃO (Função void): O campo "saida" de cada caso de teste deve conter os valores finais dos vetores/matrizes alterados pela função formatados entre chaves (ex: {1, 2, 4} para vetores ou {{1, 2}, {3, 4}} para matrizes).`
-                : '\n- O campo "saida" de cada caso de teste deve conter EXCLUSIVAMENTE o valor de retorno esperado (return) da função.';
+            const regraRetorno = '\n- O campo "saida" de cada caso de teste deve conter EXCLUSIVAMENTE o valor de retorno esperado (return) da função.';
 
             contextoModoPrompt = `
 Modo do Exercício: MODO FUNÇÃO (Escopo Fechado / Return)
@@ -2348,12 +2384,12 @@ ${tplFunc || parsed.cleanSignature}
 Ordem dos parâmetros na "entrada" (separados por quebra de linha \\n):
 ${listaParams}
 Regras específicas deste modo:
-- O aluno implementa apenas o corpo da função e retorna o resultado com "return" (ou altera os ponteiros/vetores in-place se for void).
+- O aluno implementa apenas o corpo da função e retorna o resultado com "return".
 - O campo "entrada" de cada caso de teste deve conter os valores dos parâmetros (${parsed.params.map(p => p.name).join(', ')}) separados por quebra de linha (\\n), exatamente nessa ordem.
 - Regra de formatação de parâmetros na entrada:
   * Parâmetros do tipo vetor DEVEM ser formatados obrigatoriamente entre chaves: ex: {1, 4, 4} ou {10, 20, 30}.
   * Parâmetros do tipo matriz DEVEM ser formatados com chaves duplas: ex: {{1, 2, 3}, {4, 5, 6}}.
-  * Parâmetros escalares simples (int, float) devem ser apenas o valor direto: ex: 10 ou 3.14.${regraVoid}${regraFloat}`;
+  * Parâmetros escalares simples (int, float) devem ser apenas o valor direto: ex: 10 ou 3.14.${regraRetorno}${regraFloat}`;
         } else {
             contextoModoPrompt = `
 Modo do Exercício: MAIN PADRÃO (Livre / Tradicional)
@@ -3090,8 +3126,19 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
                 divResultado.innerHTML = '<div class="alert alert-info py-1 small"><i class="fas fa-spinner fa-spin mr-1"></i> Compilando e executando testes...</div>';
                 btnRecompilar.disabled = true;
 
+                const compileTimeoutMs = 30000;
+                let timeLimitMs = 5000;
+                if (submissaoAtivaParaCompilar && submissaoAtivaParaCompilar.exerciseId) {
+                    const exEncontrado = listaExercicios?.find(e => String(e._id) === String(submissaoAtivaParaCompilar.exerciseId));
+                    if (exEncontrado && exEncontrado.timeLimit && Number(exEncontrado.timeLimit) > 0) {
+                        timeLimitMs = Number(exEncontrado.timeLimit);
+                    }
+                }
+                const folgaSegurancaMs = 15000;
+                const timeoutRequisicaoMs = Math.max(compileTimeoutMs + timeLimitMs + folgaSegurancaMs, 60000);
+
                 const controllerRecompilar = new AbortController();
-                const timerAbortRecompilar = setTimeout(() => controllerRecompilar.abort(), 45000);
+                const timerAbortRecompilar = setTimeout(() => controllerRecompilar.abort(), timeoutRequisicaoMs);
 
                 try {
                     const res = await fetch(comLtik('/judge/submit'), {
@@ -3109,7 +3156,7 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
                     renderizarFeedbackModalProfessor(data);
                 } catch (e) {
                     const msgErro = e && e.name === 'AbortError'
-                        ? 'A compilação demorou mais que o esperado. Tente novamente.'
+                        ? 'O processamento da submissão demorou mais que o esperado para responder. Tente novamente.'
                         : 'Erro de conexão com o servidor.';
                     divResultado.innerHTML = `<div class="alert alert-danger py-1 small">${msgErro}</div>`;
                 } finally {
@@ -3122,6 +3169,274 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
         $('#modalHistoricoAluno').modal('show');
     }
 
+    function normalizarParaLaranjaDiff(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\s+/g, '');
+    }
+
+    function extrairLinhasDiff(str) {
+        if (str === null || str === undefined) return [];
+        const s = String(str)
+            .replace(/\[Saída truncada ao atingir o limite de 256 KiB[^\]]*\]/gi, '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
+        const trimmed = s.endsWith('\n') ? s.slice(0, -1) : s;
+        if (trimmed === '') return [];
+        return trimmed.split('\n');
+    }
+
+    function renderizarDiffVisualSaida(gotRaw, expectedRaw) {
+        const gotLines = extrairLinhasDiff(gotRaw);
+        const expLines = extrairLinhasDiff(expectedRaw);
+
+        if (gotLines.length === 0 && expLines.length === 0) {
+            return {
+                html: `
+                    <div class="d-flex align-items-stretch">
+                        <div class="io-gutter-placeholder"></div>
+                        <div class="flex-grow-1" style="min-width: 0;">
+                            <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">(vazio)</pre>
+                        </div>
+                    </div>
+                `,
+                placarHtml: '',
+                totalLinhas: 0,
+                linhasVerdes: 0,
+                linhasLaranjas: 0,
+                totalEsperado: 0
+            };
+        }
+
+        let gotIdx = 0;
+        let expIdx = 0;
+        let linhasVerdes = 0;
+        let linhasLaranjas = 0;
+        let numAluno = 0;
+
+        const rows = [];
+
+        function adicionarLinha({ tipo, num, icone, val, ehPlaceholder = false }) {
+            rows.push({ tipo, num, icone, val, ehPlaceholder });
+        }
+
+        while (gotIdx < gotLines.length && expIdx < expLines.length) {
+            const gLine = gotLines[gotIdx];
+            const eLine = expLines[expIdx];
+
+            if (gLine === eLine) {
+                linhasVerdes++;
+                numAluno++;
+                adicionarLinha({
+                    tipo: 'green',
+                    num: numAluno,
+                    icone: '✓',
+                    val: gLine === '' ? '(linha em branco)' : gLine,
+                    ehPlaceholder: gLine === ''
+                });
+                gotIdx++;
+                expIdx++;
+                continue;
+            }
+
+            if (eLine === '' && gLine !== '') {
+                adicionarLinha({
+                    tipo: 'red',
+                    num: '—',
+                    icone: '✗',
+                    val: '(linha em branco)',
+                    ehPlaceholder: true
+                });
+                expIdx++;
+                continue;
+            }
+
+            if (expIdx + 1 < expLines.length) {
+                const normGot = normalizarParaLaranjaDiff(gLine);
+                const normConcat = normalizarParaLaranjaDiff(eLine + expLines[expIdx + 1]);
+                if (normGot.length > 0 && normGot === normConcat) {
+                    numAluno++;
+                    adicionarLinha({
+                        tipo: 'red',
+                        num: numAluno,
+                        icone: '✗',
+                        val: gLine
+                    });
+                    gotIdx++;
+                    expIdx += 2;
+                    continue;
+                }
+            }
+
+            if (gLine === '' && eLine !== '') {
+                numAluno++;
+                adicionarLinha({
+                    tipo: 'red',
+                    num: numAluno,
+                    icone: '✗',
+                    val: '(linha em branco)',
+                    ehPlaceholder: true
+                });
+                gotIdx++;
+                continue;
+            }
+
+            // 5. Laranja: Igual após remover espaços, acentos e converter para minúsculas (Erro de formatação)
+            if (normalizarParaLaranjaDiff(gLine) === normalizarParaLaranjaDiff(eLine)) {
+                // Se houver um match 100% EXATO logo adiante, prefere o exato e deixa a linha atual ser tratada pelo lookahead
+                let temExatoAdiante = false;
+                const maxLhExato = Math.min(gotLines.length, gotIdx + 20);
+                for (let k = gotIdx + 1; k < maxLhExato; k++) {
+                    if (gotLines[k] === eLine) {
+                        temExatoAdiante = true;
+                        break;
+                    }
+                }
+                if (!temExatoAdiante) {
+                    linhasLaranjas++;
+                    numAluno++;
+                    adicionarLinha({
+                        tipo: 'orange',
+                        num: numAluno,
+                        icone: '⚠️',
+                        val: gLine
+                    });
+                    gotIdx++;
+                    expIdx++;
+                    continue;
+                }
+            }
+
+            // 6. Prints Extras / Repetições Indevidas no meio
+            let lookaheadIdx = -1;
+            const maxLookahead = Math.min(gotLines.length, gotIdx + 20);
+            // 6a. Prioridade 1: Procurar match 100% EXATO (Verde)
+            for (let k = gotIdx + 1; k < maxLookahead; k++) {
+                if (gotLines[k] === eLine) {
+                    lookaheadIdx = k;
+                    break;
+                }
+            }
+            // 6b. Prioridade 2: Se não houver exato, procurar match APROXIMADO (Laranja)
+            if (lookaheadIdx === -1) {
+                for (let k = gotIdx + 1; k < maxLookahead; k++) {
+                    if (normalizarParaLaranjaDiff(gotLines[k]) === normalizarParaLaranjaDiff(eLine)) {
+                        lookaheadIdx = k;
+                        break;
+                    }
+                }
+            }
+
+            if (lookaheadIdx !== -1) {
+                for (let m = gotIdx; m < lookaheadIdx; m++) {
+                    numAluno++;
+                    adicionarLinha({
+                        tipo: 'red',
+                        num: numAluno,
+                        icone: '✗',
+                        val: gotLines[m] === '' ? '(linha em branco)' : gotLines[m],
+                        ehPlaceholder: gotLines[m] === ''
+                    });
+                }
+                const matchLine = gotLines[lookaheadIdx];
+                numAluno++;
+                if (matchLine === eLine) {
+                    linhasVerdes++;
+                    adicionarLinha({
+                        tipo: 'green',
+                        num: numAluno,
+                        icone: '✓',
+                        val: matchLine === '' ? '(linha em branco)' : matchLine,
+                        ehPlaceholder: matchLine === ''
+                    });
+                } else {
+                    linhasLaranjas++;
+                    adicionarLinha({
+                        tipo: 'orange',
+                        num: numAluno,
+                        icone: '⚠️',
+                        val: matchLine
+                    });
+                }
+                gotIdx = lookaheadIdx + 1;
+                expIdx++;
+                continue;
+            }
+
+            numAluno++;
+            adicionarLinha({
+                tipo: 'red',
+                num: numAluno,
+                icone: '✗',
+                val: gLine === '' ? '(linha em branco)' : gLine,
+                ehPlaceholder: gLine === ''
+            });
+            gotIdx++;
+            expIdx++;
+        }
+
+        while (expIdx < expLines.length) {
+            adicionarLinha({
+                tipo: 'red',
+                num: '—',
+                icone: '✗',
+                val: '(não impresso)',
+                ehPlaceholder: true
+            });
+            expIdx++;
+        }
+
+        while (gotIdx < gotLines.length) {
+            numAluno++;
+            const gExtra = gotLines[gotIdx];
+            adicionarLinha({
+                tipo: 'red',
+                num: numAluno,
+                icone: '✗',
+                val: gExtra === '' ? '(linha em branco)' : gExtra,
+                ehPlaceholder: gExtra === ''
+            });
+            gotIdx++;
+        }
+
+        const gutterHtml = rows.map(r => {
+            const titleAttr = r.num !== '—' ? `Linha de saída #${r.num}` : 'Saída omitida pelo seu código';
+            const classeNum = r.num === '—' ? 'text-danger font-weight-bold' : '';
+            return `<span class="io-gutter-num ${classeNum}" title="${titleAttr}">${r.num}</span>`;
+        }).join('');
+
+        const rowsHtml = rows.map(r => {
+            const classeLinha = r.tipo === 'green' ? 'diff-line-green' : (r.tipo === 'orange' ? 'diff-line-orange' : 'diff-line-red');
+            const classeIcone = r.tipo === 'green' ? 'diff-line-icon-green' : (r.tipo === 'orange' ? 'diff-line-icon-orange' : 'diff-line-icon-red');
+            const classeTexto = r.ehPlaceholder ? 'diff-placeholder-line' : '';
+            return `<div class="diff-line ${classeLinha}"><span class="diff-line-icon ${classeIcone}">${r.icone}</span><span class="diff-text ${classeTexto}">${escapeHtml(r.val)}</span></div>`;
+        }).join('');
+
+        const containerHtml = `<div class="io-numbered-wrapper"><div class="io-gutter" aria-hidden="true" title="Ordem das linhas de saída (stdout)">${gutterHtml}</div><div class="io-box-container"><div class="diff-box border rounded bg-white font-monospace mb-0">${rowsHtml}</div></div></div>`;
+
+        let placarHtml = '';
+        if (expLines.length > 1) {
+            const textoLaranjas = linhasLaranjas > 0 ? ` (+ ${linhasLaranjas} com erro de formatação)` : '';
+            placarHtml = `
+                <div class="diff-placar alert alert-secondary py-1 px-2 mb-2 border shadow-sm small d-flex align-items-center" style="font-size: 0.8rem; background-color: #f8f9fa; border-color: #ced4da; color: #212529;">
+                    <span>📊 <strong>Progresso neste caso de teste:</strong> <strong>${linhasVerdes} de ${expLines.length}</strong> saída(s) idêntica(s) ao esperado${textoLaranjas}.</span>
+                </div>
+            `;
+        }
+
+        return {
+            html: containerHtml,
+            placarHtml: placarHtml,
+            totalLinhas: numAluno,
+            linhasVerdes,
+            linhasLaranjas,
+            totalEsperado: expLines.length
+        };
+    }
+
     function renderizarFeedbackModalProfessor(data) {
         const divResultado = document.getElementById('modalInspecionarResultado');
         if (!divResultado) return;
@@ -3130,11 +3445,19 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
             return;
         }
 
+        let dicaProfTexto = data.didacticHint || '';
+        const estaTruncadoProf = (data.got && String(data.got).includes('256 KiB')) ||
+                                 (data.details && String(data.details).includes('256 KiB'));
+        if (estaTruncadoProf && !dicaProfTexto.includes('256 KiB')) {
+            const avisoTruncado = 'Saída truncada em 256 KiB: O programa imprimiu dados em excesso e atingiu o limite de exibição — verifique possíveis loops infinitos com comandos de impressão (printf).';
+            dicaProfTexto = dicaProfTexto ? `${avisoTruncado}\n\n${dicaProfTexto}` : avisoTruncado;
+        }
+
         let cardDica = '';
-        if (data.didacticHint) {
+        if (dicaProfTexto) {
             cardDica = `
-                <div class="alert alert-warning py-2 px-3 mb-2 small shadow-sm border">
-                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica Didática:</strong> ${escapeHtml(data.didacticHint)}
+                <div class="alert alert-warning py-2 px-3 mb-2 small shadow-sm border border-warning font-weight-bold">
+                    <i class="fas fa-lightbulb text-warning mr-1"></i> <strong>Dica Didática:</strong> ${escapeHtml(dicaProfTexto)}
                 </div>
             `;
         }
@@ -3185,6 +3508,16 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
                 </div>
             `;
         } else if (data.status === 'Wrong Answer') {
+            const saidaDiff = renderizarDiffVisualSaida(data.got || '', data.expected || '');
+            const legendaHtml = `
+                <div class="diff-legend mb-2 p-1 px-2 rounded border bg-light small d-flex flex-wrap align-items-center shadow-sm" style="gap: 12px; font-size: 0.76rem; border-color: #dee2e6;">
+                    <span><span class="mr-1">🟢</span><strong>Correto</strong></span>
+                    <span class="text-muted">|</span>
+                    <span><span class="mr-1">🟠</span><strong>Erro de formatação</strong></span>
+                    <span class="text-muted">|</span>
+                    <span><span class="mr-1">🔴</span><strong>Incorreto</strong></span>
+                </div>
+            `;
             divResultado.innerHTML = `
                 <div class="alert alert-danger py-2 px-3 mb-0 shadow-sm border">
                     <div class="d-flex justify-content-between align-items-center mb-1">
@@ -3195,11 +3528,13 @@ Retorne APENAS um JSON válido no formato abaixo, sem nenhum texto adicional ant
                         <div>${badgeTestes}</div>
                     </div>
                     ${cardDica}
+                    ${legendaHtml}
                     <div class="small mt-2">
                         <div class="mb-1 text-dark"><strong>Entrada do Teste:</strong></div>
-                        <pre class="p-2 border rounded bg-white text-dark pre-io mb-1" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.input || '(sem entrada)')}</pre>
+                        <pre class="p-2 border rounded bg-white text-dark pre-io mb-2" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.input || '(sem entrada)')}</pre>
                         <div class="mb-1 text-dark"><strong>Saída do Aluno:</strong></div>
-                        <pre class="p-2 border rounded bg-white text-danger pre-io mb-1" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.got || '(vazio)')}</pre>
+                        ${saidaDiff.placarHtml}
+                        <div class="mb-2">${saidaDiff.html}</div>
                         <div class="mb-1 text-dark"><strong>Saída Esperada:</strong></div>
                         <pre class="p-2 border rounded bg-white text-success pre-io mb-0" style="max-height: 110px; overflow-y: auto;">${escapeHtml(data.expected || '')}</pre>
                     </div>

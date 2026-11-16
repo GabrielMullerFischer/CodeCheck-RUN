@@ -97,6 +97,9 @@ async function start() {
         app.use('/judge', professorRoutes);
 
         const PORT = process.env.PORT || 3000;
+        server.requestTimeout = 600000;
+        server.headersTimeout = 610000;
+        server.timeout = 600000;
         server.listen(PORT, () => {
             console.log(`Sistema Online na porta ${PORT} e Sessão Ativa`);
             judgeService.inicializarPool().catch(err => {
