@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             .replace(/'/g, "&#039;");
     }
 
-    function formatarEntradaComNumeracao(rawInput, comAlinhamento = true) {
+    function formatarEntradaComNumeracao(rawInput, comAlinhamento = true, modo = null) {
         if (!rawInput || !String(rawInput).trim() || rawInput === '(sem entrada)') {
             return {
                 html: `<div class="d-flex align-items-stretch">
@@ -934,10 +934,55 @@ document.addEventListener('DOMContentLoaded', async () => {
         const texto = String(rawInput).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n$/, '');
         const linhas = texto.split('\n');
 
-        const gutterHtml = linhas.map((_, idx) => {
-            const num = idx + 1;
-            return `<span class="io-gutter-num" title="Entrada #${num} (${num}ª leitura)">${num}</span>`;
-        }).join('');
+        const exAtual = (Array.isArray(listaExercicios) && typeof indiceAtual === 'number') ? listaExercicios[indiceAtual] : null;
+        const modoEfetivo = modo || (exAtual ? obterModoExercicio(exAtual) : 'main_default');
+
+        let gutterHtml = '';
+        const renderedLines = [];
+        let numeroLinhaReal = 1;
+
+        if (modoEfetivo === 'function') {
+            gutterHtml = linhas.map((_, idx) => {
+                const num = idx + 1;
+                return `<span class="io-gutter-num" title="Parâmetro #${num}">${num}</span>`;
+            }).join('');
+            renderedLines.push(escapeHtml(texto));
+            numeroLinhaReal = linhas.length + 1;
+        } else {
+            linhas.forEach(linha => {
+                const linhaTrim = linha.trim();
+                if (linhaTrim.startsWith('//')) {
+                    // Linha apenas com comentário: NÃO incrementa contador de leituras nem numeração lateral
+                    gutterHtml += `<span class="io-gutter-num io-gutter-empty" style="visibility: hidden;" aria-hidden="true">&nbsp;</span>`;
+                    renderedLines.push(`<span class="input-comment" style="font-style: italic; opacity: 0.65; color: #6c757d;">${escapeHtml(linha)}</span>`);
+                } else if (linha.includes('//')) {
+                    const idx = linha.indexOf('//');
+                    const parteValor = linha.substring(0, idx);
+                    const parteComentario = linha.substring(idx);
+                    if (!parteValor.trim()) {
+                        // Linha apenas com espaços antes do //
+                        gutterHtml += `<span class="io-gutter-num io-gutter-empty" style="visibility: hidden;" aria-hidden="true">&nbsp;</span>`;
+                        renderedLines.push(`<span class="input-comment" style="font-style: italic; opacity: 0.65; color: #6c757d;">${escapeHtml(linha)}</span>`);
+                    } else {
+                        // Linha de valor com comentário inline ao lado
+                        const num = numeroLinhaReal++;
+                        gutterHtml += `<span class="io-gutter-num" title="Entrada #${num} (${num}ª leitura)">${num}</span>`;
+                        renderedLines.push(`${escapeHtml(parteValor)}<span class="input-comment" style="font-style: italic; opacity: 0.65; color: #6c757d;">${escapeHtml(parteComentario)}</span>`);
+                    }
+                } else if (linhaTrim === '') {
+                    // Linha em branco
+                    gutterHtml += `<span class="io-gutter-num io-gutter-empty" style="visibility: hidden;" aria-hidden="true">&nbsp;</span>`;
+                    renderedLines.push(escapeHtml(linha));
+                } else {
+                    // Linha de valor puro
+                    const num = numeroLinhaReal++;
+                    gutterHtml += `<span class="io-gutter-num" title="Entrada #${num} (${num}ª leitura)">${num}</span>`;
+                    renderedLines.push(escapeHtml(linha));
+                }
+            });
+        }
+
+        const corpoPre = (modoEfetivo === 'function') ? escapeHtml(texto) : renderedLines.join('\n');
 
         const html = `
             <div class="io-numbered-wrapper">
@@ -945,14 +990,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${gutterHtml}
                 </div>
                 <div class="io-box-container">
-                    <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${escapeHtml(texto)}</pre>
+                    <pre class="p-2 border rounded text-dark pre-io mb-0 font-monospace">${corpoPre}</pre>
                 </div>
             </div>
         `;
 
         return {
             html,
-            totalLeituras: linhas.length
+            totalLeituras: numeroLinhaReal - 1
         };
     }
 

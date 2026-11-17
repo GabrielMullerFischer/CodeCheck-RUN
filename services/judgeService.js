@@ -100,6 +100,19 @@ function normalizarModoExercicio(mode) {
     return 'main_default';
 }
 
+function limparComentariosInput(inputRaw) {
+    if (inputRaw === null || inputRaw === undefined) return '';
+    const linhas = String(inputRaw).replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const filtradas = [];
+    for (const linha of linhas) {
+        if (/^\s*\/\/.*$/.test(linha)) {
+            continue;
+        }
+        filtradas.push(linha.replace(/\/\/.*$/, '').trimEnd());
+    }
+    return filtradas.join('\n');
+}
+
 function extrairAssinaturaFuncaoC(assinaturaOuTemplate) {
     return FuncaoC.parsearAssinatura(assinaturaOuTemplate);
 }
@@ -583,6 +596,19 @@ async function runTests(code, tests, containerName, timeLimitMs, chaveOrdem = nu
             convertidos.push({ ...t, inputOriginal: t.input || '', input: conv.stdin });
         }
         tests = convertidos;
+    }
+
+    const modoEfetivo = normalizarModoExercicio(opcoesExercicio?.exerciseMode);
+    if ((modoEfetivo === 'main_default' || modoEfetivo === 'main_custom') && Array.isArray(tests)) {
+        tests = tests.map(t => {
+            const item = (t && typeof t.toObject === 'function') ? t.toObject() : { ...t };
+            const raw = item.input !== undefined && item.input !== null ? String(item.input) : '';
+            return {
+                ...item,
+                inputOriginal: item.inputOriginal !== undefined ? item.inputOriginal : raw,
+                input: limparComentariosInput(raw)
+            };
+        });
     }
 
     await adquirirVagaNaFila();
@@ -1115,6 +1141,7 @@ module.exports = {
     validarCodigoExercicio,
     prepararCodigoPorModo,
     extrairAssinaturaFuncaoC,
+    limparComentariosInput,
     isAlreadyRunning,
     liberarTravaUsuario,
     inicializarPool: warmPoolService.inicializarPool,

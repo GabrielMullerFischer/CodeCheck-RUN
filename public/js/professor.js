@@ -1815,7 +1815,11 @@ int main() {
         const parsed = (modo === 'function') ? obterAssinaturaExtraidaModoFuncao() : null;
 
         if (alertDica) {
-            alertDica.innerHTML = `<i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha. Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).`;
+            if (modo === 'function') {
+                alertDica.innerHTML = `<i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha. Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).`;
+            } else {
+                alertDica.innerHTML = `<i class="fas fa-info-circle mr-1"></i> A separação de valores é feita por quebra de linha. As entradas dos casos de teste aceitam comentários iniciados por <strong>//</strong> para orientar o aluno. Marque os testes que serão visíveis como exemplos para o aluno (mínimo 1, máximo 3).`;
+            }
         }
 
         if (alertDicaVetores) {
@@ -2340,7 +2344,8 @@ Regras específicas deste modo:
 - As linhas iniciadas por "***" são travadas (somente leitura) para o aluno.
 - As linhas iniciadas por "###" são os PRINTS OFICIAIS DE CORREÇÃO (também travadas).
 - O juiz avaliará EXCLUSIVAMENTE a saída gerada pelas linhas "###" (qualquer outro printf de debug do aluno será ignorado).
-- Portanto, o campo "saida" de cada caso de teste deve corresponder EXATAMENTE à saída formatada pelos printf marcados com "###" no template acima.`;
+- Portanto, o campo "saida" de cada caso de teste deve corresponder EXATAMENTE à saída formatada pelos printf marcados com "###" no template acima.
+- Comentários com "//" podem ser usados nas entradas dos casos de teste para identificar o que cada entrada representa para o aluno, pois o sistema os remove antes do scanf.`;
         } else if (modoAtual === 'function') {
             const tplFunc = document.getElementById('modal-function-template')?.value || '';
             const parsed = obterAssinaturaExtraidaModoFuncao();
@@ -2393,7 +2398,8 @@ Regras específicas deste modo:
         } else {
             contextoModoPrompt = `
 Modo do Exercício: MAIN PADRÃO (Livre / Tradicional)
-- O aluno programa o int main() completo, lendo da entrada padrão (stdin) e imprimindo na saída padrão (stdout).`;
+- O aluno programa o int main() completo, lendo da entrada padrão (stdin) e imprimindo na saída padrão (stdout).
+- Comentários com "//" podem ser usados nas entradas dos casos de teste para identificar o que cada entrada representa para o aluno, pois o sistema os remove antes do scanf.`;
         }
 
         // Puxa todos os casos de teste já preenchidos pelo professor para servirem de base no prompt
@@ -2493,7 +2499,7 @@ Para CADA exercício, forneça:
 3. Exatamente 20 casos de teste rigorosos (cobrindo entradas normais, casos extremos e limites).
 
 REGRAS DE PRECISÃO E FORMATAÇÃO DOS TESTES:
-- As entradas ("entrada") devem conter APENAS os valores literais que serão lidos pelo scanf/fgets (separados por \\n), sem nomes de variáveis nem textos explicativos.
+- As entradas ("entrada") devem conter os valores que serão lidos pelo scanf/fgets (separados por \n). Comentários com "//" podem ser usados nas entradas dos casos de teste para identificar o que cada entrada representa para o aluno, pois o sistema os remove antes do scanf.
 - Em exercícios que envolvam cálculos com números decimais, EVITE entradas que gerem resultados no limiar dúbio de arredondamento (como valores terminados em .xx5, .99, dízimas periódicas ou aproximações em que imprecisões de ponto flutuante na linguagem C possam divergir por centésimos do gabarito, ex.: 99.99 vs 100.00). Escolha entradas cujos cálculos produzam valores matematicamente limpos e determinísticos, garantindo que um programa padrão em C compilado com GCC gere exatamente a mesma saída cadastrada no teste.
 
 IMPORTANTE:
